@@ -1533,3 +1533,143 @@ at exactly ten application tables. Resolution implemented and recorded:
 - Unit B5 (tasks 63–69): `apps/ingest` subcommands, full `ckan.rs`
   contract (task 65 refines stable-resource-id selection), no_hardcoded_url,
   snapshot export, seed-taxonomy.
+
+## Work unit B5 (PR 12, tasks 63–69) — 2026-09-18
+
+Executed by the delegated `sdd-apply` executor with strict TDD (`cargo test`
+against the compose Postgres, service `db`, which was running and was left
+running after verification; scratch databases `b5_*` created per test and
+dropped with `DROP DATABASE ... WITH (FORCE)`). Allowed edit surfaces honored:
+`apps/ingest/**`, `crates/ingestion/**`, `crates/db/**` (justified repo
+addition, below), `Makefile`, `README.md`, and the two openspec artifacts.
+`data/external_ids.snapshot.txt` was NOT modified (still holds provisional
+ids `100001`–`100022`).
+
+### TDD Cycle Evidence (cargo test)
+
+| Task | RED evidence (pre-implementation `cargo test`) | GREEN evidence |
+|---|---|---|
+| 63 CLI surface (IN-1) | `cargo test -p ingest --test cli` → 3/3 failed against the stub binary: `--help must list the 'seed-taxonomy' subcommand`, `running with no subcommand must not silently succeed`, `an unknown subcommand must exit non-zero` (stub printed the scaffold line, exit 0) | `tests/cli` 4/4 ok: help lists all three subcommands; unknown subcommand `frobnicate` exits non-zero naming it with usage; no-subcommand usage exits non-zero; `ingest ingest` without `CKAN_BASE_URL` fails cleanly naming the missing config (IN-2, configuration-only base URL) |
+| 65 ckan stable-id (IN-2, D-5) | The B4 fetcher selected "first CSV-format resource (declaration order)" with no seam — the new contract tests (stable-id selection, order-invariance, pin, call-time request recording) were authored before the refinement, and the declaration-order case fails against the B4 behavior | `ckan::contract_tests` 7/7 ok (network-free, fixture-injected `CkanHttp` transport): stable-id selection (smallest id among CSV resources), declaration-order invariance, pinned stable id wins, absent pin fails naming it, package_show hit at call time carrying `agesic-guia-de-tramites`, download resolves the file URL from resource_show at call time, no-CSV fails. Live test still `ignored` — NOT run |
+| 66 no-hardcoded-url (IN-2) | Falsifiability probe (guard passes on a clean repo by definition, as in tasks 4/19): a temporarily inserted `catalogodatos.gub.uy/dataset/.../resource/.../download/tramites.csv` literal in `crates/db/src/pool.rs` failed the guard: `pool.rs:20 contains a literal AGESIC resource file URL — the dataset MUST be resolved via package_show at call time (IN-2)`; reverted, green again | `no_hardcoded_url` 1/1 ok; scans every workspace `apps/*/src` + `crates/*/src` .rs file (comment-stripped) and asserts ≥6 src trees visited |
+| 67 export-ids (D-2, TX-3) | RED captured behaviorally: with the CLI src temporarily reverted to the B4 stub (stash of `apps/ingest/src/main.rs`), `cargo test -p ingest --test export_ids` → 1/1 failed (`export-ids must succeed` — unrecognized subcommand, non-zero exit) | `export_ids` 1/1 ok against compose Postgres scratch DB: procedures seeded unsorted incl. an inactive row → snapshot sorted, one per line, LF-only, trailing newline, exact `100001\n100002\n100003\n100004\n100005\n`; second run byte-identical |
+| 69 seed-taxonomy (TX-6, DM-1, D-6) | `cargo test -p ingest --test seed_taxonomy` → 2/2 failed: `first seed must succeed; stderr: error: unexpected argument '--snapshot' found` (no snapshot flag, no seeding) | `seed_taxonomy` 2/2 ok: first run writes categories(1)/events(9)/keywords(48)/synonyms(14)/relations with `order_index` (vender-vehiculo → orders 1,2,3, required [true,false,false]); second run reports `inserted=0` everywhere with every count unchanged; absent-procedure relations pending-with-warning, not fatal |
+
+### B5.1 (task 64) — CLI composition (D-5)
+- `apps/ingest/src/main.rs`: clap derive with `Ingest` / `SeedTaxonomy`
+  (`--data-dir`, `--snapshot`, `--database-url`) and `ExportIds`
+  (`--output`, `--database-url`); `arg_required_else_help`.
+- `src/support.rs`: pool construction on a shared multi-thread runtime +
+  `PostgresProcedureRepository` opening (the B4 sync/async adapter is reused;
+  the worker holds no SQL).
+- `commands/ingest.rs`: composes `CkanFetcher::new(CKAN_BASE_URL,
+  "agesic-guia-de-tramites")` + `pipeline::run_csv` + the Postgres repo;
+  missing `CKAN_BASE_URL` is a clean non-zero failure — configuration-only
+  base URL so zero URL literals exist in source (IN-2). Run summary prints
+  the deterministic `RunSummary::report()` (stdout-only contract, task 61).
+- The package id string `agesic-guia-de-tramites` is a dataset identifier
+  (IN-2's named dataset), not a resource file URL — the task-66 guard passes
+  on it by design.
+
+### B5.2 (task 69 part 1) — crates/db seed module (justified addition)
+- `crates/db/src/repos/taxonomy_seed.rs` (the design §2-named module) +
+  `taxonomy = { path = "../taxonomy" }` dependency on `crates/db` (a
+  design-sanctioned arrow: `crates/db → crates/taxonomy`, "seed YAML models
+  into tables"). Justification: the DM-1 projection requires sqlx;
+  `apps/ingest` must stay SQL-free (D-5).
+- Idempotency by compare-then-write: categories upsert per slug, events per
+  slug (name/description/category/status, only updated when changed),
+  keywords per natural key (term, type, negative, canonical) with removal of
+  YAML-deleted terms, synonyms per (term, canonical, category), relations
+  per composite (life_event, procedure) — second run: zero writes everywhere.
+- Relations resolve the procedure by external id; a missing procedure is a
+  pending relation + warning (make dev seeds before ingest; task 68's live
+  run will make them resolve).
+- Deviation recorded: the seed uses runtime-checked sqlx queries
+  (`sqlx::query/query_as/query_scalar` functions), not the `query!` macros —
+  the compare-then-write flow made macro-shaped static SQL awkward, and the
+  DB-backed integration test (task 69) exercises every statement against the
+  real schema; the `.sqlx` offline cache is unchanged (still B4's 11 files).
+  Follow-up: migrate to `query!` macros if a later unit touches this module.
+
+### B5.3 (task 68) — snapshot infrastructure WITHOUT the live run (BLOCKED)
+- Task 68's live ingestion run is NOT authorized in this launch; NOT executed
+  (no live package_show, no download, no `--ignored` test run — verified:
+  the live test binary reports `1 ignored` and was never run).
+- Infrastructure completed around it: `export-ids` fully implemented and
+  byte-stability verified against a seeded scratch DB in the exact task-67
+  format (sorted, one per line, LF, trailing newline — the `export_ids`
+  test's two-run byte-identical assertion is the readiness evidence). The
+  README documents snapshot regeneration.
+- `data/external_ids.snapshot.txt` left with its provisional ids; the nine
+  seed events' relations still reference `100001`–`100022`.
+- **Blocker recorded (pending maintainer decision):** running
+  `ingest ingest` live requires (a) maintainer authorization for the network
+  call (task 68 go-ahead), (b) `CKAN_BASE_URL` + `DATABASE_URL`
+  configuration. After the run: `export-ids` regenerates the snapshot, the
+  relations re-seed, and the orphan check runs against real ids.
+
+### B5.4 — dev-story wiring + manual verification
+- `Makefile`: `dev` = compose up + migrate + `seed-taxonomy` (task 69); new
+  `seed-taxonomy` target; `dev`'s fixture-ingest TODO remains task 91.
+- Manual smoke on the dev DB `tramitesuy` (twice): first run seeded
+  categories=1, events=9, keywords=48, synonyms=14, relations pending=22;
+  second run `inserted=0 updated=0 removed=0` everywhere (idempotency on a
+  real database recorded).
+
+### B5 verification evidence
+- `cargo test --workspace` → 157 passed / 0 failed (was 142 before B5; +15:
+  cli 4, export_ids 1, seed_taxonomy 2, ckan contract 7, no_hardcoded_url 1).
+- `cargo test -p ingestion --features live-ckan --test ckan_live` → 1
+  ignored, NOT run (no live network).
+- `cargo fmt --all -- --check` → exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0 (six
+  findings fixed during REFACTOR: unnecessary sort_by, explicit_auto_deref
+  ×4, one dead test helper).
+- Compose `db` healthy and left running; dev DB seeded by the smoke runs;
+  all `b5_*` scratch databases dropped with FORCE.
+
+### B5 review-budget accounting and split guard (fired, honored)
+- Authored diff: ≈ 1,090 authored lines across six code commits (per-commit:
+  B5a 299+/55−, B5b 93+, B5c 446+, B5d 356+/4−, B5e 211+, B5f 241+/6−), far
+  above the 400-line default budget, so the split guard was honored per the
+  B2–B4 precedent: one cohesive work unit delivered as six ≤-400-line split
+  commits, each a stash-verified green tree, each a Conventional Commit
+  referencing B5 / PR 12, no push. Nothing was compressed, restyled, or
+  deleted to approach the number; no comments, docs, or tests were dropped.
+
+### Pending maintainer decisions (carried from A1–B4, still not decided here)
+1. **Review-budget overage:** PRs 2–11 and now PR 12 exceed the 400-line
+   budget. `size:exception` acceptance vs a chaining decision remains
+   **pending** — required before any PR is opened.
+2. **Chain strategy: pending** — `stacked-to-main` vs
+   `feature-branch-chain` still unchosen while the change's total forecast
+   is ~4,800–6,150 lines (risk High, chained PRs recommended). This run
+   continued the established split-commit-on-master pattern (no push, no
+   PR opened) per the parent instruction.
+3. **Task 68 live-run authorization** (new this unit): the first live
+   package_show + download + ingestion run needs the maintainer go-ahead;
+   all infrastructure around it is ready and verified (see B5.3).
+
+### Task state (cumulative)
+- Completed: 1–67, 69 (S0, A1–A6, B1–B4, B5 minus task 68). 26 unchecked
+  remain (task 68 live run + units C1…C3, tasks 70–92 + baseline rebase
+  93–94).
+- Commits (each on `master`, no push, Conventional Commits referencing
+  B5 / PR 12; stash-verified green per split):
+  - B5a `892df83` feat(ingestion): stable-resource-id resolution + transport
+    seam (task 65).
+  - B5b `10a0568` test(ingestion): no-hardcoded-url guard (task 66).
+  - B5c `0ec9a81` feat(db): taxonomy seed projection repo (task 69 part 1).
+  - B5d `bcbc5d4` feat(ingest): worker CLI subcommands (tasks 63–64).
+  - B5e `4db6f5f` test(ingest): export-ids snapshot contract (task 67).
+  - B5f `88cc095` test(ingest): seed-taxonomy idempotency + make dev (task
+    69 + task 68 infra).
+  - Plus this B5g docs commit (apply-progress + tasks checkboxes).
+
+### Remaining after B5
+- Task 68: maintainer-authorized live ingestion run → snapshot regeneration
+  (blocker recorded in B5.3).
+- Unit C1 (tasks 70–77): `apps/api` read surface — depends on B1, B5, A4
+  (all complete except the task-68 live data, which C1's tests do not need:
+  they seed via fixtures).

@@ -246,13 +246,13 @@ dependency diagram with the current PR marked `📍`.
 
 ### Unit `B5` (PR 12, tasks 63–69) — ingestion worker CLI and external-id snapshot
 
-- [ ] 63. RED `apps/ingest/tests/cli.rs`: the binary exposes the subcommands `ingest`, `seed-taxonomy`, and `export-ids`; an unknown subcommand exits non-zero with usage text (IN-1).
-- [ ] 64. GREEN `apps/ingest/src/{main.rs,commands/{ingest.rs,seed_taxonomy.rs,export_ids.rs}}` composing the real `ckan.rs` fetcher with the sqlx repository, keeping all pipeline logic in `crates/ingestion` (D-5).
-- [ ] 65. RED/GREEN `crates/ingestion/src/ckan.rs`: `resolve_dataset()` resolves `agesic-guia-de-tramites` through `package_show` at call time, selects the CSV resource by stable resource id, and returns `DatasetManifest { resource_id, last_modified, hash }`, recording both `last_modified` and `hash` for change detection (IN-2).
-- [ ] 66. RED `crates/ingestion/tests/no_hardcoded_url.rs`: a repository scan fails the build if any literal AGESIC resource file URL (for example a `catalogodatos.gub.uy/.../resource/...` path) appears under any `src/` directory (IN-2, design verification checklist).
-- [ ] 67. RED `apps/ingest/tests/export_ids.rs`: `ingest export-ids` writes every ingested `external_id` to `data/external_ids.snapshot.txt`, one per line, sorted, LF line endings, trailing newline, and byte-stable across runs (D-2, TX-3).
+- [x] 63. RED `apps/ingest/tests/cli.rs`: the binary exposes the subcommands `ingest`, `seed-taxonomy`, and `export-ids`; an unknown subcommand exits non-zero with usage text (IN-1).
+- [x] 64. GREEN `apps/ingest/src/{main.rs,commands/{ingest.rs,seed_taxonomy.rs,export_ids.rs}}` composing the real `ckan.rs` fetcher with the sqlx repository, keeping all pipeline logic in `crates/ingestion` (D-5).
+- [x] 65. RED/GREEN `crates/ingestion/src/ckan.rs`: `resolve_dataset()` resolves `agesic-guia-de-tramites` through `package_show` at call time, selects the CSV resource by stable resource id, and returns `DatasetManifest { resource_id, last_modified, hash }`, recording both `last_modified` and `hash` for change detection (IN-2).
+- [x] 66. RED `crates/ingestion/tests/no_hardcoded_url.rs`: a repository scan fails the build if any literal AGESIC resource file URL (for example a `catalogodatos.gub.uy/.../resource/...` path) appears under any `src/` directory (IN-2, design verification checklist).
+- [x] 67. RED `apps/ingest/tests/export_ids.rs`: `ingest export-ids` writes every ingested `external_id` to `data/external_ids.snapshot.txt`, one per line, sorted, LF line endings, trailing newline, and byte-stable across runs (D-2, TX-3).
 - [ ] 68. Generate and commit the initial `data/external_ids.snapshot.txt` from the first maintainer-authorized live ingestion run (transcript recorded), so the nine seed events' relations resolve to real external ids; until then the seed uses provisional ids and the orphan check runs against the snapshot. Document snapshot regeneration in the README (D-2).
-- [ ] 69. RED `apps/ingest/tests/seed_taxonomy.rs`: `seed-taxonomy` is idempotent per slug on a second run and writes categories, events, keywords, synonyms, and relations with `order_index` preserved; add the step to `make dev` from task 5 (TX-6, DM-1, D-6).
+- [x] 69. RED `apps/ingest/tests/seed_taxonomy.rs`: `seed-taxonomy` is idempotent per slug on a second run and writes categories, events, keywords, synonyms, and relations with `order_index` preserved; add the step to `make dev` from task 5 (TX-6, DM-1, D-6).
 
 ---
 
