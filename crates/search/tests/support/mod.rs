@@ -5,15 +5,18 @@
 //! This is test support only: `crates/search/src` stays free of filesystem
 //! access, and fixtures never touch disk.
 //!
-//! `allow(dead_code)`: `FixtureEvent::name`/`category` are still ahead of
-//! their consumers (unit A3 selection / A5 seed tests); every matcher/rules
-//! field is now read by unit A2 via `event_lexicon`.
+//! `allow(dead_code)`: `FixtureEvent::name` is still ahead of its consumer
+//! (A5 seed tests); every other fixture field is now read (category feeds
+//! the engine's Categories band since unit A3).
 #![allow(dead_code)]
 
 use std::collections::HashMap;
 
+use search::engine::{CandidateProvider, EngineError};
 use search::types::KeywordKind as EngineKeywordKind;
-use search::types::{CombinationRule, EventLexicon, EventScore, Keyword};
+use search::types::{
+    Candidate, CombinationRule, EventLexicon, EventScore, Keyword, NormalizedQuery,
+};
 
 /// Keyword type in the seed schema (TX-2 allowed set).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,10 +121,12 @@ pub fn vehiculos_fixture() -> SearchFixture {
 }
 
 /// Converts one fixture event into the engine-side scoring lexicon the
-/// matcher and rules modules consume (unit A2 onward).
+/// matcher and rules modules consume (unit A2 onward). The category slug
+/// feeds the engine's Categories no-result band (SE-10, unit A3).
 pub fn event_lexicon(event: &FixtureEvent) -> EventLexicon {
     EventLexicon {
         slug: event.slug.to_string(),
+        category: event.category.to_string(),
         keywords: event
             .keywords
             .iter()
@@ -160,6 +165,32 @@ pub fn score_event(query: &search::types::NormalizedQuery, event: &FixtureEvent)
     EventScore {
         slug: lex.slug,
         entries,
+    }
+}
+
+/// A deterministic, DB-free candidate provider for engine tests (task 18)
+/// and the golden harness (task 34): contributions are declared up front and
+/// never depend on the query, so outcomes stay reproducible.
+pub struct StubProvider {
+    pub name: &'static str,
+    pub contributions: Vec<(&'static str, i64)>,
+}
+
+impl CandidateProvider for StubProvider {
+    fn rule_name(&self) -> &'static str {
+        self.name
+    }
+
+    fn candidates(&self, _query: &NormalizedQuery) -> Result<Vec<Candidate>, EngineError> {
+        Ok(self
+            .contributions
+            .iter()
+            .map(|(slug, value)| Candidate {
+                event_slug: slug.to_string(),
+                rule_name: self.name.to_string(),
+                value: *value,
+            })
+            .collect())
     }
 }
 

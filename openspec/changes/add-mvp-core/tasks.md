@@ -171,10 +171,10 @@ dependency diagram with the current PR marked `📍`.
 
 ### Unit `A3` (PR 4, tasks 16–19) — confidence, selection, engine facade
 
-- [ ] 16. RED `crates/search/tests/confidence.rs`: 36/9 → 0.80; 22/20 → 0.52; single candidate 14 → 0.80; single candidate 3 → 0.80 with `top1_score < MIN_OPEN_SCORE`; zero scoring candidates → 0.0; all values rounded to two decimals; GREEN `crates/search/src/confidence.rs` (SE-9, D-1).
-- [ ] 17. RED `crates/search/tests/selection.rs`: confidence exactly 0.75 with `top1_score ≥ 10` → open; exactly 0.40 → disambiguation with up to 3 top-scored events (fewer when fewer exist); 0.3999 → related categories; single candidate scoring 3 → disambiguation containing that one option; zero candidates → categories/no-result; GREEN `crates/search/src/selection.rs` (SE-10).
-- [ ] 18. RED `crates/search/tests/engine.rs`: `SearchEngine::search(query, &[&dyn CandidateProvider])` composes normalize → tokenize → match → rules → rank → confidence → selection, and permuting the provider list does not change the outcome; GREEN `crates/search/src/engine.rs` plus the `lib.rs` facade and the `CandidateProvider { rule_name, candidates }` trait (SE-7, D-5).
-- [ ] 19. RED embedding-seam check: extend `crates/search/tests/no_forbidden_deps.rs` (task 4) to assert no embedding/vector implementation exists and the trait carries no model or vector-store types (SE-7 scenario "embedding seam is empty").
+- [x] 16. RED `crates/search/tests/confidence.rs`: 36/9 → 0.80; 22/20 → 0.52; single candidate 14 → 0.80; single candidate 3 → 0.80 with `top1_score < MIN_OPEN_SCORE`; zero scoring candidates → 0.0; all values rounded to two decimals; GREEN `crates/search/src/confidence.rs` (SE-9, D-1).
+- [x] 17. RED `crates/search/tests/selection.rs`: confidence exactly 0.75 with `top1_score ≥ 10` → open; exactly 0.40 → disambiguation with up to 3 top-scored events (fewer when fewer exist); 0.3999 → related categories; single candidate scoring 3 → disambiguation containing that one option; zero candidates → categories/no-result; GREEN `crates/search/src/selection.rs` (SE-10).
+- [x] 18. RED `crates/search/tests/engine.rs`: `SearchEngine::search(query, &[&dyn CandidateProvider])` composes normalize → tokenize → match → rules → rank → confidence → selection, and permuting the provider list does not change the outcome; GREEN `crates/search/src/engine.rs` plus the `lib.rs` facade and the `CandidateProvider { rule_name, candidates }` trait (SE-7, D-5).
+- [x] 19. RED embedding-seam check: extend `crates/search/tests/no_forbidden_deps.rs` (task 4) to assert no embedding/vector implementation exists and the trait carries no model or vector-store types (SE-7 scenario "embedding seam is empty").
 
 ### Unit `A4` (PR 5, tasks 20–26) — `crates/taxonomy` loader and strict validation (design §8 pre-declared split unit)
 

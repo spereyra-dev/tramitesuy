@@ -316,3 +316,157 @@ All edits stayed inside the allowed surfaces: `crates/search/**`,
 ### Remaining after A2
 - Unit A3 (tasks 16–19): confidence, selection, engine facade,
   embedding-seam check — consumes the A2 scoring stages directly.
+
+## Work unit A3 (PR 4, tasks 16–19) — 2026-09-17
+
+Executed by the delegated `sdd-apply` executor with strict TDD (`cargo test`).
+All edits stayed inside the allowed surfaces: `crates/search/**`,
+`openspec/changes/add-mvp-core/{tasks.md,apply-progress.md}`.
+
+### A3.1 (task 16) — confidence RED → GREEN → REFACTOR
+- RED evidence: `cargo test -p search` after authoring the test binaries (before
+  any implementation) → all nine new/extended test binaries failed to compile:
+  `unresolved import search::confidence`, `search::selection`,
+  `search::engine` (support's StubProvider imports the missing engine trait),
+  across confidence/selection/engine/determinism/matcher/rules/ranker/
+  explanation/tokenizer. Full output retained in the session transcript.
+- GREEN: `crates/search/src/confidence.rs` — `confidence(&[i64])` counts only
+  strictly positive scores (order-independent: sorts internally); 0 positives
+  → 0.0, 1 → `CONFIDENCE_SINGLE_CANDIDATE_FLOOR`, ≥2 →
+  `top1/(top1+top2)` via `round_two` (exact `{:.2}` formatting, design D-1's
+  round-half-even note). `cargo test -p search` → confidence 8/8 ok.
+- REFACTOR: clippy `-D warnings` flagged `assertions_on_constants` on the two
+  constant-vs-constant MIN_OPEN_SCORE assertions (A1 gotcha repeated);
+  removed them — the behavioral cases (weak single → disambiguation) prove
+  the gate. One test-case bug of the author caught at GREEN: `[1, 2]` sorted
+  descending means top1 = 2, so the assertion was corrected to 0.67 (the
+  implementation was right; the RED expectation was wrong and is now
+  recorded here).
+
+### A3.2 (task 17) — selection RED → GREEN
+- RED evidence: same failing run (`unresolved import search::selection`).
+- GREEN: `crates/search/src/selection.rs` — `select(confidence, results,
+  categories)`: no results or `confidence < 0.40` → Categories (sorted,
+  deduplicated payload via BTreeSet); `confidence ≥ 0.75` AND `top1.score ≥
+  MIN_OPEN_SCORE` → Open; otherwise → Disambiguation with up to
+  `MAX_DISAMBIGUATION_OPTIONS = 3` top-scored events. Band edges inclusive:
+  0.75 → open, 0.40 → disambiguation, 0.3999 → categories. Single weak
+  candidate (score 3, confidence 0.80) lands in disambiguation as the only
+  option. Zero positive scores → Categories even when negative-scored events
+  sit in the ranked list (SE-9's no-result clause wins over list contents).
+  selection → 8/8 ok.
+- **Decision recorded (spec-ambiguous case):** disambiguation options take
+  the top 3 of the ranked results as-is, which may include a negative-scored
+  event — this follows the A2 recorded note that negative-scored events stay
+  in the ranked list and the disambiguation band may still show them.
+
+### A3.3 (task 18) — engine facade RED → GREEN
+- RED evidence: same failing run (`unresolved import search::engine`, plus
+  the determinism extension's `could not find engine in search`).
+- GREEN: `crates/search/src/engine.rs` —
+  `CandidateProvider { rule_name, candidates }` trait (per design §3:
+  `rule_name() -> &'static str`, `candidates(&self, &NormalizedQuery) ->
+  Result<Vec<Candidate>, EngineError>`), typed `EngineError::ProviderFailed`
+  via thiserror (provider failure = structural hard error, design §3 error
+  strategy), and `SearchEngine::new(events, synonyms)` +
+  `search(&self, query: &str, providers: &[&dyn CandidateProvider]) ->
+  Result<SearchOutcome, EngineError>` composing normalize → tokenize → match
+  → rules → rank → confidence → selection. Provider-list permutation
+  invariance is achieved by sorting candidates into canonical order
+  (event_slug, rule_name, value) before ranking — the ranker itself is
+  unchanged. Categories payload derives from the events' category slugs:
+  `EventLexicon` gains `category: String` (consumed from the fixture, as
+  anticipated in the support module's task-10 note).
+- Tests: end-to-end open case (`compre un auto usado` → 36, confidence 0.82,
+  Open comprar-vehiculo), provider entries merged under their own rule name
+  (FTS_TEXT/TRIGRAM preserved, term None), provider permutation invariance,
+  zero-match → Categories with categories ["vehiculos"], near-duplicate
+  separability through the facade (`vendi mi auto` → vender 33, comprar −7
+  with NEGATIVE_KEYWORD −15), provider failure propagates as Err. engine →
+  6/6 ok.
+- **Deviation from the design §3 sketch (recorded, not silent):** the sketch
+  shows `pub trait SearchEngine { fn search(...) -> SearchOutcome }`; A3
+  implements `SearchEngine` as a struct with an inherent `search` returning
+  `Result<SearchOutcome, EngineError>` so a failing provider is a hard error
+  instead of being swallowed. The single-implementation trait adds no test
+  demand; C2 consumes the struct directly.
+- **Task 8 deviation closed (recorded in A1):** the full SE-1 determinism
+  clause is now asserted — `tests/determinism.rs` gains
+  `full_pipeline_outcome_is_identical_across_runs`: two complete engine runs
+  yield a byte-identical `SearchOutcome` (scores, ordering, confidence,
+  selection, explanations). determinism → 4/4 ok.
+
+### A3.4 (task 19) — embedding-seam guard RED → falsifiability
+- Authored inside the RED batch: `no_forbidden_deps.rs` gains
+  `no_embedding_or_vector_implementation_exists` (scans `crates/search/src`
+  for Embedding/Embedding/VectorStore/vector_store/OpenAI/openai/huggingface/
+  sentence_transformer after stripping comments, so prose about the absence
+  of AI never trips the scan) and
+  `candidate_provider_trait_carries_no_model_or_vector_types` (asserts the
+  trait block keeps the rule_name/candidates seam shape and contains no
+  model/vector/Embedding type references).
+- Falsifiability evidence: a temporary `pub struct EmbeddingProbe;` in
+  `engine.rs` made the scan fail with
+  `engine.rs references `Embedding`: the MVP ships no embeddings, models, or
+  vector stores — the CandidateProvider seam must stay empty`; reverted,
+  suite GREEN again. no_forbidden_deps → 4/4 ok.
+
+### A3 support/test-support changes
+- `tests/support/mod.rs`: adds `StubProvider` (deterministic, query-agnostic
+  candidate provider reused by the golden harness in task 34), and
+  `event_lexicon` now fills `EventLexicon::category` from the fixture. The
+  module-level `allow(dead_code)` is narrowed to `FixtureEvent::name` (still
+  ahead of its A5 consumer).
+- `src/lib.rs` exports `confidence`, `selection`, `engine`.
+- `src/types.rs`: `EventLexicon` gains `category: String`.
+
+### A3 verification evidence
+- `cargo test -p search` → 58 passed, 0 failed (confidence 8, constants 2,
+  determinism 4, engine 6, explanation 3, matcher 5, no_forbidden_deps 4,
+  normalizer 6, ranker 4, rules 5, selection 8, tokenizer 3).
+- `cargo test --workspace` → 58 passed, 0 failed (search 58 + workspace lib
+  stubs 0).
+- `cargo fmt --all -- --check` → exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0 (two
+  assertions_on_constants findings fixed during REFACTOR).
+- Purity: `tests/no_forbidden_deps.rs` 4/4 ok (manifest allowlist, src symbol
+  scan, embedding-seam scan, trait-seam scan). New src modules import only
+  `crate::*`, `std::collections`, and `thiserror` (allowlisted).
+
+### A3 review-budget accounting
+- Authored diff: **796 insertions / 10 deletions (≈786 net changed lines)**
+  — above the 400-line default budget for the third consecutive unit.
+  Breakdown: tests/engine.rs 189, tests/selection.rs 130,
+  tests/no_forbidden_deps.rs +122, tests/confidence.rs 95, src/engine.rs 141,
+  src/selection.rs 63, src/confidence.rs 40, plus ~56 net in tracked files
+  (support +41, determinism +27, types +4, lib +4). The overage is
+  structural: every GREEN module carries its RED contract tests in the same
+  unit, the task-19 guard required comment-stripping plus falsifiability
+  probes, and the task-18 determinism closure needed the full-pipeline
+  test. Nothing was compressed, restyled, or deleted to approach the
+  number; no comments, docs, or tests were dropped.
+- Per contract, the decision belongs to the maintainer before PR 4 is
+  opened.
+
+### Pending maintainer decisions (carried from A1/A2, still not decided here)
+1. **Review-budget overage:** PR 2 (approx. 554 net), PR 3 (approx. 714
+   changed), PR 4 (approx. 786 changed) all exceed the 400-line budget.
+   `size:exception` acceptance vs a chaining decision for the already-authored
+   units remains **pending** — required before the first PR is opened.
+2. **Chain strategy: pending** — `stacked-to-main` vs `feature-branch-chain`
+   still unchosen while the change's total forecast is ~4,800-6,150 lines
+   (risk High, chained PRs recommended). This run continued the established
+   single-work-unit-commit-on-master pattern (no PR opened, no push) on the
+   user's explicit instruction.
+
+### Task state (cumulative)
+- Completed: 1-5 (S0), 6-10 (A1), 11-15 (A2), 16-19 (A3). 75 unchecked remain
+  (units A4...C3 + baseline rebase).
+- Commit: A3 work-unit commit created on `master` (Conventional Commit
+  referencing unit A3 / PR 4), no push; this apply-progress section and the
+  tasks.md checkbox updates 16-19 ship inside that same commit.
+
+### Remaining after A3
+- Unit A4 (tasks 20-26): `crates/taxonomy` loader + strict validation +
+  `taxonomy-validate` CLI (design section 8 pre-declared split unit) —
+  independent of crates/search, depends on S0 only.

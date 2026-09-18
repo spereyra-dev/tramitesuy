@@ -12,10 +12,13 @@
 //!
 //! Purity is enforced by `tests/no_forbidden_deps.rs`.
 
+pub mod confidence;
 pub mod constants;
+pub mod engine;
 pub mod matcher;
 pub mod normalizer;
 pub mod ranker;
 pub mod rules;
+pub mod selection;
 pub mod tokenizer;
 pub mod types;

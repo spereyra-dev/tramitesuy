@@ -14,6 +14,21 @@ const ALLOWED_DEPENDENCIES: [&str; 3] = ["serde", "thiserror", "serde_yaml"];
 /// Symbols that must never appear in `crates/search/src`.
 const FORBIDDEN_SRC_SYMBOLS: [&str; 4] = ["sqlx", "reqwest", "tokio", "std::fs"];
 
+/// Embedding/vector/AI symbols that must never appear in `crates/search/src`
+/// code (SE-7 scenario "embedding seam is empty", task 19). Comments are
+/// stripped before scanning so documentation about the *absence* of AI does
+/// not trip the guard.
+const FORBIDDEN_AI_SYMBOLS: [&str; 8] = [
+    "Embedding",
+    "embedding",
+    "VectorStore",
+    "vector_store",
+    "OpenAI",
+    "openai",
+    "huggingface",
+    "sentence_transformer",
+];
+
 fn collect_rs_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
@@ -61,6 +76,113 @@ fn manifest_dependency_allowlist_is_pure() {
         assert!(
             ALLOWED_DEPENDENCIES.contains(&dep.as_str()),
             "crates/search must stay pure: dependency `{dep}` is not in the allowlist {ALLOWED_DEPENDENCIES:?}"
+        );
+    }
+}
+
+/// Removes `//`-line and `/* */`-block comments so that prose about the
+/// no-AI constraint never triggers the symbol scan. Rust string literals
+/// containing `//` would be mangled, but the engine's src holds none.
+fn strip_comments(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut chars = source.chars().peekable();
+    let mut in_line = false;
+    let mut in_block = false;
+    while let Some(c) = chars.next() {
+        if in_line {
+            if c == '\n' {
+                in_line = false;
+                out.push(c);
+            }
+            continue;
+        }
+        if in_block {
+            if c == '*' && chars.peek() == Some(&'/') {
+                chars.next();
+                in_block = false;
+            }
+            continue;
+        }
+        if c == '/' {
+            match chars.peek() {
+                Some('/') => {
+                    chars.next();
+                    in_line = true;
+                    continue;
+                }
+                Some('*') => {
+                    chars.next();
+                    in_block = true;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        out.push(c);
+    }
+    out
+}
+
+#[test]
+fn no_embedding_or_vector_implementation_exists() {
+    // SE-7 scenario "embedding seam is empty" (task 19): the codebase must
+    // not contain any embedding or vector implementation.
+    let src_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let files = collect_rs_files(&src_dir);
+    assert!(
+        files.len() >= 3,
+        "expected the engine's source files under src/, found {}",
+        files.len()
+    );
+
+    for file in &files {
+        let contents = std::fs::read_to_string(file)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", file.display()));
+        let code = strip_comments(&contents);
+        for symbol in FORBIDDEN_AI_SYMBOLS {
+            assert!(
+                !code.contains(symbol),
+                "{} references `{symbol}`: the MVP ships no embeddings, models, or vector stores — the CandidateProvider seam must stay empty",
+                file.display()
+            );
+        }
+    }
+}
+
+#[test]
+fn candidate_provider_trait_carries_no_model_or_vector_types() {
+    // SE-7 scenario (task 19): the trait signature itself must stay free of
+    // model or vector-store types so an embedding provider could only ever
+    // be added behind the same seam.
+    let engine_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/engine.rs");
+    let contents = std::fs::read_to_string(&engine_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", engine_path.display()));
+    let code = strip_comments(&contents);
+
+    let trait_start = code
+        .find("trait CandidateProvider")
+        .expect("CandidateProvider trait must be defined in crates/search/src/engine.rs");
+    let trait_body = &code[trait_start..];
+    let trait_end = trait_body
+        .find("\n}")
+        .unwrap_or_else(|| panic!("CandidateProvider trait block must close"));
+    let trait_block = &trait_body[..trait_end];
+
+    assert!(
+        trait_block.contains("rule_name") && trait_block.contains("candidates"),
+        "CandidateProvider must keep its rule_name/candidates seam shape"
+    );
+    for symbol in [
+        "Model",
+        "model",
+        "Vector",
+        "vector",
+        "Embedding",
+        "embedding",
+    ] {
+        assert!(
+            !trait_block.contains(symbol),
+            "CandidateProvider must not reference {symbol}: the seam carries no model or vector-store types"
         );
     }
 }

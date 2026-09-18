@@ -1,11 +1,11 @@
 //! Determinism contract (SE-1, task 8): identical inputs produce identical
 //! output on every run in the same process.
 //!
-//! Unit A1 covers the deterministic foundations available at this point:
-//! normalization and synonym canonicalization over the shared taxonomy
-//! fixture. The full-pipeline determinism assertion (scores, ordering,
-//! confidence, explanations) extends this test in units A2/A3 (tasks 14, 18)
-//! as matcher, ranker, confidence, and selection land.
+//! Unit A1 covered the deterministic foundations (normalization, synonym
+//! canonicalization) and unit A2 extended the assertion through the ranker.
+//! Unit A3 closes the full SE-1 clause: the complete engine pipeline —
+//! scores, ordering, confidence, and selection — is asserted byte-identical
+//! across runs (task 18).
 
 mod support;
 
@@ -74,4 +74,28 @@ fn ranked_scores_and_ordering_are_identical_across_runs() {
     };
 
     assert_eq!(run(), run(), "two identical runs must be byte-identical");
+}
+
+#[test]
+fn full_pipeline_outcome_is_identical_across_runs() {
+    // SE-1 full clause, closed in task 18: the whole engine facade run —
+    // scores, ordering, confidence, and selection — is byte-identical for
+    // identical inputs, in one process.
+    let fixture = support::vehiculos_fixture();
+    let engine = search::engine::SearchEngine::new(
+        fixture.events.iter().map(support::event_lexicon).collect(),
+        fixture.synonyms,
+    );
+
+    let run = || {
+        engine
+            .search("¡¿Compré un AUTO usado?!", &[])
+            .expect("search must succeed")
+    };
+
+    assert_eq!(
+        run(),
+        run(),
+        "the full pipeline (scores, ordering, confidence, selection, explanations) must be byte-identical"
+    );
 }

@@ -123,6 +123,9 @@ pub struct CombinationRule {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EventLexicon {
     pub slug: String,
+    /// Category slug the event belongs to; feeds the Categories no-result
+    /// band's payload (SE-10).
+    pub category: String,
     pub keywords: Vec<Keyword>,
     pub rules: Vec<CombinationRule>,
 }
