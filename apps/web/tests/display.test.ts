@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import * as display from '@/lib/display';
 import {
   requiredFlagCopy,
   sourceLinkState,
@@ -68,7 +69,8 @@ describe('display helpers: cost_display verbatim (no formatting layer)', {
 
   it('never composes an estimated or formatted cost text', () => {
     // No display export may contain a cost formatting/estimation function.
-    expect(Object.keys(require('@/lib/display'))).not.toContain('formatCost');
-    expect(Object.keys(require('@/lib/display'))).not.toContain('estimateCost');
+    const exportNames = Object.keys(display).join(' ');
+    expect(exportNames).not.toMatch(/cost/i);
+    expect(exportNames).not.toMatch(/estimat|format.*cost|cost.*format/i);
   });
 });
