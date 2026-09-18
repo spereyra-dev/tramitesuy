@@ -97,3 +97,5 @@ jobs:
           cargo test -p ingest --test export_ids --test seed_taxonomy
       - name: ignored live-CKAN test (one real package_show)
         run: cargo test -p ingestion --features live-ckan --test ckan_live -- --ignored
+        env:
+          CKAN_BASE_URL: https://catalogodatos.gub.uy
