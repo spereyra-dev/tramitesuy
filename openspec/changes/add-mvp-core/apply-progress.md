@@ -784,3 +784,120 @@ guard fired: the authored diff exceeds 400 lines, so the unit was delivered as
   CI wiring — consumes the real nine-event seed and the StubProvider.
 - Carried maintainer decisions: budget overage (PRs 2–6 all above 400
   lines) and chain strategy — still pending, not decided here.
+
+## Work unit A6 (PR 7, tasks 34–38) — 2026-09-17
+
+Executed by the delegated `sdd-apply` executor with strict TDD (`cargo test`).
+Allowed edit surfaces honored: `crates/search/**` (harness + tests + support
+only — engine behavior untouched), `tests/search/golden_dataset.yaml` (new),
+`.github/workflows/ci.yml` (golden-gate TODO slot only), and the two openspec
+artifacts. `data/**` was never modified.
+
+### A6.0 — RED batch (tasks 34–37, before any implementation)
+- Dataset `tests/search/golden_dataset.yaml` authored first (task 35) together
+  with the RED test binary `crates/search/tests/golden.rs` and the shared
+  `support::real_seed()` loader (validates the real seed against the committed
+  external-id snapshot exactly as the task-26/32 CLI does).
+- RED evidence: `cargo test -p search --test golden` → 11 compile errors,
+  `error[E0433]: could not find 'golden' in 'search'` across all five tests
+  (module absent), plus `unresolved import` for the golden types. Captured
+  before any `src/golden.rs` existed.
+
+### A6.1 (task 34) — harness runner GREEN
+- `crates/search/src/golden.rs` (pure, no fs): `parse_dataset` (serde
+  `deny_unknown_fields`, version-gated to 1), `run_cases`/`run_case`
+  (per-case expectation failures naming the regressing query), `Metrics`
+  + `metrics_table` (Top1 / Top3 / No-result / Ambiguous table), `gate`
+  (case failures + baseline assertions). `lib.rs` exports `golden`.
+- GREEN evidence: `cargo test -p search --test golden` → 5 passed / 0 failed.
+- Measured dataset v1 metrics over the real nine-event seed with the
+  deterministic DB-free `StubProvider` (no provider contributions; the seed's
+  keyword/rules layer decides, as in per_event.rs):
+  `Top1 1.00 (47/47) · Top3 1.00 (6/6) · No-result 0.04 (2/50) · Ambiguous
+  0.22 (11/50)` — every baseline holds honestly; none was lowered.
+
+### A6.2 (task 35) — dataset v1
+- 50 cases (40–60 range ✓): per-event positives for all nine events
+  (`expect_top1`), negative/confusion cases (`expect_not_top1`), five
+  multi-slug `expect_top3` cases, one intentional ambiguity case (`mi auto`,
+  no top1 expectation) and two out-of-scope no-result cases (`donde saco el
+  pasaporte`, `quiero abrir una cuenta bancaria`).
+- Case wording respects the recorded stem-rule findings: no `como`-type
+  tokens (A5's `como`-vs-`comprar` prefix collision), `choque` cases rely on
+  the explicit seed terms. Dataset authoring only — no seed edit needed, so
+  no STOP was required.
+
+### A6.3 (task 36) — falsifiability GREEN (design verification checklist)
+- Harness-owned in-memory fixture (two minimal events + `auto → vehiculo`
+  synonym, independent of `data/`): with `vehiculo` weight 8, `auto usado`
+  opens `comprar-vehiculo` (11 > 8) and the gate passes; degrading that one
+  keyword weight to 4 flips top1 to `vender-vehiculo` and the gate fails
+  naming the regressing query:
+  `golden case "auto usado": expected top1 comprar-vehiculo, got
+  vender-vehiculo` + `Top1 accuracy 0.00 is below the recorded baseline 1.00`.
+- Nothing to restore on disk: the degraded weight exists only inside the test
+  process; `data/` untouched (verified: no seed edit in this unit).
+
+### A6.4 (task 37) — accounting RED → GREEN
+- Three-case accounting fixture: `compre un auto usado` (open, top1 hit),
+  `auto` (genuine tie → disambiguation band), `xyzzy qwerty` (zero match →
+  categories no-result path). Asserts `no_result_cases == 1`,
+  `ambiguous_cases == 1`, rates 1/3 each, and that the printed table names
+  Top1 / Top3 / No-result / Ambiguous.
+- A first GREEN run caught a real accounting bug: `top3_hit` was vacuously
+  true for cases without `expect_top3`, inflating the Top3 rate to 8.33
+  (50/6). Fixed to `top3_declared && all(...)`; Top3 now measures only
+  declared cases (6/6 = 1.00).
+
+### A6.4 (task 38) — CI golden gate
+- `.github/workflows/ci.yml`: the reserved `# golden-gate:` TODO block is
+  replaced by a required `golden-gate` job running
+  `cargo test -p search --test golden`; the in-job TODO comment now points to
+  the dedicated job. No other job touched; the `taxonomy-validate` TODO stays
+  reserved for task 90.
+
+### A6 verification evidence
+- `cargo test -p search --test golden` → 5 passed / 0 failed.
+- `cargo test -p search` → all binaries green (golden 5; 54 other search
+  tests unchanged and green, incl. per_event 3 and no_forbidden_deps 4).
+- `cargo test --workspace` → 31/31 test binaries report ok (no failures).
+- `cargo fmt --all -- --check` → exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0 (two
+  findings fixed during REFACTOR: collapsible-if in `case_failures`,
+  empty-line-after-doc-comments in the appended support loader).
+- Purity: `crates/search/src/golden.rs` parses from `&str` only; the
+  no_forbidden_deps boundary tests remain green.
+
+### A6 review-budget accounting
+- Authored diff: **≈ 809 changed lines** (new files: src/golden.rs 314,
+  tests/golden.rs 262, golden_dataset.yaml 156; modified: support/mod.rs +71,
+  ci.yml +10/−5, lib.rs +1) — above the 400-line default budget for the
+  fourth consecutive unit. The overage is structural: the harness module and
+  its RED contract tests are one work unit, and dataset v1 is 156 lines of
+  case data. Nothing was compressed, restyled, or deleted to approach the
+  number; no comments, docs, or tests were dropped.
+- Per contract, the decision belongs to the maintainer before PR 7 is opened.
+
+### Pending maintainer decisions (carried from A1–A5, still not decided here)
+1. **Review-budget overage:** PRs 2–7 all exceed the 400-line budget
+   (approx. 554, 714, 786, 1,273, ~630, and now ~809 changed lines).
+   `size:exception` acceptance vs a chaining decision for the already-authored
+   units remains **pending** — required before the first PR is opened.
+2. **Chain strategy: pending** — `stacked-to-main` vs
+   `feature-branch-chain` still unchosen while the change's total forecast is
+   ~4,800–6,150 lines (risk High, chained PRs recommended). This run
+   continued the established single-work-unit-commit-on-master pattern (no
+   PR opened, no push) on the user's explicit instruction.
+
+### Task state (cumulative)
+- Completed: 1–5 (S0), 6–10 (A1), 11–15 (A2), 16–19 (A3), 20–26 (A4),
+  27–33 (A5), 34–38 (A6). 56 unchecked remain (units B1…C3 + baseline
+  rebase).
+- Commit: A6 work-unit commit created on `master` (8 files changed, 935
+  insertions, 10 deletions; Conventional Commit referencing unit A6 / PR 7),
+  no push; hash recorded in the phase report.
+
+### Remaining after A6
+- Slice (a) is complete: pure engine + taxonomy + seed + golden gate.
+- Unit B1 (tasks 39–44): migrations 0001–0011 + `crates/db` pool — first
+  unit of stage (b); needs the compose Postgres for the migration tests.

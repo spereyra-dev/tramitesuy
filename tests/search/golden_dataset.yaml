@@ -1,0 +1,156 @@
+# Golden dataset v1 (SE-12, D-7, tasks 34–35).
+#
+# Every case is a citizen query with its expected outcome over the real
+# nine-event Vehiculos seed. Expectations:
+#   expect_top1    - the event slug that must rank first
+#   expect_top3    - every listed slug must appear within the top 3 results
+#   expect_not_top1- the event slug that must NOT rank first
+#
+# Baselines are provisional values fixed at slice (a) GREEN (design D-7);
+# task 93 records the measured numbers in its own review-visible commit.
+# A regressing case fails `cargo test -p search --test golden` naming its
+# query (SE-12 scenario "golden dataset gates a ranking regression").
+#
+# Case wording respects the recorded stem-rule findings (A5): `choque`-type
+# irregular surfaces rely on the explicit seed terms, and no query uses
+# `como`-type tokens whose 3-char stem prefix-matches another keyword.
+version: 1
+baselines:
+  top1: 0.90
+  top3: 0.95
+  max_no_result_rate: 0.15
+  max_ambiguous_rate: 0.40
+cases:
+  # ── comprar-vehiculo positives ─────────────────────────────────────
+  - query: "compre un auto usado"
+    expect_top1: comprar-vehiculo
+    expect_not_top1: [vender-vehiculo, transferir-vehiculo]
+    expect_top3: [comprar-vehiculo, cambiar-matricula, consultar-deuda-vehicular]
+  - query: "quiero comprar un vehiculo nuevo"
+    expect_top1: comprar-vehiculo
+  - query: "comprar un coche"
+    expect_top1: comprar-vehiculo
+  - query: "precio de un automovil usado"
+    expect_top1: comprar-vehiculo
+  - query: "quiero comprar un auto"
+    expect_top1: comprar-vehiculo
+  - query: "requisitos para comprar un vehiculo"
+    expect_top1: comprar-vehiculo
+  - query: "donde compro un coche"
+    expect_top1: comprar-vehiculo
+    expect_not_top1: [vender-vehiculo]
+  # ── vender-vehiculo positives ──────────────────────────────────────
+  - query: "vendi mi auto"
+    expect_top1: vender-vehiculo
+    expect_not_top1: [comprar-vehiculo, transferir-vehiculo]
+    expect_top3: [vender-vehiculo, cambiar-matricula, consultar-deuda-vehicular]
+  - query: "quiero vender mi coche"
+    expect_top1: vender-vehiculo
+  - query: "venta de vehiculos usados"
+    expect_top1: vender-vehiculo
+  - query: "quiero vender mi automovil"
+    expect_top1: vender-vehiculo
+  - query: "donde vendo mi auto"
+    expect_top1: vender-vehiculo
+  - query: "vendi mi moto"
+    expect_top1: vender-vehiculo
+  # ── transferir-vehiculo positives ──────────────────────────────────
+  - query: "transferir un auto a otro titular"
+    expect_top1: transferir-vehiculo
+  - query: "hacer la transferencia del auto"
+    expect_top1: transferir-vehiculo
+  - query: "traspaso de un vehiculo usado"
+    expect_top1: transferir-vehiculo
+  - query: "cesion de un automovil a mi nombre"
+    expect_top1: transferir-vehiculo
+  # ── perder-libreta positives ───────────────────────────────────────
+  - query: "perdi mi libreta de conducir"
+    expect_top1: perder-libreta
+    expect_not_top1: [cambiar-matricula]
+  - query: "perdi la licencia de conducir"
+    expect_top1: perder-libreta
+  - query: "se me perdio la libreta para manejar"
+    expect_top1: perder-libreta
+  - query: "renovar la libreta de conducir"
+    expect_top1: perder-libreta
+  # ── pagar-patente positives ────────────────────────────────────────
+  - query: "pagar la patente de mi auto"
+    expect_top1: pagar-patente
+    expect_not_top1: [consultar-deuda-vehicular]
+    expect_top3: [pagar-patente, cambiar-matricula, comprar-vehiculo]
+  - query: "pagar la patente del vehiculo"
+    expect_top1: pagar-patente
+  - query: "donde pago la patente"
+    expect_top1: pagar-patente
+  - query: "pagar el impuesto de mi auto"
+    expect_top1: pagar-patente
+  - query: "pagar las placas del coche"
+    expect_top1: pagar-patente
+  - query: "pagar patente de vehiculo"
+    expect_top1: pagar-patente
+  - query: "pagar el impuesto vehicular"
+    expect_top1: pagar-patente
+  # ── consultar-deuda-vehicular positives ────────────────────────────
+  - query: "consultar deuda de mi vehiculo"
+    expect_top1: consultar-deuda-vehicular
+    expect_not_top1: [pagar-patente]
+    expect_top3: [consultar-deuda-vehicular, cambiar-matricula, comprar-vehiculo]
+  - query: "consultas de deuda vehicular"
+    expect_top1: consultar-deuda-vehicular
+  - query: "quiero consultar la deuda de mi patente"
+    expect_top1: consultar-deuda-vehicular
+  - query: "consultar multas de mi vehiculo"
+    expect_top1: consultar-deuda-vehicular
+  - query: "ver la deuda de mi coche"
+    expect_top1: consultar-deuda-vehicular
+    expect_not_top1: [pagar-patente]
+  # ── cambiar-matricula positives ────────────────────────────────────
+  - query: "cambiar la matricula de mi auto"
+    expect_top1: cambiar-matricula
+    expect_not_top1: [perder-libreta]
+    expect_top3: [cambiar-matricula, comprar-vehiculo, consultar-deuda-vehicular]
+  - query: "cambiar matricula a montevideo"
+    expect_top1: cambiar-matricula
+  - query: "cambio de matricula del vehiculo"
+    expect_top1: cambiar-matricula
+  - query: "quiero cambiar la matricula del auto"
+    expect_top1: cambiar-matricula
+    expect_not_top1: [perder-libreta]
+  # ── vehiculo-robado positives ──────────────────────────────────────
+  - query: "me robaron el auto"
+    expect_top1: vehiculo-robado
+    expect_not_top1: [accidente-de-transito]
+    expect_top3: [vehiculo-robado, cambiar-matricula, comprar-vehiculo]
+  - query: "denunciar un vehiculo robado"
+    expect_top1: vehiculo-robado
+  - query: "me robaron la moto"
+    expect_top1: vehiculo-robado
+  - query: "robo de mi vehiculo"
+    expect_top1: vehiculo-robado
+  - query: "donde denuncio un robo de auto"
+    expect_top1: vehiculo-robado
+  # ── accidente-de-transito positives ────────────────────────────────
+  - query: "tuve un accidente de transito"
+    expect_top1: accidente-de-transito
+    expect_not_top1: [vehiculo-robado]
+  - query: "choque mi auto"
+    expect_top1: accidente-de-transito
+  - query: "chocar mi coche contra otro"
+    expect_top1: accidente-de-transito
+  - query: "tuve un choque con mi auto"
+    expect_top1: accidente-de-transito
+  # ── cross-event confusion and ambiguity coverage ───────────────────
+  # Entity-only query: comprar-vehiculo must still win its top1 slot even
+  # though the confidence lands in the disambiguation band (counted in the
+  # ambiguous rate by the harness accounting, task 37).
+  - query: "vehiculo usado"
+    expect_top1: comprar-vehiculo
+    expect_not_top1: [vender-vehiculo]
+  # Bare entity: a genuine many-way tie -> disambiguation band, no top1
+  # expectation (the harness records this case as ambiguous).
+  - query: "mi auto"
+  # ── no-result coverage ─────────────────────────────────────────────
+  # Out-of-scope queries must fall to the related-categories path and be
+  # counted as no-result by the harness accounting (task 37).
+  - query: "donde saco el pasaporte"
+  - query: "quiero abrir una cuenta bancaria"

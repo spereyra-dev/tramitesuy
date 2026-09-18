@@ -41,13 +41,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.94.1
       - name: cargo test --workspace
         run: cargo test --workspace
-        # TODO(D-7): the golden gate becomes a required step here once the
-        # golden-dataset baselines exist: `cargo test -p search --test golden`.
+        # The golden gate runs as its own required job below (task 38,
+        # D-7): `cargo test -p search --test golden`.
 
   # taxonomy-validate:
   #   TODO(task 26/90): wire the DB-free `taxonomy-validate <data-dir> <snapshot-file>`
   #   CLI as a required check once crates/taxonomy ships its CLI.
 
-  # golden-gate:
-  #   TODO(task 34/38): required check running `cargo test -p search --test golden`
-  #   against tests/search/golden_dataset.yaml once slice (a) lands baselines.
+  golden-gate:
+    name: golden dataset gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.1
+      - name: cargo test -p search --test golden
+        run: cargo test -p search --test golden

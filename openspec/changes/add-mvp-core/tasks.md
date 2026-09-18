@@ -198,11 +198,11 @@ dependency diagram with the current PR marked `📍`.
 
 ### Unit `A6` (PR 7, tasks 34–38) — golden-dataset harness and baselines
 
-- [ ] 34. RED `crates/search/tests/golden.rs` + `crates/search/src/golden.rs`: load `tests/search/golden_dataset.yaml` via `concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/search/golden_dataset.yaml")`, run every case over the nine real event YAMLs with a deterministic DB-free `StubProvider`, print the Top1 / Top3 / no-result / ambiguous metrics table, and fail naming the regressing query slug (SE-12, D-7).
-- [ ] 35. Create `tests/search/golden_dataset.yaml` v1: `version: 1`, `baselines` (`top1: 0.90`, `top3: 0.95`, `max_no_result_rate: 0.15`, `max_ambiguous_rate: 0.40`) and ~40–60 cases using `expect_top1`, `expect_top3`, and `expect_not_top1`, covering per-event positives/negatives plus cross-event confusions (SE-12, D-7).
-- [ ] 36. RED falsifiability check: deliberately degrade one keyword weight inside a harness-owned fixture and assert the gate fails naming the regressed query; restore and keep the captured failing output as slice (a) evidence (design verification checklist).
-- [ ] 37. RED accounting checks: a zero-match query is counted as no-result and an ambiguous-confidence query is counted in the ambiguous rate; both values appear in the printed metrics table (SE-12 scenario "metrics are reported per run").
-- [ ] 38. Wire the golden gate into `.github/workflows/ci.yml` (task 3) as a required check running `cargo test -p search --test golden`, so a Top1/Top3 regression fails the suite (SE-12, D-7).
+- [x] 34. RED `crates/search/tests/golden.rs` + `crates/search/src/golden.rs`: load `tests/search/golden_dataset.yaml` via `concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/search/golden_dataset.yaml")`, run every case over the nine real event YAMLs with a deterministic DB-free `StubProvider`, print the Top1 / Top3 / no-result / ambiguous metrics table, and fail naming the regressing query slug (SE-12, D-7).
+- [x] 35. Create `tests/search/golden_dataset.yaml` v1: `version: 1`, `baselines` (`top1: 0.90`, `top3: 0.95`, `max_no_result_rate: 0.15`, `max_ambiguous_rate: 0.40`) and ~40–60 cases using `expect_top1`, `expect_top3`, and `expect_not_top1`, covering per-event positives/negatives plus cross-event confusions (SE-12, D-7).
+- [x] 36. RED falsifiability check: deliberately degrade one keyword weight inside a harness-owned fixture and assert the gate fails naming the regressed query; restore and keep the captured failing output as slice (a) evidence (design verification checklist).
+- [x] 37. RED accounting checks: a zero-match query is counted as no-result and an ambiguous-confidence query is counted in the ambiguous rate; both values appear in the printed metrics table (SE-12 scenario "metrics are reported per run").
+- [x] 38. Wire the golden gate into `.github/workflows/ci.yml` (task 3) as a required check running `cargo test -p search --test golden`, so a Top1/Top3 regression fails the suite (SE-12, D-7).
 
 ---
 

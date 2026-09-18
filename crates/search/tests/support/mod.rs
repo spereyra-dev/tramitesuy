@@ -11,6 +11,7 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use search::engine::{CandidateProvider, EngineError};
 use search::types::KeywordKind as EngineKeywordKind;
@@ -217,5 +218,75 @@ fn keyword(term: &'static str, kind: KeywordKind, weight: i64, negative: bool) -
         kind,
         weight,
         negative,
+    }
+}
+
+/// Loads and validates the real `data/` seed exactly as CI's
+/// taxonomy-validate CLI does (task 32), then projects it into the
+/// engine-ready lexicons + synonym map the golden harness consumes
+/// (task 34). Shared by the per-event tests' shape; the golden tests
+/// call this instead of re-implementing the loading pipeline.
+pub fn real_seed() -> (Vec<EventLexicon>, HashMap<String, String>) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("repo root");
+    let data_dir = root.join("data");
+    let snapshot = root.join("data/external_ids.snapshot.txt");
+    let errors = taxonomy::validator::validate_dir_against_snapshot(&data_dir, &snapshot);
+    assert!(
+        errors.is_empty(),
+        "the real seed must validate with zero errors, got: {errors:?}"
+    );
+    let taxonomy = taxonomy::loader::load_data_dir(&data_dir)
+        .expect("the real seed loads through the taxonomy loader");
+    let lexicons = taxonomy
+        .events
+        .iter()
+        .map(|source| event_lexicon_from_taxonomy(&source.event))
+        .collect();
+    let synonyms = taxonomy
+        .synonyms
+        .iter()
+        .map(|s| (s.synonym.term.clone(), s.synonym.canonical.clone()))
+        .collect();
+    (lexicons, synonyms)
+}
+
+/// Projects one taxonomy-crate event into the engine-side scoring
+/// lexicon (same mapping as per_event.rs's loader).
+fn event_lexicon_from_taxonomy(event: &taxonomy::model::Event) -> EventLexicon {
+    EventLexicon {
+        slug: event.slug.clone(),
+        category: event.category.clone(),
+        keywords: event
+            .keywords
+            .iter()
+            .map(|k| Keyword {
+                term: k.term.clone(),
+                canonical: if k.canonical.is_empty() {
+                    k.term.clone()
+                } else {
+                    k.canonical.clone()
+                },
+                kind: match k.keyword_type {
+                    taxonomy::model::KeywordType::Action => EngineKeywordKind::Action,
+                    taxonomy::model::KeywordType::Entity => EngineKeywordKind::Entity,
+                    taxonomy::model::KeywordType::Modifier => EngineKeywordKind::Modifier,
+                    taxonomy::model::KeywordType::Context => EngineKeywordKind::Context,
+                },
+                weight: k.weight,
+                negative: k.negative,
+            })
+            .collect(),
+        rules: event
+            .rules
+            .iter()
+            .map(|r| CombinationRule {
+                action: r.action.clone(),
+                entity: r.entity.clone(),
+                bonus: r.bonus,
+            })
+            .collect(),
     }
 }

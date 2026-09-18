@@ -15,6 +15,7 @@
 pub mod confidence;
 pub mod constants;
 pub mod engine;
+pub mod golden;
 pub mod matcher;
 pub mod normalizer;
 pub mod ranker;
