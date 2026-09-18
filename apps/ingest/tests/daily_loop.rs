@@ -8,8 +8,8 @@ use ingest::daily_loop::{DAY_SECONDS, RUN_AT_UTC_DAY_SECONDS, seconds_until_next
 
 #[test]
 fn before_3am_sleeps_until_3am_today() {
-    // 01:23:45 UTC → 03:00:00 - 01:23:45 = 1h 36m 15s.
-    assert_eq!(seconds_until_next_run(1 * 3600 + 23 * 60 + 45), 5775);
+    // 01:23:45 UTC → 03:00:00 - 01:23:45 = 1h 36m 15s (3600 + 23*60 + 45).
+    assert_eq!(seconds_until_next_run(3600 + 23 * 60 + 45), 5775);
 }
 
 #[test]
