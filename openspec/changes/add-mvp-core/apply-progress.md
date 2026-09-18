@@ -1087,3 +1087,34 @@ task 45 only.
 - Authored diff: ≈ 229 lines (ports 67, csv_parse 67, csv 41, error 41,
   row.rs base 84, summary 51, lib 5, fixture 5, −2 placeholder) — within
   the 400-line default budget.
+
+## Work unit B2a2 (PR 9, tasks 46–47) — 2026-09-17
+
+### B2a2.0 — RED (tasks 46–47, already captured)
+- RED evidence: the initial B2 RED batch (recorded in B2a1.0) already failed
+  these binaries at compile time — `unresolved import ingestion::row` ×3
+  (row_validation, raw_row) plus E0282 inference errors. No implementation
+  existed for `validate_rows`, `REQUIRED_COLUMNS`, `SOURCE_COLUMNS`, or
+  `to_raw_data_json` at capture time.
+
+### B2a2.1 (task 46) — GREEN row validation
+- `src/row.rs` gains `REQUIRED_COLUMNS` (exactly the IN-4 set: `id`,
+  `nombre_tramite`, `institucion_nombre`, `url`, `ques_es`), `SkippedRow`
+  {id: Option<String>, reason}, and `validate_rows` (skip-and-report; empty
+  or missing required column ⇒ skip; the run continues).
+- GREEN: `cargo test -p ingestion` → row_validation 4/4 ok.
+- One test-authoring bug caught at GREEN and fixed (implementation was
+  right): the unnamed-id case authored one bad row but asserted two skips;
+  the test now authors two malformed rows (empty id + empty url, empty url).
+
+### B2a2.2 (task 47) — GREEN raw-row preservation
+- `SOURCE_COLUMNS` (31 names) asserted against the parsed fixture's
+  column-name set; `to_raw_data_json()` carries all 31 columns including
+  `institucion_padre_organizacional_*` into the value destined for
+  `procedures.raw_data` JSONB (IN-8, D-4: parents stay unmodeled).
+- GREEN: raw_row 3/3 ok.
+
+### B2a2 review-budget accounting
+- Authored diff: ≈ 203 lines (row.rs +103, row_validation.rs 101 — minus
+  the shared fixture which landed in B2a1) — within the 400-line default
+  budget.

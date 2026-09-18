@@ -85,3 +85,46 @@ impl RawRow {
         Value::Object(obj)
     }
 }
+
+/// The source's required fields (spec IN-4). A row missing any of these is
+/// skipped and reported, never fatal.
+pub const REQUIRED_COLUMNS: [&str; 5] = [
+    "id",
+    "nombre_tramite",
+    "institucion_nombre",
+    "url",
+    "ques_es",
+];
+
+/// One skipped row: reported in the run summary, never fatal (IN-4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedRow {
+    /// The row's `id` when the id itself was present.
+    pub id: Option<String>,
+    /// Which required column(s) were missing.
+    pub reason: String,
+}
+
+/// Validates rows, splitting valid from skipped (skip-and-report, IN-4).
+/// Structural failure (unparseable file) stays a hard error upstream; a bad
+/// row is only ever a warning.
+pub fn validate_rows(rows: Vec<RawRow>) -> (Vec<RawRow>, Vec<SkippedRow>) {
+    let mut valid = Vec::new();
+    let mut skipped = Vec::new();
+    for row in rows {
+        let missing: Vec<&str> = REQUIRED_COLUMNS
+            .iter()
+            .copied()
+            .filter(|c| row.get(c).is_none_or(str::is_empty))
+            .collect();
+        if missing.is_empty() {
+            valid.push(row);
+        } else {
+            skipped.push(SkippedRow {
+                id: row.get("id").filter(|v| !v.is_empty()).map(str::to_string),
+                reason: format!("missing required field(s): {}", missing.join(", ")),
+            });
+        }
+    }
+    (valid, skipped)
+}
