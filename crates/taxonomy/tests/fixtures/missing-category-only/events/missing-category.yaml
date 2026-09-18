@@ -1,0 +1,8 @@
+# TX-2: missing required event fields (`category` is absent).
+slug: comprar-vehiculo
+name: Comprar un vehículo
+description: Trámites para comprar un vehículo nuevo o usado en Uruguay.
+keywords:
+  - term: comprar
+    type: ACTION
+    weight: 10

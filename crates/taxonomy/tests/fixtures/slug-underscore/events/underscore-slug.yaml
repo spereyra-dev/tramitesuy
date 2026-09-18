@@ -1,0 +1,9 @@
+# TX-4: underscore slug must be rejected with a suggestion.
+slug: comprar_vehiculo
+name: Comprar un vehículo
+description: Trámites para comprar un vehículo nuevo o usado en Uruguay.
+category: vehiculos
+keywords:
+  - term: comprar
+    type: ACTION
+    weight: 10

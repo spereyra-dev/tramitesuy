@@ -1,0 +1,8 @@
+# TX-2: a keyword missing its required `weight` field.
+slug: comprar-vehiculo
+name: Comprar un vehículo
+description: Trámites para comprar un vehículo nuevo o usado en Uruguay.
+category: vehiculos
+keywords:
+  - term: comprar
+    type: ACTION

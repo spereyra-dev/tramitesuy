@@ -1,0 +1,10 @@
+# TX-2: an unknown top-level field must fail validation naming the file and the field.
+slug: comprar-vehiculo
+name: Comprar un vehículo
+description: Trámites para comprar un vehículo nuevo o usado en Uruguay.
+category: vehiculos
+unexpected_field: oops
+keywords:
+  - term: comprar
+    type: ACTION
+    weight: 10

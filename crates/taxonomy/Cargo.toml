@@ -10,3 +10,7 @@ description = "Community taxonomy loading and strict validation (events, keyword
 serde.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
+
+[[bin]]
+name = "taxonomy-validate"
+path = "src/main.rs"

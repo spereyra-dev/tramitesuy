@@ -1,0 +1,9 @@
+# TX-3: duplicate event slugs across two files; the error must name both files.
+slug: comprar-vehiculo
+name: Comprar un vehículo (duplicado)
+description: Segunda declaración del mismo slug.
+category: vehiculos
+keywords:
+  - term: comprar
+    type: ACTION
+    weight: 10

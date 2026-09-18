@@ -1,0 +1,34 @@
+slug: comprar-vehiculo
+name: Comprar un vehículo
+description: Trámites para comprar un vehículo nuevo o usado en Uruguay.
+category: vehiculos
+keywords:
+  - term: comprar
+    type: ACTION
+    weight: 10
+  - term: vehiculo
+    type: ENTITY
+    weight: 8
+  - term: usado
+    type: MODIFIER
+    weight: 3
+  - term: vender
+    type: ACTION
+    weight: 15
+    negative: true
+rules:
+  - action: comprar
+    entity: vehiculo
+    bonus: 15
+relations:
+  - external_id: proc-001
+    order: 1
+    required: true
+  - external_id: proc-002
+    order: 2
+    required: false
+tests:
+  positive:
+    - compre un auto usado
+  negative:
+    - vendi mi auto

@@ -1,0 +1,4 @@
+# TX-3: duplicate category slugs; the error must name both files.
+slug: vehiculos
+name: Vehículos (duplicado)
+order_index: 2

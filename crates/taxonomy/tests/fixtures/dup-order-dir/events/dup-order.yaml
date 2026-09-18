@@ -1,0 +1,16 @@
+# TX-6/TX-3: two relations inside one event share the same `order` value.
+slug: comprar-vehiculo
+name: Comprar un vehículo
+description: Trámites para comprar un vehículo nuevo o usado en Uruguay.
+category: vehiculos
+keywords:
+  - term: comprar
+    type: ACTION
+    weight: 10
+relations:
+  - external_id: proc-001
+    order: 1
+    required: true
+  - external_id: proc-002
+    order: 1
+    required: false

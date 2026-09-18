@@ -470,3 +470,170 @@ All edits stayed inside the allowed surfaces: `crates/search/**`,
 - Unit A4 (tasks 20-26): `crates/taxonomy` loader + strict validation +
   `taxonomy-validate` CLI (design section 8 pre-declared split unit) —
   independent of crates/search, depends on S0 only.
+
+## Work unit A4 (PR 5, tasks 20-26) — 2026-09-17
+
+Executed by the delegated `sdd-apply` executor with strict TDD (`cargo test`).
+All edits stayed inside the allowed surfaces: `crates/taxonomy/**`,
+`openspec/changes/add-mvp-core/{tasks.md,apply-progress.md}`.
+
+### A4.1 (task 20) — strict schema validation RED → GREEN → TRIANGULATE
+- RED evidence: `cargo test -p taxonomy` after authoring the test binaries and
+  committed fixtures (before any implementation) → all six test binaries fail
+  to compile: `unresolved import taxonomy::loader`, `taxonomy::model`,
+  `could not find validator in taxonomy` across
+  validation/duplicates/refs/slugs/completeness, plus
+  `environment variable CARGO_BIN_EXE_taxonomy-validate not defined at
+  compile time` (no bin existed). Full output retained in the session
+  transcript.
+- GREEN: `src/model.rs` — serde `deny_unknown_fields` on every file schema
+  (`Event`, `Keyword` with `#[serde(rename = "type")]`, `KeywordType`
+  UPPER CASE enum limited to ACTION/ENTITY/MODIFIER/CONTEXT,
+  `CombinationRule`, `Relation`, `EventTests`, `Category`, `Synonym`,
+  `SynonymFile`), plus source-tagged wrappers (`EventSource`,
+  `CategorySource`, `SynonymSource`, `Taxonomy`) carrying file provenance so
+  every validator message can name the offending file (TX-2/TX-3).
+  `src/error.rs` — thiserror `TaxonomyError` with Io/Parse/InvalidSlug/
+  DuplicateEventSlug/DuplicateCategorySlug/DuplicateRelationOrder/
+  UnknownCategory/OrphanExternalId. `cargo test -p taxonomy` → validation 5/5.
+- TRIANGULATE: unknown field names file + field
+  (`unknown field 'unexpected_field'`), `type: VERB` names file + offending
+  variant, missing `category` and missing keyword `weight` each name file +
+  missing field, plus the snapshot-less valid-fixture zero-failure baseline.
+
+### A4.2 (task 21) — duplicate detection RED → GREEN
+- RED evidence: same failing run (`unresolved import taxonomy::validator`).
+- GREEN: validator groups event slugs and category slugs (BTreeMap, sorted,
+  deterministic); `DuplicateEventSlug` names the slug and BOTH files; a
+  duplicate relation `order` inside one event fails naming file, event slug,
+  and the offending order value. duplicates → 3/3 ok.
+
+### A4.3 (task 22) — reference checks RED → GREEN
+- RED evidence: same failing run.
+- GREEN: relations referencing an `external_id` absent from the committed
+  snapshot fail as `OrphanExternalId` naming event file + orphan id;
+  references to undefined category slugs fail as `UnknownCategory` naming
+  file + value (TX-3, D-2). refs → 3/3 ok (including the accounting case:
+  the refs fixture produces exactly the two expected failures).
+
+### A4.4 (task 23) — slug convention RED → GREEN
+- RED evidence: same failing run.
+- GREEN: `is_valid_slug` implements `^[a-z0-9]+(-[a-z0-9]+)*$` without a
+  regex dependency (empty-segment split catches consecutive/edge hyphens);
+  `InvalidSlug` names file + value + hyphenated suggestion
+  (`comprar_vehiculo` → suggests `comprar-vehiculo`). Predicate table:
+  valid `a`/`vehiculo`/`comprar-vehiculo`/`vehiculo-robado-2`; invalid
+  empty/leading/trailing/double hyphen, uppercase, underscores, spaces,
+  accented characters. slugs → 3/3 ok.
+
+### A4.5 (task 24) — loader + aggregating validator GREEN
+- `src/loader.rs`: loads `events/`, `categories/`, `synonyms/` subdirectories
+  in sorted file order (deterministic), maps serde failures to
+  `TaxonomyError::Parse { file, message }` (deny_unknown_fields errors flow
+  through here, naming file and field), and `load_external_ids(snapshot)`
+  parses the LF id set. These entry points are the crate's only filesystem
+  surface besides the CLI bin (D-5).
+- `src/validator.rs`: `validate()` aggregates ALL checks and returns
+  `Vec<TaxonomyError>` — nothing short-circuits, so a contributor sees every
+  failure in one pass; `validate_dir` (snapshot-less) and
+  `validate_dir_against_snapshot` wrap it.
+
+### A4.4a Semantics refinement (spec-driven, recorded)
+- Snapshot-less validation skips the orphan check entirely (passes
+  `Option<&HashSet<String>>` = None): D-2 makes orphan validation
+  snapshot-based, so a directory validated without a snapshot cannot know
+  the real id set — running it against an empty set would flag every real
+  seed relation as orphan. Snapshot validation (CLI, task 26) always runs
+  it. Caught by the RED-baseline test (`valid_fixture_yields_zero_failures`)
+  after the first GREEN run.
+
+### A4.5 (task 25) — loader completeness RED → GREEN
+- RED evidence: same failing run (unresolved `taxonomy::loader`/`model`).
+- GREEN: `tests/completeness.rs` asserts one event YAML yields slug, name,
+  description, category, typed keywords (ACTION/ENTITY/MODIFIER + the
+  `vender −15` negative keyword with its weight), the ACTION_ENTITY rule
+  (comprar + vehiculo + 15), relations with order/required, and
+  positive/negative query tests; categories and synonyms load from their own
+  directories. The no-code-level-definitions guard scans `crates/taxonomy/src`
+  for seed-domain tokens (comprar/vender/vehiculo/patente/libreta/matricula/
+  transferir/accidente) after stripping `//` comments — events exist only as
+  YAML (TX-1). completeness → 3/3 ok.
+
+### A4.6 (task 26) — `taxonomy-validate` CLI RED → GREEN
+- RED evidence: same failing run (`CARGO_BIN_EXE_taxonomy-validate` not
+  defined — no bin). The bin was declared in `crates/taxonomy/Cargo.toml` as
+  `[[bin]] name = "taxonomy-validate"`.
+- GREEN: `src/main.rs` — DB-free `taxonomy-validate <data-dir> <snapshot-file>`;
+  composes load → snapshot load → validate; exit 0 with a `taxonomy OK: …`
+  summary, exit 1 printing every failure (`error: {file/value}`) on stderr,
+  exit 2 on wrong argument count with the usage line. `tests/cli.rs` covers
+  the orphan-check failure path (non-zero exit + file + orphan id on stderr),
+  the valid-fixture success path, the usage path, and the missing-snapshot
+  path naming the snapshot file. cli → 4/4 ok. CI wiring is task 90
+  (later unit), not this one.
+
+### A4 fixture organization
+- All fixtures committed under `crates/taxonomy/tests/fixtures/` (in-repo
+  test surface; the real `data/` seed stays unit A5 scope, untouched):
+  `valid/` (baseline tree incl. `external_ids.txt` snapshot),
+  `unknown-field-only/`, `keyword-type-only/`, `missing-category-only/`,
+  `missing-weight-only/`, `dup/` (duplicate event + category slugs),
+  `dup-order-dir/` (duplicate relation order), `refs/` (orphan relation +
+  unknown category), `slug-underscore/`, `slug-double-hyphen/`,
+  `slug-edge-hyphen/`. Each case dir mirrors the loader layout
+  (`events/`, `categories/`, `synonyms/`) so tests load a whole directory
+  like CI does; two fixture-authoring gaps found at GREEN (missing
+  dup-category file; two events sharing one slug) were fixed as fixture
+  corrections, not code changes.
+
+### A4 verification evidence
+- `cargo test -p taxonomy` → 21 passed, 0 failed (cli 4, completeness 3,
+  duplicates 3, refs 3, slugs 3, validation 5, lib+bin unit 0).
+- `cargo test --workspace` → 79 passed, 0 failed (search 58 + taxonomy 21).
+- `cargo fmt --all -- --check` → exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0 (three
+  findings fixed during REFACTOR: unused import `Synonym`, unused binding
+  `entries`, plus the collect-type refactor in `read_yaml_dir`).
+- Crate independence honored: `crates/taxonomy` imports only `serde`,
+  `serde_yaml`, `thiserror`; no dependency on `crates/search` or any other
+  internal crate (search consumes taxonomy concepts only through its own
+  types, per the A1-A3 notes).
+
+### A4 review-budget accounting
+- Authored diff: **≈ 1,273 changed lines** (1,257 in 43 new files + 11
+  insertions / 5 deletions in tracked files) — the largest unit so far and
+  well above the 400-line default budget. Breakdown: src model 152 +
+  validator 145 + loader 115 + main 52 + error 51 = 515 implementation
+  lines; tests 465 (completeness 142, cli 74, validation 71, slugs 62,
+  duplicates 60, refs 56); fixtures ≈ 262 YAML/txt across 43 files; tracked
+  edits ≈ 31. The overage is structural: every validator check carries its
+  committed fixture tree, the task-25 completeness suite includes the
+  source-scan guard, and every validation failure names the offending file
+  and value; nothing was compressed, restyled, or deleted to approach the
+  number.
+- Per contract, the decision belongs to the maintainer before PR 5 is
+  opened.
+
+### Pending maintainer decisions (carried from A1-A3, still not decided here)
+1. **Review-budget overage:** PR 2 (approx. 554 net), PR 3 (approx. 714
+   changed), PR 4 (approx. 786 changed), and now PR 5 (approx. 1,273
+   changed) all exceed the 400-line budget. `size:exception` acceptance vs
+   a chaining decision for the already-authored units remains **pending** —
+   required before the first PR is opened.
+2. **Chain strategy: pending** — `stacked-to-main` vs `feature-branch-chain`
+   still unchosen while the change's total forecast is ~4,800-6,150 lines
+   (risk High, chained PRs recommended). This run continued the established
+   single-work-unit-commit-on-master pattern (no PR opened, no push) on the
+   user's explicit instruction.
+
+### Task state (cumulative)
+- Completed: 1-5 (S0), 6-10 (A1), 11-15 (A2), 16-19 (A3), 20-26 (A4).
+  68 unchecked remain (units A5...C3 + baseline rebase).
+- Commit: A4 work-unit commit created on `master` (Conventional Commit
+  referencing unit A4 / PR 5), no push; this apply-progress section and the
+  tasks.md checkbox updates 20-26 ship inside that same commit.
+
+### Remaining after A4
+- Unit A5 (tasks 27-33): Vehiculos seed — `data/` YAML files, per-event
+  tests; the taxonomy crate built here validates that seed via the task-26
+  CLI.

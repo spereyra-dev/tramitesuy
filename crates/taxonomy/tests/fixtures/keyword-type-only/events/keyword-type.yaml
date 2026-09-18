@@ -1,0 +1,9 @@
+# TX-2: `type: VERB` is outside the allowed keyword-type set.
+slug: comprar-vehiculo
+name: Comprar un vehículo
+description: Trámites para comprar un vehículo nuevo o usado en Uruguay.
+category: vehiculos
+keywords:
+  - term: comprar
+    type: VERB
+    weight: 10

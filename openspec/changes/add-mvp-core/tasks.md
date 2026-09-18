@@ -178,13 +178,13 @@ dependency diagram with the current PR marked `📍`.
 
 ### Unit `A4` (PR 5, tasks 20–26) — `crates/taxonomy` loader and strict validation (design §8 pre-declared split unit)
 
-- [ ] 20. RED `crates/taxonomy/tests/validation.rs` with fixtures under `crates/taxonomy/tests/fixtures/`: an unknown field fails naming the file and the field; `type: VERB` fails because the allowed set is `ACTION|ENTITY|MODIFIER|CONTEXT`; missing required fields (`slug`, `name`, `category`, keyword `term`/`type`/`weight`) fail; GREEN `crates/taxonomy/src/model.rs` with serde `deny_unknown_fields` plus `error.rs` typed errors (TX-2).
-- [ ] 21. RED duplicate-detection cases: two fixture event files declaring slug `comprar-vehiculo` fail naming both files; duplicate category slugs fail; a duplicate relation `order` inside one event fails (TX-3, TX-6).
-- [ ] 22. RED reference cases: a relation `external_id` absent from `data/external_ids.snapshot.txt` fails naming the event file and the orphan `external_id`; a reference to an undefined category slug fails naming file and value (TX-3, D-2).
-- [ ] 23. RED slug-convention cases: `comprar_vehiculo` fails with a message directing the contributor to `comprar-vehiculo`; the accepted pattern is `^[a-z0-9]+(-[a-z0-9]+)*$` for both event and category slugs (TX-4).
-- [ ] 24. GREEN `crates/taxonomy/src/loader.rs` loading `data/events/*.yaml`, `data/synonyms/*.yaml`, `data/categories/*.yaml`, plus `validator.rs` aggregating every check with each failure naming the offending file and value (TX-1, D-5).
-- [ ] 25. RED loader-completeness test: a single event YAML yields slug, name, description, category, typed keywords, negative keywords, ACTION_ENTITY rules, and positive/negative tests with no code-level event definition anywhere in `crates/taxonomy` (TX-1 scenario).
-- [ ] 26. Add the DB-free bin `crates/taxonomy/src/main.rs` exposing `taxonomy-validate <data-dir> <snapshot-file>`; RED `crates/taxonomy/tests/cli.rs` asserts non-zero exit and the offending file/value on the orphan-check failure path, and CI consumes it (task 90) (TX-3, D-2).
+- [x] 20. RED `crates/taxonomy/tests/validation.rs` with fixtures under `crates/taxonomy/tests/fixtures/`: an unknown field fails naming the file and the field; `type: VERB` fails because the allowed set is `ACTION|ENTITY|MODIFIER|CONTEXT`; missing required fields (`slug`, `name`, `category`, keyword `term`/`type`/`weight`) fail; GREEN `crates/taxonomy/src/model.rs` with serde `deny_unknown_fields` plus `error.rs` typed errors (TX-2).
+- [x] 21. RED duplicate-detection cases: two fixture event files declaring slug `comprar-vehiculo` fail naming both files; duplicate category slugs fail; a duplicate relation `order` inside one event fails (TX-3, TX-6).
+- [x] 22. RED reference cases: a relation `external_id` absent from `data/external_ids.snapshot.txt` fails naming the event file and the orphan `external_id`; a reference to an undefined category slug fails naming file and value (TX-3, D-2).
+- [x] 23. RED slug-convention cases: `comprar_vehiculo` fails with a message directing the contributor to `comprar-vehiculo`; the accepted pattern is `^[a-z0-9]+(-[a-z0-9]+)*$` for both event and category slugs (TX-4).
+- [x] 24. GREEN `crates/taxonomy/src/loader.rs` loading `data/events/*.yaml`, `data/synonyms/*.yaml`, `data/categories/*.yaml`, plus `validator.rs` aggregating every check with each failure naming the offending file and value (TX-1, D-5).
+- [x] 25. RED loader-completeness test: a single event YAML yields slug, name, description, category, typed keywords, negative keywords, ACTION_ENTITY rules, and positive/negative tests with no code-level event definition anywhere in `crates/taxonomy` (TX-1 scenario).
+- [x] 26. Add the DB-free bin `crates/taxonomy/src/main.rs` exposing `taxonomy-validate <data-dir> <snapshot-file>`; RED `crates/taxonomy/tests/cli.rs` asserts non-zero exit and the offending file/value on the orphan-check failure path, and CI consumes it (task 90) (TX-3, D-2).
 
 ### Unit `A5` (PR 6, tasks 27–33) — Vehículos seed with per-event tests
 

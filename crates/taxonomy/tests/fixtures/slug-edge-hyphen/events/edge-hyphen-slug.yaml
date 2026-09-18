@@ -1,0 +1,9 @@
+# TX-4: leading/trailing hyphen breaks the slug convention.
+slug: -comprar-vehiculo
+name: Comprar un vehículo
+description: Trámites para comprar un vehículo nuevo o usado en Uruguay.
+category: vehiculos
+keywords:
+  - term: comprar
+    type: ACTION
+    weight: 10

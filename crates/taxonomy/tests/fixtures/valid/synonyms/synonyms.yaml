@@ -1,0 +1,5 @@
+synonyms:
+  - term: auto
+    canonical: vehiculo
+  - term: coche
+    canonical: vehiculo

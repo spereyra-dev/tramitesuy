@@ -2,7 +2,11 @@
 //! synonyms, and categories, with strict validation (deny_unknown_fields,
 //! hyphen-slug convention, duplicate and orphan detection).
 //!
-//! This crate is pure: no database, no HTTP, no filesystem outside the loader
-//! entry points and tests.
+//! This crate is pure: no database, no HTTP; filesystem access is confined
+//! to the loader entry points, the validator directory wrappers, and the
+//! `taxonomy-validate` CLI bin.
 
-pub mod placeholder;
+pub mod error;
+pub mod loader;
+pub mod model;
+pub mod validator;

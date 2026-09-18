@@ -1,0 +1,9 @@
+# TX-3: the event references a category slug with no category definition.
+slug: vender-vehiculo
+name: Comprar un vehículo
+description: Trámites para comprar un vehículo nuevo o usado en Uruguay.
+category: categoria-inexistente
+keywords:
+  - term: comprar
+    type: ACTION
+    weight: 10

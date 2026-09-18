@@ -1,0 +1,13 @@
+# TX-3/D-2: relation references an external_id absent from the snapshot (orphan).
+slug: comprar-vehiculo
+name: Comprar un vehículo
+description: Trámites para comprar un vehículo nuevo o usado en Uruguay.
+category: vehiculos
+keywords:
+  - term: comprar
+    type: ACTION
+    weight: 10
+relations:
+  - external_id: orphan-proc-999
+    order: 1
+    required: true
