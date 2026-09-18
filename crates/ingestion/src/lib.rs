@@ -16,8 +16,9 @@ pub mod row;
 pub mod summary;
 
 /// Real CKAN fetcher: the crate's sanctioned network exception (D-5).
-/// Compiled only under `live-ckan` so default builds stay network-free.
-#[cfg(feature = "live-ckan")]
+/// The module itself is always compiled (pure resolution logic + transport
+/// seam); only the reqwest transport inside it is feature-gated, so default
+/// builds stay network-free.
 pub mod ckan;
 
 pub use in_memory::{
