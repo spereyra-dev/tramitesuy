@@ -165,6 +165,29 @@ pub struct EventPage {
     pub procedures: Vec<ProcedureCard>,
 }
 
+/// Assembles the procedure cards shared by the event page and the search
+/// open-mode summary (one code path for attribution + cost, API-3/API-4).
+pub fn procedure_cards(
+    procedures: Vec<db::repos::procedures::EventProcedure>,
+) -> Vec<ProcedureCard> {
+    procedures
+        .into_iter()
+        .map(|p| {
+            let CostFields { cost, cost_display } = cost_fields_from_raw(p.raw_data.as_ref());
+            ProcedureCard {
+                external_id: p.external_id,
+                name: p.name,
+                order: p.order_index,
+                required: p.required,
+                official_url: p.official_url.clone(),
+                cost,
+                cost_display,
+                source: source_attribution(p.official_url, Some(p.last_seen_at.to_rfc3339())),
+            }
+        })
+        .collect()
+}
+
 /// Assembles the event page from the db projection (unknown slug never
 /// reaches here: the handler maps it to 404).
 pub fn event_page(projection: EventProcedures) -> EventPage {
@@ -173,23 +196,7 @@ pub fn event_page(projection: EventProcedures) -> EventPage {
         name: projection.event.name,
         description: projection.event.description,
         category: projection.event.category_slug,
-        procedures: projection
-            .procedures
-            .into_iter()
-            .map(|p| {
-                let CostFields { cost, cost_display } = cost_fields_from_raw(p.raw_data.as_ref());
-                ProcedureCard {
-                    external_id: p.external_id,
-                    name: p.name,
-                    order: p.order_index,
-                    required: p.required,
-                    official_url: p.official_url.clone(),
-                    cost,
-                    cost_display,
-                    source: source_attribution(p.official_url, Some(p.last_seen_at.to_rfc3339())),
-                }
-            })
-            .collect(),
+        procedures: procedure_cards(projection.procedures),
     }
 }
 

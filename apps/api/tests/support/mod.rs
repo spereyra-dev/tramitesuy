@@ -17,6 +17,16 @@ use tower::ServiceExt;
 
 use api::dto;
 
+/// The repository root (apps/api → repo root), where the real `data/` seed
+/// lives; the search tests boot `AppState` from it exactly like production.
+fn repo_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("repo root")
+        .to_path_buf()
+}
+
 /// Audited: names are generated internally (`c1_<pid>_<nanos>`), never from
 /// user input; sqlx 0.9 requires an explicit safety assertion for dynamic SQL.
 fn audited(sql: String) -> sqlx::AssertSqlSafe<String> {
@@ -90,8 +100,12 @@ pub async fn fresh_migrated_db() -> (PgPool, String) {
 }
 
 /// Builds the API router over the given pool (the in-process test server).
+/// Boot loads the YAML taxonomy from the repository's real `data/` seed —
+/// the same ranker source of truth as production (task 84).
 pub fn spawn_app(pool: PgPool) -> Router {
-    api::build_router(pool)
+    let state = api::state::AppState::build(pool, &repo_root().join("data"))
+        .expect("boot AppState from the real data seed");
+    api::build_router(state)
 }
 
 /// Sends one request to the in-process router and returns the status plus

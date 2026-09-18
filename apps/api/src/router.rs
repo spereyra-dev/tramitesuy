@@ -1,17 +1,16 @@
 //! The `/api/v1` router (task 70, API-1): exactly the seven specced routes
 //! under the closed inventory — no admin, auth, or account endpoints. The
-//! read endpoints (events/categories/procedures) are fully implemented in
-//! unit C1; the search and feedback slots are registered here and their
-//! behavior dials up in C2/C3.
+//! read endpoints are unit C1; the search endpoints dial up in C2 (tasks
+//! 79–82); the feedback slot stays registered and answers the public 500
+//! until C3.
 
 use axum::Router;
 use axum::routing::{get, post};
-use sqlx::PgPool;
 
 use crate::handlers;
 use crate::state::AppState;
 
-pub fn build_router(pool: PgPool) -> Router {
+pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/v1/search", get(handlers::search::search))
         .route("/api/v1/search/debug", get(handlers::search::debug))
@@ -24,5 +23,5 @@ pub fn build_router(pool: PgPool) -> Router {
         )
         .route("/api/v1/procedures/{id}", get(handlers::procedure::get))
         .fallback(|| async { crate::error::ApiError::NotFound })
-        .with_state(AppState { pool })
+        .with_state(state)
 }

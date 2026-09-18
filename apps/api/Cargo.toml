@@ -17,6 +17,7 @@ path = "src/main.rs"
 [dependencies]
 axum.workspace = true
 db = { path = "../../crates/db" }
+regex = "1"
 search = { path = "../../crates/search" }
 serde.workspace = true
 serde_json.workspace = true

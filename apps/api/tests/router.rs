@@ -106,9 +106,11 @@ async fn error_responses_leak_no_internals() {
         "the 404 body must be the exact public error shape"
     );
 
-    // The not-yet-dialed search/feedback slots respond with the public 500
+    // The not-yet-dialed feedback slot (C3) responds with the public 500
     // shape; internal causes are logged on the server, never serialized.
-    let (status, body) = request(&app, "GET", "/api/v1/search?q=probe").await;
+    // (The search slot was dialed up in C2 — task 79 — so it no longer
+    // serves this probe.)
+    let (status, body) = request(&app, "POST", "/api/v1/search/feedback").await;
     assert_eq!(status, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
         body,
