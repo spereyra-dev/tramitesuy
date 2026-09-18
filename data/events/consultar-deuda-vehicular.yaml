@@ -1,0 +1,37 @@
+slug: consultar-deuda-vehicular
+name: Consultar deuda vehicular
+description: Consulta en línea de deudas y Multas pendientes de un vehículo.
+category: vehiculos
+keywords:
+  - term: consultar
+    type: ACTION
+    weight: 10
+  - term: deuda
+    type: ENTITY
+    weight: 8
+  - term: vehiculo
+    type: ENTITY
+    weight: 8
+  - term: pagar
+    type: ACTION
+    weight: 15
+    negative: true
+rules:
+  - action: consultar
+    entity: deuda
+    bonus: 15
+relations:
+  - external_id: "100015"
+    order: 1
+    required: true
+  - external_id: "100016"
+    order: 2
+    required: false
+tests:
+  positive:
+    - consultar deuda de mi vehiculo
+    - consultas de deuda vehicular
+    - quiero consultar la deuda de mi patente
+  negative:
+    - pagar la patente de mi auto
+    - donde pago la patente

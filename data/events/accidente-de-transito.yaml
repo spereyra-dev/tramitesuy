@@ -1,0 +1,54 @@
+slug: accidente-de-transito
+name: Accidente de tránsito
+description: Qué hacer ante un accidente de tránsito y denuncia del siniestro.
+category: vehiculos
+keywords:
+  - term: accidente
+    type: ENTITY
+    weight: 8
+  - term: transito
+    type: MODIFIER
+    weight: 6
+  - term: chocar
+    type: ACTION
+    weight: 10
+  - term: choque
+    type: ACTION
+    weight: 8
+  - term: siniestro
+    type: MODIFIER
+    weight: 4
+  - term: comprar
+    type: ACTION
+    weight: 15
+    negative: true
+  - term: vender
+    type: ACTION
+    weight: 15
+    negative: true
+  - term: robar
+    type: ACTION
+    weight: 15
+    negative: true
+rules:
+  - action: chocar
+    entity: vehiculo
+    bonus: 15
+  - action: choque
+    entity: vehiculo
+    bonus: 15
+relations:
+  - external_id: "100021"
+    order: 1
+    required: true
+  - external_id: "100022"
+    order: 2
+    required: false
+tests:
+  positive:
+    - tuve un accidente de transito
+    - choque mi auto
+    - chocar mi coche contra otro
+  negative:
+    - me robaron el auto
+    - compre un vehiculo usado

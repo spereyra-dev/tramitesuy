@@ -1,0 +1,41 @@
+slug: cambiar-matricula
+name: Cambiar la matrícula
+description: Trámite de radicación y cambio de matrícula de un vehículo a otro departamento.
+category: vehiculos
+keywords:
+  - term: cambiar
+    type: ACTION
+    weight: 10
+  - term: matricula
+    type: ENTITY
+    weight: 8
+  - term: vehiculo
+    type: ENTITY
+    weight: 8
+  - term: perder
+    type: ACTION
+    weight: 15
+    negative: true
+  - term: licencia
+    type: ENTITY
+    weight: 15
+    negative: true
+rules:
+  - action: cambiar
+    entity: matricula
+    bonus: 15
+relations:
+  - external_id: "100017"
+    order: 1
+    required: true
+  - external_id: "100018"
+    order: 2
+    required: false
+tests:
+  positive:
+    - cambiar la matricula de mi auto
+    - cambiar matricula a montevideo
+    - cambio de matricula del vehiculo
+  negative:
+    - perdi mi libreta de conducir
+    - perdi la licencia de conducir

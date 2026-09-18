@@ -10,3 +10,8 @@ description = "Pure deterministic life-event search engine (no DB, no HTTP, no f
 serde.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+# per_event.rs (task 29) loads the real `data/` seed through the taxonomy
+# loader + validator; the boundary guard still keeps `src` free of it.
+taxonomy = { path = "../taxonomy" }

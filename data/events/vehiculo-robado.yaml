@@ -1,0 +1,46 @@
+slug: vehiculo-robado
+name: Denunciar un vehículo robado
+description: Denuncia de robo de un vehículo y consulta en el registro de vehículos robados.
+category: vehiculos
+keywords:
+  - term: robar
+    type: ACTION
+    weight: 10
+  - term: vehiculo
+    type: ENTITY
+    weight: 8
+  - term: denuncia
+    type: MODIFIER
+    weight: 4
+  - term: comprar
+    type: ACTION
+    weight: 15
+    negative: true
+  - term: vender
+    type: ACTION
+    weight: 15
+    negative: true
+  - term: accidente
+    type: ENTITY
+    weight: 15
+    negative: true
+rules:
+  - action: robar
+    entity: vehiculo
+    bonus: 15
+relations:
+  - external_id: "100019"
+    order: 1
+    required: true
+  - external_id: "100020"
+    order: 2
+    required: false
+tests:
+  positive:
+    - me robaron el auto
+    - denunciar un vehiculo robado
+    - me robaron la moto
+  negative:
+    - compre un auto usado
+    - tuve un accidente con mi auto
+    - vendi mi coche

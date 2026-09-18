@@ -189,12 +189,12 @@ dependency diagram with the current PR marked `📍`.
 ### Unit `A5` (PR 6, tasks 27–33) — Vehículos seed with per-event tests
 
 - [x] 27. Write `data/categories/vehiculos.yaml` and `data/synonyms/synonyms.yaml` covering Rioplatense variants (`auto`/`coche`/`automovil` → `vehiculo`, `libreta`/`licencia`, `patente`/`placa`, and the register's own vocabulary) and validate both through the task 26 CLI (TX-5, SE-3).
-- [ ] 28. Write the nine event files `data/events/{comprar-vehiculo,vender-vehiculo,transferir-vehiculo,perder-libreta,pagar-patente,consultar-deuda-vehicular,cambiar-matricula,vehiculo-robado,accidente-de-transito}.yaml`, each with typed keywords (ACTION/ENTITY/MODIFIER, CONTEXT where meaningful), negative keywords for the distinguishing action of the near-duplicate events, at least one ACTION_ENTITY rule where applicable, declared procedure relations with unique `order` + `required`, and `tests.positive`/`tests.negative` query lists (TX-5, TX-6).
-- [ ] 29. RED `crates/search/tests/per_event.rs`: load every `data/events/*.yaml`, run each `tests.positive` query and assert the event is TOP1, run each `tests.negative` query and assert the event is not TOP1 — fails until the seed satisfies its own contract (SE-13, TX-5).
-- [ ] 30. RED separability case: `compre un auto` ranks `comprar-vehiculo` TOP1 and `vendi mi auto` ranks `vender-vehiculo` TOP1 (TX-5 scenario "near-duplicate events are separable").
-- [ ] 31. GREEN: iterate the seed's weights, negative keywords, and ACTION_ENTITY rules until tasks 29–30 pass; capture the failing output before each weight edit as RED evidence.
-- [ ] 32. Validate the real seed end to end: `cargo run -p taxonomy --bin taxonomy-validate -- data/ data/external_ids.snapshot.txt` reports zero errors, and `cargo test -p search --test per_event` passes (TX-1, TX-5).
-- [ ] 33. Split guard (design §8): if this unit's authored diff exceeds 400 lines, split into `A5a` (events 1–5 + category + synonyms) and `A5b` (events 6–9 + `per_event.rs`) and record the split in the PR.
+- [x] 28. Write the nine event files `data/events/{comprar-vehiculo,vender-vehiculo,transferir-vehiculo,perder-libreta,pagar-patente,consultar-deuda-vehicular,cambiar-matricula,vehiculo-robado,accidente-de-transito}.yaml`, each with typed keywords (ACTION/ENTITY/MODIFIER, CONTEXT where meaningful), negative keywords for the distinguishing action of the near-duplicate events, at least one ACTION_ENTITY rule where applicable, declared procedure relations with unique `order` + `required`, and `tests.positive`/`tests.negative` query lists (TX-5, TX-6).
+- [x] 29. RED `crates/search/tests/per_event.rs`: load every `data/events/*.yaml`, run each `tests.positive` query and assert the event is TOP1, run each `tests.negative` query and assert the event is not TOP1 — fails until the seed satisfies its own contract (SE-13, TX-5).
+- [x] 30. RED separability case: `compre un auto` ranks `comprar-vehiculo` TOP1 and `vendi mi auto` ranks `vender-vehiculo` TOP1 (TX-5 scenario "near-duplicate events are separable").
+- [x] 31. GREEN: iterate the seed's weights, negative keywords, and ACTION_ENTITY rules until tasks 29–30 pass; capture the failing output before each weight edit as RED evidence.
+- [x] 32. Validate the real seed end to end: `cargo run -p taxonomy --bin taxonomy-validate -- data/ data/external_ids.snapshot.txt` reports zero errors, and `cargo test -p search --test per_event` passes (TX-1, TX-5).
+- [x] 33. Split guard (design §8): if this unit's authored diff exceeds 400 lines, split into `A5a` (events 1–5 + category + synonyms) and `A5b` (events 6–9 + `per_event.rs`) and record the split in the PR.
 
 ### Unit `A6` (PR 7, tasks 34–38) — golden-dataset harness and baselines
 
