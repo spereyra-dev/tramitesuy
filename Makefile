@@ -5,14 +5,12 @@ SHELL := /bin/bash
 
 .PHONY: dev test lint fmt migrate ingest seed-taxonomy search validate-data db-down
 
-## dev: start the dev database, run migrations, seed taxonomy, ingest fixtures.
-## Fixture-ingest wiring is completed in task 91 (slice c); seed-taxonomy is
-## wired here (task 69) and is idempotent, so re-running is safe.
+## dev: start the dev database, apply migrations, and seed the taxonomy.
+## The full compose stack (api + ingest daemon) is `docker compose up --build`.
 dev:
 	docker compose up -d db
 	$(MAKE) migrate
 	cargo run -p ingest -- seed-taxonomy --data-dir data --snapshot data/external_ids.snapshot.txt
-	@echo "TODO(task 91): fixture ingest wiring lands in slice (c)."
 
 ## test: run the full workspace test suite (strict TDD runner).
 test:
@@ -34,9 +32,12 @@ migrate:
 ingest:
 	cargo run -p ingest -- ingest
 
-## search: try a query against the local API (slice (c)).
+## search: start the API against the dev database and try one query (slice (c)).
 search:
-	@echo "TODO(slice c): starts the API and queries /api/v1/search."
+	cargo run -p api & \
+	sleep 3; \
+	curl -s "http://127.0.0.1:8080/api/v1/search?q=compre%20un%20auto"; echo; \
+	kill %1
 
 ## validate-data: strict taxonomy validation over data/ (slice (a), task 26).
 validate-data:
