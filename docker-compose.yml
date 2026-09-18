@@ -1,0 +1,37 @@
+# TrámitesUY development stack (design D-6).
+# Start the database only: `docker compose up -d db` (or `make dev`).
+# The `api` and `ingest` services are wired in slice (c).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: tramitesuy
+    ports:
+      - "5432:5432"
+    volumes:
+      - tramitesuy-db-data:/var/lib/postgresql/data
+      - ./docker/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tramitesuy"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # api:
+  #   build: .
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   ports: ["8080:8080"]
+
+  # ingest:
+  #   build: .
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+
+volumes:
+  tramitesuy-db-data:

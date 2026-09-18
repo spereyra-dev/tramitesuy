@@ -1,0 +1,16 @@
+[package]
+name = "api"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "HTTP API for TrámitesUY (axum router, handlers, DTOs, query redaction)"
+
+[[bin]]
+name = "api"
+path = "src/main.rs"
+
+[dependencies]
+axum.workspace = true
+search = { path = "../../crates/search" }
+tokio.workspace = true

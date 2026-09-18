@@ -1,0 +1,2640 @@
+Te dejo un **spec técnico completo**, pensado para que puedas crear el repo y empezar a implementar sin tener que redefinir la arquitectura después.
+
+Como base factual importante: AGESIC publica el catálogo de trámites y servicios del Estado en formatos estructurados como CSV/XLSX/XML/JSON; el conjunto incluye descripción, organismo, lugares, requisitos y costos, y se actualiza diariamente. Eso hace viable construir una capa propia de búsqueda y organización sin inventar la información del trámite. ([Catálogo de Datos Abiertos][1])
+
+# TrámitesUY — Technical Specification v1.0
+
+## 1. Visión
+
+**TrámitesUY** es una plataforma open source para ayudar a ciudadanos uruguayos a descubrir qué trámites deben realizar ante una determinada situación de vida.
+
+La diferencia respecto de un buscador tradicional es que el usuario **no necesita saber el nombre del trámite**.
+
+En lugar de buscar:
+
+```text
+Transferencia de titularidad de vehículo
+```
+
+puede escribir:
+
+```text
+Compré un auto usado
+```
+
+y el sistema identifica que probablemente se encuentra ante el evento:
+
+```text
+COMPRAR_VEHICULO
+```
+
+y devuelve los trámites relacionados.
+
+La plataforma no utiliza IA generativa ni depende de APIs de terceros para interpretar la consulta.
+
+El motor de búsqueda será:
+
+```text
+determinístico
+explicable
+auditable
+open source
+```
+
+---
+
+# 2. Objetivo principal
+
+Transformar esto:
+
+```text
+Usuario
+   ↓
+"No sé qué trámite tengo que hacer"
+```
+
+en:
+
+```text
+Situación
+   ↓
+Evento de vida
+   ↓
+Lista ordenada de trámites
+   ↓
+Información oficial
+```
+
+Ejemplo:
+
+```text
+"Compré un auto usado"
+```
+
+↓
+
+```text
+Evento detectado:
+Compra de vehículo
+```
+
+↓
+
+```text
+1. Verificar situación del vehículo
+2. Transferir titularidad
+3. Actualizar datos correspondientes
+4. Verificar obligaciones tributarias
+5. Contratar/actualizar seguro cuando corresponda
+```
+
+Cada resultado debe apuntar a la fuente oficial.
+
+---
+
+# 3. Principios del proyecto
+
+El sistema debería seguir estos principios.
+
+### 3.1 La fuente oficial manda
+
+TrámitesUY **no debe convertirse en una base paralela de requisitos legales**.
+
+Los datos objetivos deben venir de fuentes oficiales:
+
+```text
+gub.uy
+AGESIC
+SUCIVE
+Intendencias
+Ministerios
+Entes autónomos
+Servicios descentralizados
+```
+
+La comunidad puede definir:
+
+```text
+qué evento existe
+qué términos lo identifican
+qué trámites se relacionan
+en qué orden deberían mostrarse
+```
+
+pero no debería modificar arbitrariamente:
+
+```text
+costos
+requisitos
+direcciones
+documentación requerida
+horarios
+URLs oficiales
+```
+
+---
+
+# 4. No usar IA generativa
+
+El MVP no utilizará:
+
+```text
+OpenAI
+Claude
+Gemini
+LLMs
+RAG
+chatbots
+```
+
+Tampoco será necesario utilizar embeddings en primera instancia.
+
+La interpretación se realizará mediante:
+
+```text
+normalización
+tokenización
+diccionario de sinónimos
+full-text search
+BM25/ranking
+trigram similarity
+pesos manuales
+reglas
+```
+
+Esto permite explicar cada resultado.
+
+Ejemplo:
+
+```text
+Consulta:
+"compré un auto usado"
+```
+
+Resultado interno:
+
+```text
+comprar_vehiculo
+
+Score: 28
+
++10 "compré" → comprar
++8  "auto" → vehículo
++4  "usado"
++6  combinación comprar + vehículo
+```
+
+---
+
+# 5. Conceptos principales
+
+La arquitectura debe separar al menos cuatro conceptos.
+
+```text
+Life Event
+Procedure
+Source
+Relationship
+```
+
+---
+
+# 6. Life Event
+
+Un `LifeEvent` representa una situación del ciudadano.
+
+Ejemplos:
+
+```text
+comprar_vehiculo
+vender_vehiculo
+perder_documentos
+mudarse
+comprar_vivienda
+tener_hijo
+casarse
+fallecimiento_familiar
+iniciar_empresa
+jubilarse
+irse_del_pais
+volver_al_pais
+```
+
+Ejemplo:
+
+```json
+{
+  "id": "comprar_vehiculo",
+  "name": "Compré un vehículo",
+  "description": "Trámites asociados a la adquisición de un vehículo.",
+  "category": "vehiculos"
+}
+```
+
+---
+
+# 7. Procedure
+
+Un `Procedure` representa un trámite oficial.
+
+Ejemplo conceptual:
+
+```json
+{
+  "id": "transferencia_vehiculo",
+  "name": "Transferencia de vehículo",
+  "organization": "Organismo correspondiente",
+  "description": "...",
+  "requirements": [],
+  "cost": "...",
+  "official_url": "...",
+  "source_id": "agesic"
+}
+```
+
+Los datos del trámite deberían provenir automáticamente del catálogo oficial cuando estén disponibles.
+
+AGESIC publica precisamente información como descripción, organismo, direcciones, requisitos y costos. ([Gub.uy][2])
+
+---
+
+# 8. LifeEventProcedure
+
+Representa la relación:
+
+```text
+evento → trámite
+```
+
+Ejemplo:
+
+```text
+comprar_vehiculo
+      ↓
+transferencia_vehiculo
+```
+
+Debe contener metadata adicional.
+
+```json
+{
+  "life_event": "comprar_vehiculo",
+  "procedure": "transferencia_vehiculo",
+  "order": 2,
+  "required": true,
+  "condition": null
+}
+```
+
+---
+
+# 9. Casos condicionales
+
+No todos los trámites aplican siempre.
+
+Ejemplo:
+
+```text
+Compré un auto
+```
+
+podría depender de:
+
+```text
+nuevo/usado
+departamento
+persona física/jurídica
+procedencia
+tipo de vehículo
+```
+
+La relación debe poder guardar condiciones.
+
+Por ejemplo:
+
+```json
+{
+  "event": "comprar_vehiculo",
+  "procedure": "procedure_xyz",
+  "conditions": {
+    "vehicle_condition": ["used"]
+  }
+}
+```
+
+Más adelante puede evolucionar hacia un pequeño rule engine.
+
+---
+
+# 10. Event Keywords
+
+Cada evento tendrá términos relacionados.
+
+Ejemplo:
+
+```yaml
+event: comprar_vehiculo
+
+keywords:
+
+  actions:
+    comprar: 10
+    compre: 10
+    adquiri: 10
+    adquirir: 8
+
+  entities:
+    auto: 8
+    coche: 8
+    vehiculo: 8
+    automovil: 8
+
+  modifiers:
+    usado: 3
+    nuevo: 2
+    cero_km: 3
+```
+
+No conviene guardar únicamente strings.
+
+Conviene diferenciar:
+
+```text
+ACTION
+ENTITY
+MODIFIER
+CONTEXT
+```
+
+Porque permite desarrollar reglas después.
+
+---
+
+# 11. Normalización lingüística
+
+Antes de buscar se normalizará la consulta.
+
+Input:
+
+```text
+"¡¡Compré un AUTO usado!!"
+```
+
+Paso 1:
+
+```text
+lowercase
+```
+
+↓
+
+```text
+compré un auto usado
+```
+
+Paso 2:
+
+```text
+remove accents
+```
+
+↓
+
+```text
+compre un auto usado
+```
+
+Paso 3:
+
+```text
+remove punctuation
+```
+
+Paso 4:
+
+```text
+stop words
+```
+
+Opcionalmente eliminar:
+
+```text
+un
+una
+el
+la
+los
+las
+de
+del
+```
+
+Resultado:
+
+```text
+compre auto usado
+```
+
+---
+
+# 12. Lemmatización simple
+
+Para español rioplatense convendría mantener un diccionario propio.
+
+Ejemplo:
+
+```text
+compre
+compré
+compramos
+comprar
+compra
+```
+
+↓
+
+```text
+comprar
+```
+
+Igual con:
+
+```text
+vendi
+vendí
+vender
+venta
+```
+
+↓
+
+```text
+vender
+```
+
+No hace falta resolver lingüística española completamente.
+
+Solo los dominios relevantes.
+
+---
+
+# 13. Sinónimos
+
+Tabla:
+
+```text
+term
+canonical_term
+```
+
+Ejemplos:
+
+```text
+auto       → vehiculo
+coche      → vehiculo
+automovil  → vehiculo
+carro      → vehiculo
+
+casa       → vivienda
+apartamento→ vivienda
+apto       → vivienda
+
+cedula     → documento_identidad
+dni        → documento_identidad
+```
+
+La consulta:
+
+```text
+compre un coche
+```
+
+termina como:
+
+```text
+comprar vehiculo
+```
+
+---
+
+# 14. Importancia de ACTION + ENTITY
+
+Esta será probablemente la regla más importante del buscador.
+
+Porque:
+
+```text
+compré un auto
+vendí un auto
+perdí la libreta del auto
+```
+
+contienen:
+
+```text
+auto
+```
+
+pero representan eventos totalmente diferentes.
+
+Por eso:
+
+```text
+ACTION + ENTITY
+```
+
+debería recibir un bonus.
+
+Ejemplo:
+
+```text
+comprar + vehiculo
+```
+
+↓
+
+```text
+comprar_vehiculo +15
+```
+
+Mientras:
+
+```text
+vender + vehiculo
+```
+
+↓
+
+```text
+vender_vehiculo +15
+```
+
+---
+
+# 15. Motor de scoring
+
+Propuesta inicial:
+
+```text
+score =
+keyword_score
++ phrase_score
++ action_entity_score
++ text_search_score
++ trigram_score
+- negative_score
+```
+
+Ejemplo:
+
+```text
+"compre un auto usado"
+```
+
+Para:
+
+```text
+comprar_vehiculo
+```
+
+podría producir:
+
+```text
+comprar       +10
+vehiculo      +8
+usado         +3
+comprar+vehiculo +15
+
+total = 36
+```
+
+Para:
+
+```text
+vender_vehiculo
+```
+
+quizás:
+
+```text
+vehiculo +8
+usado    +1
+
+total = 9
+```
+
+---
+
+# 16. Penalizaciones
+
+También debe poder haber keywords negativas.
+
+Ejemplo:
+
+```yaml
+event: comprar_vehiculo
+
+negative_keywords:
+  vender: -15
+  vendi: -15
+```
+
+Así:
+
+```text
+"vendí mi auto"
+```
+
+no aparece accidentalmente como compra.
+
+---
+
+# 17. Full Text Search
+
+PostgreSQL puede manejar la primera versión.
+
+Usaría:
+
+```text
+tsvector
+tsquery
+GIN indexes
+pg_trgm
+```
+
+No introduciría Elasticsearch inicialmente.
+
+Arquitectura:
+
+```text
+PostgreSQL
+ ├─ datos
+ ├─ FTS
+ ├─ trigram
+ └─ ranking
+```
+
+---
+
+# 18. Fuzzy search
+
+Es fundamental tolerar errores.
+
+Ejemplo:
+
+```text
+"compre un veiculo"
+```
+
+Debe encontrar:
+
+```text
+vehiculo
+```
+
+Para eso:
+
+```text
+pg_trgm
+```
+
+puede calcular similaridad.
+
+Ejemplo conceptual:
+
+```sql
+similarity('veiculo', 'vehiculo')
+```
+
+---
+
+# 19. Queries ambiguas
+
+Consulta:
+
+```text
+auto
+```
+
+No debería elegir automáticamente:
+
+```text
+comprar auto
+```
+
+porque podría significar:
+
+```text
+comprar
+vender
+patente
+libreta
+seguro
+multas
+transferencia
+```
+
+La UI debería mostrar:
+
+```text
+¿Qué necesitás hacer con un vehículo?
+
+Comprar un vehículo
+Vender un vehículo
+Transferir un vehículo
+Perdí documentación
+Consultar obligaciones
+```
+
+---
+
+# 20. Confidence
+
+El motor debe devolver:
+
+```json
+{
+  "event": "comprar_vehiculo",
+  "score": 36,
+  "confidence": 0.93
+}
+```
+
+Pero `confidence` no debería ser una probabilidad matemática falsa.
+
+Podría normalizarse contra los resultados competidores.
+
+Ejemplo:
+
+```text
+top1 = 36
+top2 = 9
+```
+
+Alta confianza.
+
+Pero:
+
+```text
+top1 = 22
+top2 = 20
+```
+
+consulta ambigua.
+
+---
+
+# 21. Estrategia de selección
+
+Ejemplo:
+
+```text
+confidence >= 0.75
+```
+
+↓
+
+Abrir directamente evento.
+
+```text
+0.40 - 0.75
+```
+
+↓
+
+Mostrar:
+
+```text
+¿Te referías a...?
+```
+
+con tres opciones.
+
+```text
+<0.40
+```
+
+↓
+
+Mostrar categorías relacionadas.
+
+---
+
+# 22. Explicabilidad
+
+La API debe poder decir **por qué obtuvo el resultado**.
+
+Ejemplo:
+
+```json
+{
+  "event": "comprar_vehiculo",
+  "score": 36,
+  "matches": [
+    {
+      "term": "compre",
+      "canonical": "comprar",
+      "weight": 10
+    },
+    {
+      "term": "auto",
+      "canonical": "vehiculo",
+      "weight": 8
+    }
+  ],
+  "bonuses": [
+    {
+      "rule": "ACTION_ENTITY",
+      "value": 15
+    }
+  ]
+}
+```
+
+Esto es muy importante para debugging.
+
+---
+
+# 23. Fuente de datos
+
+La primera fuente debería ser el:
+
+**Catálogo de trámites y servicios del Estado.**
+
+Actualmente el conjunto está publicado con actualización diaria y múltiples formatos. ([Catálogo de Datos Abiertos][1])
+
+Elegiría:
+
+```text
+CSV
+```
+
+como fuente primaria.
+
+Razones:
+
+```text
+simple
+estable
+fácil de procesar
+sin dependencia del frontend de gub.uy
+```
+
+Aunque habría que revisar durante implementación cuál de los recursos contiene la representación más completa.
+
+---
+
+# 24. Ingestion Service
+
+Debe existir un proceso separado:
+
+```text
+ingestion
+```
+
+Responsabilidad:
+
+```text
+download
+validate
+parse
+normalize
+compare
+persist
+```
+
+Pipeline:
+
+```text
+AGESIC
+   ↓
+download
+   ↓
+validate
+   ↓
+parse
+   ↓
+normalize
+   ↓
+diff
+   ↓
+database
+```
+
+---
+
+# 25. Actualización diaria
+
+Como la fuente oficial declara frecuencia diaria, el proyecto puede ejecutar un job diario. ([Catálogo de Datos Abiertos][1])
+
+Por ejemplo:
+
+```text
+03:00 source updates
+06:00 TrámitesUY sync
+```
+
+No asumiría que siempre actualiza exactamente a la misma hora.
+
+Simplemente:
+
+```text
+cron daily
+```
+
+---
+
+# 26. Nunca borrar inmediatamente
+
+Supongamos que un trámite desaparece del dataset.
+
+No hacer:
+
+```sql
+DELETE procedure
+```
+
+automáticamente.
+
+Usaría:
+
+```text
+status = inactive
+```
+
+y almacenaría:
+
+```text
+first_seen_at
+last_seen_at
+deactivated_at
+```
+
+Esto permite detectar problemas de la fuente.
+
+---
+
+# 27. Historial
+
+La fuente oficial indica que el dataset actual no representa el histórico. ([Gub.uy][2])
+
+Por eso TrámitesUY podría crear **su propio historial técnico de cambios**.
+
+Ejemplo:
+
+```text
+procedure_version
+```
+
+con:
+
+```text
+procedure_id
+version
+payload
+valid_from
+valid_until
+hash
+```
+
+Así podrías saber:
+
+```text
+17/09:
+costo cambió de X → Y
+```
+
+Esto tiene mucho valor.
+
+---
+
+# 28. Hash de contenido
+
+Cada trámite puede tener:
+
+```text
+SHA256(normalized_payload)
+```
+
+Si:
+
+```text
+previous_hash == current_hash
+```
+
+↓
+
+no hay cambios.
+
+Si cambia:
+
+```text
+crear nueva version
+```
+
+---
+
+# 29. Modelo de base de datos
+
+Propuesta inicial.
+
+```text
+life_events
+```
+
+```sql
+id UUID
+slug VARCHAR UNIQUE
+name VARCHAR
+description TEXT
+category_id UUID
+status VARCHAR
+created_at TIMESTAMP
+updated_at TIMESTAMP
+```
+
+---
+
+# 30. Event keywords
+
+```text
+life_event_keywords
+```
+
+```sql
+id UUID
+life_event_id UUID
+term VARCHAR
+canonical_term VARCHAR
+type VARCHAR
+weight INTEGER
+negative BOOLEAN
+created_at TIMESTAMP
+```
+
+Tipos:
+
+```text
+ACTION
+ENTITY
+MODIFIER
+CONTEXT
+```
+
+---
+
+# 31. Categories
+
+```text
+categories
+```
+
+```sql
+id UUID
+slug VARCHAR UNIQUE
+name VARCHAR
+icon VARCHAR
+order_index INTEGER
+```
+
+Ejemplos:
+
+```text
+vehiculos
+vivienda
+documentos
+familia
+trabajo
+empresas
+educacion
+salud
+viajes
+jubilacion
+```
+
+---
+
+# 32. Procedures
+
+```text
+procedures
+```
+
+```sql
+id UUID
+external_id VARCHAR
+name VARCHAR
+description TEXT
+organization_id UUID
+official_url TEXT
+status VARCHAR
+raw_data JSONB
+first_seen_at TIMESTAMP
+last_seen_at TIMESTAMP
+created_at TIMESTAMP
+updated_at TIMESTAMP
+```
+
+---
+
+# 33. Procedure versions
+
+```sql
+id UUID
+procedure_id UUID
+content_hash VARCHAR
+payload JSONB
+valid_from TIMESTAMP
+valid_until TIMESTAMP
+```
+
+---
+
+# 34. Organizations
+
+```sql
+id UUID
+external_id VARCHAR
+name VARCHAR
+short_name VARCHAR
+official_url TEXT
+```
+
+---
+
+# 35. Event procedure relation
+
+```text
+life_event_procedures
+```
+
+```sql
+life_event_id UUID
+procedure_id UUID
+
+order_index INTEGER
+
+importance VARCHAR
+required BOOLEAN
+
+condition JSONB
+
+notes TEXT
+```
+
+---
+
+# 36. Synonyms
+
+```text
+synonyms
+```
+
+```sql
+id UUID
+term VARCHAR
+canonical_term VARCHAR
+category VARCHAR
+```
+
+Ejemplo:
+
+```text
+coche → vehiculo
+auto → vehiculo
+automovil → vehiculo
+```
+
+---
+
+# 37. Search log
+
+Muy importante para mejorar el buscador.
+
+```text
+search_logs
+```
+
+```sql
+id UUID
+query TEXT
+normalized_query TEXT
+selected_event_id UUID NULL
+top_event_id UUID NULL
+top_score FLOAT
+created_at TIMESTAMP
+```
+
+---
+
+# 38. Feedback
+
+Podés permitir:
+
+```text
+👍 Esto era lo que buscaba
+👎 No era esto
+```
+
+Tabla:
+
+```text
+search_feedback
+```
+
+```sql
+id
+search_log_id
+event_id
+correct BOOLEAN
+```
+
+Esto permitiría mejorar los pesos utilizando datos reales sin introducir ML inicialmente.
+
+---
+
+# 39. Backend
+
+Yo usaría:
+
+```text
+Go
+```
+
+Tiene sentido para este proyecto por:
+
+```text
+API rápida
+workers simples
+binarios chicos
+buena concurrencia
+deploy sencillo
+bajo consumo
+```
+
+Framework:
+
+```text
+chi
+```
+
+o:
+
+```text
+Fiber
+```
+
+Personalmente elegiría:
+
+```text
+chi
+```
+
+por simplicidad y cercanía a `net/http`.
+
+---
+
+# 40. Organización backend
+
+```text
+cmd/
+    api/
+    worker/
+
+internal/
+
+    search/
+    events/
+    procedures/
+    ingestion/
+    organizations/
+    normalization/
+    ranking/
+    repository/
+    http/
+
+pkg/
+```
+
+---
+
+# 41. Search engine
+
+Separaría completamente:
+
+```text
+normalizer
+tokenizer
+matcher
+ranker
+```
+
+Ejemplo:
+
+```go
+type SearchEngine interface {
+    Search(ctx context.Context, query string) ([]Result, error)
+}
+```
+
+---
+
+# 42. Normalizer
+
+Interfaz:
+
+```go
+type Normalizer interface {
+    Normalize(input string) NormalizedQuery
+}
+```
+
+Resultado:
+
+```go
+type NormalizedQuery struct {
+    Original string
+    Text     string
+    Tokens   []Token
+}
+```
+
+---
+
+# 43. Token
+
+```go
+type Token struct {
+    Original  string
+    Canonical string
+    Type      TokenType
+}
+```
+
+---
+
+# 44. Ranker
+
+```go
+type Ranker interface {
+    Rank(
+        query NormalizedQuery,
+        candidates []Candidate,
+    ) []Result
+}
+```
+
+Esto permite reemplazar el algoritmo posteriormente.
+
+---
+
+# 45. API
+
+Base:
+
+```text
+/api/v1
+```
+
+---
+
+# 46. Search
+
+```http
+GET /api/v1/search?q=compre+un+auto
+```
+
+Respuesta:
+
+```json
+{
+  "query": "compre un auto",
+  "normalized_query": "comprar vehiculo",
+  "results": [
+    {
+      "event": {
+        "slug": "comprar-vehiculo",
+        "name": "Compré un vehículo"
+      },
+      "score": 36,
+      "confidence": 0.92
+    }
+  ]
+}
+```
+
+---
+
+# 47. Debug search
+
+Solo development/admin:
+
+```http
+GET /api/v1/search/debug?q=compre+un+auto
+```
+
+Respuesta:
+
+```json
+{
+  "tokens": [
+    {
+      "original": "compre",
+      "canonical": "comprar"
+    },
+    {
+      "original": "auto",
+      "canonical": "vehiculo"
+    }
+  ],
+
+  "results": [
+    {
+      "event": "comprar_vehiculo",
+      "score": 36,
+
+      "explanation": [
+        {
+          "rule": "KEYWORD",
+          "term": "comprar",
+          "score": 10
+        },
+        {
+          "rule": "KEYWORD",
+          "term": "vehiculo",
+          "score": 8
+        },
+        {
+          "rule": "ACTION_ENTITY",
+          "score": 15
+        }
+      ]
+    }
+  ]
+}
+```
+
+Este endpoint te va a ahorrar horas de debugging.
+
+---
+
+# 48. Event endpoint
+
+```http
+GET /api/v1/events/comprar-vehiculo
+```
+
+Devuelve:
+
+```json
+{
+  "name": "Compré un vehículo",
+
+  "procedures": [
+    {
+      "name": "...",
+      "order": 1,
+      "required": true,
+      "source": {
+        "official": true,
+        "url": "..."
+      }
+    }
+  ]
+}
+```
+
+---
+
+# 49. Categories
+
+```http
+GET /api/v1/categories
+```
+
+---
+
+# 50. Events por categoría
+
+```http
+GET /api/v1/categories/vehiculos/events
+```
+
+---
+
+# 51. Procedure endpoint
+
+```http
+GET /api/v1/procedures/:id
+```
+
+---
+
+# 52. Source endpoint
+
+Opcional:
+
+```http
+GET /api/v1/procedures/:id/source
+```
+
+Para mostrar:
+
+```text
+Fuente
+fecha de actualización
+organismo
+URL
+```
+
+---
+
+# 53. Frontend
+
+Usaría:
+
+```text
+Next.js
+TypeScript
+```
+
+aunque también podrías usar React/Vite.
+
+Para SEO público:
+
+```text
+Next.js
+```
+
+me parece mejor.
+
+---
+
+# 54. Home
+
+La página principal debería ser ridículamente simple.
+
+```text
+🇺🇾 TrámitesUY
+
+¿Qué necesitás hacer?
+
+[ Compré un auto usado________________ ]
+
+                Buscar
+```
+
+Debajo:
+
+```text
+Situaciones frecuentes
+
+🚗 Vehículos
+🏠 Vivienda
+🪪 Documentos
+👶 Familia
+💼 Trabajo
+🏢 Empresas
+🎓 Educación
+```
+
+---
+
+# 55. Search suggestions
+
+Mientras escribe:
+
+```text
+compré...
+```
+
+podés mostrar:
+
+```text
+Compré un vehículo
+Compré una vivienda
+Compré un inmueble
+```
+
+No hace falta esperar Enter.
+
+---
+
+# 56. Página de evento
+
+Ejemplo:
+
+```text
+Compré un vehículo
+```
+
+Mostrar:
+
+```text
+Estos son los trámites que podrían corresponderte.
+```
+
+Luego:
+
+```text
+1
+
+Transferencia de vehículo
+
+Organismo:
+...
+
+Necesitás:
+...
+
+Costo:
+...
+
+[Ver información oficial]
+```
+
+---
+
+# 57. Nunca ocultar la fuente
+
+Cada trámite debería mostrar:
+
+```text
+Fuente oficial
+```
+
+y:
+
+```text
+Última sincronización:
+17/09/2026
+```
+
+---
+
+# 58. Disclaimer útil
+
+No pondría un disclaimer gigante.
+
+Algo corto:
+
+```text
+TrámitesUY organiza información pública para facilitar su consulta.
+Ante diferencias, prevalece la información del organismo oficial.
+```
+
+---
+
+# 59. Open source
+
+Licencia sugerida:
+
+```text
+AGPL-3.0
+```
+
+si querés que forks públicos de servicios web tengan que compartir modificaciones.
+
+O:
+
+```text
+MIT
+```
+
+si querés maximizar adopción.
+
+Yo probablemente elegiría:
+
+```text
+AGPL-3.0
+```
+
+para el backend/plataforma.
+
+Pero esto es una decisión de proyecto.
+
+---
+
+# 60. Contenido comunitario
+
+Separaría el código de la taxonomía.
+
+Por ejemplo:
+
+```text
+data/
+  events/
+```
+
+y:
+
+```yaml
+slug: comprar-vehiculo
+
+name: Compré un vehículo
+
+category: vehiculos
+
+keywords:
+
+  - term: comprar
+    type: ACTION
+    weight: 10
+
+  - term: vehiculo
+    type: ENTITY
+    weight: 8
+
+  - term: usado
+    type: MODIFIER
+    weight: 3
+```
+
+Así alguien puede abrir un PR sin saber Go.
+
+---
+
+# 61. Relaciones también en YAML
+
+```yaml
+event: comprar-vehiculo
+
+procedures:
+
+  - external_id: xyz
+    order: 1
+    required: true
+
+  - external_id: abc
+    order: 2
+    required: false
+```
+
+---
+
+# 62. CI valida el contenido
+
+Cada PR debería ejecutar:
+
+```text
+validate YAML
+validate schema
+validate references
+detect duplicate slugs
+detect orphan procedures
+test keywords
+```
+
+---
+
+# 63. Test cases dentro del repo
+
+Esto me parece clave.
+
+Cada evento puede contener queries esperadas.
+
+```yaml
+tests:
+
+  positive:
+    - compre un auto
+    - compre un coche usado
+    - adquiri un vehiculo
+    - tengo auto nuevo
+
+  negative:
+    - vendi mi auto
+    - perdi la libreta del auto
+```
+
+Entonces CI ejecuta:
+
+```text
+"compre un coche usado"
+```
+
+y verifica:
+
+```text
+TOP1 == comprar-vehiculo
+```
+
+---
+
+# 64. Dataset de evaluación
+
+Crear:
+
+```text
+tests/search/golden_dataset.yaml
+```
+
+Ejemplo:
+
+```yaml
+- query: compre un auto usado
+  expected: comprar-vehiculo
+
+- query: vendi mi coche
+  expected: vender-vehiculo
+
+- query: perdi la cedula
+  expected: perder-documentos
+```
+
+Esto permite medir:
+
+```text
+Top-1 accuracy
+Top-3 accuracy
+```
+
+---
+
+# 65. Métrica importante
+
+No optimizaría inicialmente por:
+
+```text
+precision/recall complejos
+```
+
+Mediría:
+
+```text
+Top1
+Top3
+No-result rate
+Ambiguous-result rate
+```
+
+Ejemplo:
+
+```text
+Top1: 91%
+Top3: 98%
+```
+
+sobre el dataset manual.
+
+---
+
+# 66. Docker
+
+Todo debería arrancar con:
+
+```bash
+docker compose up
+```
+
+Servicios:
+
+```text
+api
+frontend
+postgres
+worker
+```
+
+Opcional:
+
+```text
+redis
+```
+
+aunque inicialmente probablemente no sea necesario.
+
+---
+
+# 67. docker-compose
+
+Conceptualmente:
+
+```text
+postgres
+   │
+   ├── api
+   │
+   └── worker
+
+api
+ ↓
+frontend
+```
+
+---
+
+# 68. Cache
+
+Al principio:
+
+```text
+in-memory cache
+```
+
+o ninguna.
+
+Más adelante:
+
+```text
+Redis
+```
+
+solo si es necesario.
+
+Evitaría meter infraestructura porque sí.
+
+---
+
+# 69. Deployment
+
+Una primera versión podría vivir perfectamente en:
+
+```text
+Fly.io
+Railway
+Render
+Hetzner
+DigitalOcean
+```
+
+Y frontend:
+
+```text
+Vercel
+```
+
+Pero idealmente mantener Docker para no quedar atado a ningún proveedor.
+
+---
+
+# 70. Observabilidad
+
+Mínimo:
+
+```text
+structured logs
+request_id
+latency
+errors
+```
+
+Formato:
+
+```json
+{
+  "level": "info",
+  "request_id": "...",
+  "method": "GET",
+  "path": "/search",
+  "duration_ms": 23
+}
+```
+
+---
+
+# 71. Métricas
+
+Más adelante:
+
+```text
+Prometheus
+Grafana
+```
+
+Métricas interesantes:
+
+```text
+search_count
+search_no_results
+search_ambiguous
+search_feedback_positive
+ingestion_duration
+source_changed
+source_failures
+```
+
+---
+
+# 72. Privacy
+
+Esto es importante.
+
+No almacenar:
+
+```text
+IP innecesariamente
+nombre
+cédula
+email
+datos sensibles
+```
+
+Para analytics:
+
+```text
+query
+result
+feedback
+timestamp
+```
+
+nada más.
+
+---
+
+# 73. Queries sensibles
+
+La gente podría escribir:
+
+```text
+"murió mi padre Juan..."
+```
+
+o:
+
+```text
+"perdí mi cédula 4.123..."
+```
+
+Por eso convendría implementar sanitización.
+
+Ejemplo detectar potenciales:
+
+```text
+cédulas
+teléfonos
+emails
+```
+
+y reemplazarlos antes de loguear:
+
+```text
+<REDACTED>
+```
+
+---
+
+# 74. Administración
+
+No construiría un panel admin complejo inicialmente.
+
+Los eventos se mantienen mediante:
+
+```text
+Git
+YAML
+Pull Requests
+```
+
+Esto tiene además la ventaja de dejar historial completo.
+
+---
+
+# 75. Workflow comunitario
+
+Contributor:
+
+```text
+fork
+ ↓
+agrega YAML
+ ↓
+tests
+ ↓
+pull request
+ ↓
+review
+ ↓
+merge
+```
+
+Perfecto para open source.
+
+---
+
+# 76. Ejemplo completo
+
+Archivo:
+
+```text
+data/events/comprar-vehiculo.yaml
+```
+
+```yaml
+slug: comprar-vehiculo
+
+name: Compré un vehículo
+
+description: >
+  Información relacionada con los trámites
+  posteriores a la adquisición de un vehículo.
+
+category: vehiculos
+
+keywords:
+
+  - term: comprar
+    type: ACTION
+    weight: 10
+
+  - term: adquirir
+    type: ACTION
+    weight: 10
+
+  - term: vehiculo
+    type: ENTITY
+    weight: 8
+
+  - term: auto
+    canonical: vehiculo
+    type: ENTITY
+    weight: 8
+
+  - term: coche
+    canonical: vehiculo
+    type: ENTITY
+    weight: 8
+
+  - term: usado
+    type: MODIFIER
+    weight: 3
+
+negative_keywords:
+
+  - term: vender
+    weight: -15
+
+rules:
+
+  - type: ACTION_ENTITY
+    action: comprar
+    entity: vehiculo
+    bonus: 15
+
+tests:
+
+  positive:
+
+    - compre un auto usado
+    - compre un coche
+    - adquiri un vehiculo
+    - acabo de comprar un auto
+
+  negative:
+
+    - vendi mi auto
+    - perdi mi libreta del auto
+```
+
+Eso prácticamente documenta el sistema por sí mismo.
+
+---
+
+# 77. Estructura del repositorio
+
+Yo haría monorepo:
+
+```text
+tramitesuy/
+
+├── apps/
+│
+│   ├── api/
+│   │
+│   └── web/
+│
+├── cmd/
+│
+├── internal/
+│
+│   ├── search/
+│   ├── ranking/
+│   ├── normalization/
+│   ├── ingestion/
+│   ├── procedures/
+│   ├── events/
+│   └── repository/
+│
+├── data/
+│
+│   ├── events/
+│   ├── synonyms/
+│   └── categories/
+│
+├── migrations/
+│
+├── tests/
+│
+│   ├── search/
+│   ├── ingestion/
+│   └── integration/
+│
+├── docs/
+│
+│   ├── architecture.md
+│   ├── search-engine.md
+│   ├── data-sources.md
+│   └── contributing.md
+│
+├── deployments/
+│
+│   └── docker/
+│
+├── docker-compose.yml
+├── Makefile
+├── LICENSE
+├── CONTRIBUTING.md
+└── README.md
+```
+
+---
+
+# 78. Makefile
+
+Comandos ideales:
+
+```bash
+make dev
+
+make test
+
+make lint
+
+make migrate
+
+make ingest
+
+make search QUERY="compre un auto"
+
+make validate-data
+```
+
+---
+
+# 79. Primera categoría
+
+No intentaría cargar todo Uruguay de entrada.
+
+Empezaría solo con:
+
+# Vehículos
+
+Eventos:
+
+```text
+comprar vehículo
+vender vehículo
+transferir vehículo
+perder libreta
+pagar patente
+consultar deuda
+cambiar matrícula
+vehículo robado
+accidente
+```
+
+Eso permite probar el motor muy bien porque hay muchos eventos semánticamente cercanos.
+
+---
+
+# 80. Segunda categoría
+
+Después:
+
+# Documentos
+
+```text
+perdí cédula
+renovar cédula
+sacar pasaporte
+renovar pasaporte
+perdí pasaporte
+certificado antecedentes
+```
+
+---
+
+# 81. Tercera
+
+# Vivienda
+
+```text
+compré vivienda
+vendí vivienda
+me mudé
+alquilo vivienda
+quiero construir
+```
+
+---
+
+# 82. Cuarta
+
+# Familia
+
+```text
+tuve un hijo
+me casé
+me divorcié
+falleció un familiar
+```
+
+---
+
+# 83. MVP realista
+
+Consideraría MVP cuando exista:
+
+```text
+✓ ingestion AGESIC
+
+✓ procedures database
+
+✓ 20 life events
+
+✓ 150-300 test queries
+
+✓ deterministic search
+
+✓ synonyms
+
+✓ fuzzy matching
+
+✓ ranking
+
+✓ web search box
+
+✓ event page
+
+✓ official links
+
+✓ automatic daily sync
+
+✓ Docker setup
+
+✓ CI
+
+✓ public repository
+```
+
+Nada más.
+
+---
+
+# 84. Cosas que NO deberían entrar al MVP
+
+No hacer todavía:
+
+```text
+❌ mobile app
+
+❌ login
+
+❌ account
+
+❌ favorites
+
+❌ chatbot
+
+❌ LLM
+
+❌ embeddings
+
+❌ vector DB
+
+❌ microservices
+
+❌ Kafka
+
+❌ Kubernetes
+
+❌ Elasticsearch
+```
+
+Sería sobreingeniería.
+
+---
+
+# 85. Arquitectura completa MVP
+
+```text
+                         ┌─────────────────────┐
+                         │   Datos oficiales    │
+                         │      AGESIC          │
+                         └──────────┬──────────┘
+                                    │
+                                  daily
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │ Ingestion Worker     │
+                         │                     │
+                         │ download            │
+                         │ validate            │
+                         │ normalize           │
+                         │ diff                │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                              PostgreSQL
+                                    │
+              ┌─────────────────────┼─────────────────────┐
+              │                     │                     │
+              ▼                     ▼                     ▼
+          Procedures           Life Events            Search
+                                                        │
+                                                        ▼
+                                                Search Engine
+                                                        │
+                                       ┌────────────────┼─────────────┐
+                                       │                │             │
+                                       ▼                ▼             ▼
+                                    FTS            keywords        trigrams
+                                       │                │             │
+                                       └───────────┬────┴─────────────┘
+                                                   │
+                                                   ▼
+                                                 Ranker
+                                                   │
+                                                   ▼
+                                              REST API
+                                                   │
+                                                   ▼
+                                               Next.js
+                                                   │
+                                                   ▼
+                                                Usuario
+```
+
+---
+
+# 86. Evolución futura: embeddings
+
+Acá sí dejaría preparada una interfaz.
+
+Hoy:
+
+```text
+KeywordMatcher
+```
+
+Mañana podrías implementar:
+
+```text
+EmbeddingMatcher
+```
+
+sin cambiar el resto.
+
+Algo como:
+
+```go
+type CandidateProvider interface {
+    Candidates(
+        ctx context.Context,
+        query NormalizedQuery,
+    ) ([]Candidate, error)
+}
+```
+
+Implementaciones:
+
+```text
+FTSCandidateProvider
+TrigramCandidateProvider
+EmbeddingCandidateProvider
+```
+
+Pero el embedding provider puede no existir durante años y no pasa nada.
+
+---
+
+# 87. Incluso si algún día agregás embeddings
+
+Yo no reemplazaría las reglas.
+
+Haría:
+
+```text
+lexical search
++
+semantic similarity
++
+rules
+```
+
+y no:
+
+```text
+embedding similarity = verdad
+```
+
+Porque:
+
+```text
+compré un auto
+vendí un auto
+```
+
+son semánticamente extremadamente parecidos para un embedding.
+
+Pero operacionalmente son opuestos.
+
+Las reglas:
+
+```text
+comprar
+vender
+```
+
+resuelven muchísimo mejor ese problema.
+
+---
+
+# 88. Nombre
+
+**TrámitesUY** funciona muy bien porque se entiende inmediatamente.
+
+Repo:
+
+```text
+tramitesuy
+```
+
+Dominio ideal:
+
+```text
+tramites.uy
+```
+
+si estuviera disponible.
+
+También podrían existir:
+
+```text
+tramitesuy.org
+tramitesuy.uy
+```
+
+Pero el proyecto no debería depender de conseguir determinado dominio.
+
+---
+
+# 89. README inicial
+
+La primera frase debería ser algo como:
+
+> **TrámitesUY ayuda a encontrar qué trámites públicos necesitás realizar describiendo simplemente qué te pasó.**
+
+Luego:
+
+```text
+"Compré un auto usado"
+
+        ↓
+
+Compré un vehículo
+
+        ↓
+
+Trámites oficiales relacionados
+```
+
+Y aclararía inmediatamente:
+
+> No utiliza IA generativa. Los resultados se obtienen mediante búsqueda léxica, reglas transparentes y datos públicos oficiales.
+
+Eso además puede convertirse en parte de la identidad del proyecto.
+
+---
+
+# 90. Filosofía
+
+La idea conceptual que yo mantendría durante todo el desarrollo sería:
+
+> **El ciudadano conoce su problema; el Estado conoce el trámite. TrámitesUY conecta las dos cosas.**
+
+Y técnicamente:
+
+```text
+natural language
+       ↓
+normalización
+       ↓
+clasificación determinística
+       ↓
+evento de vida
+       ↓
+trámites oficiales
+```
+
+Eso es suficientemente simple para poder construirlo, suficientemente útil como para que alguien realmente lo use y suficientemente extensible como para que termine siendo un proyecto open source serio.
+
+Además, Uruguay tiene hoy más de **2.600 datasets abiertos publicados por más de 70 organizaciones**, así que una vez que la arquitectura de ingestión esté bien hecha, el proyecto podría incorporar progresivamente otras fuentes oficiales sin cambiar su esencia. ([Gub.uy][3])
+
+**Para arrancar yo implementaría solo tres cosas: ingestion de AGESIC, modelo `LifeEvent → Procedure` y el buscador determinístico.** Todo lo demás debería crecer alrededor de ese núcleo.
+
+[1]: https://catalogodatos.gub.uy/dataset/agesic-guia-de-tramites?utm_source=chatgpt.com "Catálogo de trámites y servicios del Estado - Conjunto de datos - Catálogo de Datos Abiertos"
+[2]: https://www.gub.uy/ministerio-vivienda-ordenamiento-territorial/datos-y-estadisticas/datos-abiertos?utm_source=chatgpt.com "Datos Abiertos | Ministerio de Vivienda y Ordenamiento Territorial"
+[3]: https://www.gub.uy/agencia-gobierno-electronico-sociedad-informacion-conocimiento/soluciones/catalogo-nacional-datos-abiertos?utm_source=chatgpt.com "Catálogo Nacional de Datos Abiertos | Agencia de Gobierno Electrónico y Sociedad de la Información y del Conocimiento"

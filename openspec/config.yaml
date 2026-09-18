@@ -1,0 +1,80 @@
+# OpenSpec configuration for TrámitesUY
+# Managed by gentle-ai SDD init. Safe to edit by hand; do not destructively rewrite.
+
+schema: spec-driven
+
+# ── Project context ────────────────────────────────────────────────
+context: |
+  Project: TrámitesUY — open-source platform helping Uruguayan citizens discover
+  which official government procedures (trámites) apply to a life situation
+  (e.g. "compré un auto usado" → evento comprar_vehiculo → ordered official procedures).
+
+  Core constraints (from spec.txt, authoritative):
+  - NO generative AI, no LLMs, no embeddings in MVP. Search is deterministic,
+    explainable, auditable: normalization, tokenization, lexicon/synonyms,
+    weighted keywords, PostgreSQL FTS (tsvector/tsquery/GIN), pg_trgm fuzzy
+    matching, manual weights, ACTION+ENTITY rules, explicit scoring explanation.
+  - Data source: AGESIC catalog of State procedures/services
+    (https://catalogodatos.gub.uy/dataset/agesic-guia-de-tramites), CSV primary,
+    daily ingestion (download → validate → parse → normalize → diff → persist).
+  - Never delete disappeared procedures: status=inactive + first_seen_at/
+    last_seen_at/deactivated_at; keep procedure_version history with SHA-256
+    content hashes.
+  - Community taxonomy is YAML-driven (data/events/, data/synonyms/,
+    data/categories/) with per-event positive/negative test queries and a
+    golden evaluation dataset (tests/search/golden_dataset.yaml) measured by
+    Top1 / Top3 / no-result rate / ambiguous rate.
+  - Official source always wins: community defines events/keywords/relations/
+    order, never costs/requirements/URLs of procedures. Every result links to
+    the official source and shows last-sync date.
+  - Privacy: store only query, result, feedback, timestamp; redact cédulas,
+    phones, emails before logging.
+  - MVP scope closed: ingestion + procedures DB + ~20 life events + 150–300
+    test queries + deterministic search + web search box + event page +
+    Docker + CI. Explicitly excluded: login, accounts, chatbot, LLM, vector
+    DB, microservices, Kafka, Kubernetes, Elasticsearch, mobile app.
+  - First category: Vehículos (semantically dense: comprar/vender/transferir/
+    perder/patente...), then Documentos, Vivienda, Familia.
+
+  Language stack: UNDER EVALUATION. Spec suggests Go (chi) backend + Next.js/
+  TypeScript frontend, but Rust 1.94.1, Go 1.27.0, and Node v22.22.2 are all
+  installed locally and no go.mod / Cargo.toml / package.json exists yet.
+  Language decision is the first open question for the next phase.
+  PostgreSQL (FTS + pg_trgm) is assumed regardless of application language;
+  psql is not installed locally — plan Docker (docker compose up) for DB.
+
+  Conventions: Spec/domain content is Spanish (trámite, evento de vida, data
+  YAML values); ALL code, identifiers, artifacts, commits, and OpenSpec docs
+  are in English. Monorepo layout per spec §77. License leaning AGPL-3.0
+  (final decision pending). Repo: tramitesuy; ideal domain tramites.uy but
+  project must not depend on it.
+
+# ── Testing configuration ──────────────────────────────────────────
+testing:
+  capability: available        # resolved: backend stack = Rust (user decision, session 2026-09-17)
+  tdd_mode: strict             # strict TDD required once a runner exists
+  runner: cargo test           # rust backend; crates/search stays pure for data-driven golden tests
+  rules:
+    - No source-code phase may start until the language stack decision is
+      recorded in openspec/project.md and a test runner is configured here.
+    - Search-engine acceptance is data-driven: every new/changed event or
+      ranking rule must ship with positive/negative query cases and must keep
+      golden-dataset Top1/Top3 metrics non-regressive.
+    - Ingestion logic must be tested against fixture CSV payloads (no live
+      network calls in unit tests).
+
+# ── Phase rules ────────────────────────────────────────────────────
+rules:
+  - Every phase produces/updates an OpenSpec change under openspec/changes/
+    with proposal → tasks → spec deltas; archive on completion.
+  - Strict TDD where a runner exists: failing test first, then minimal
+    implementation, then refactor.
+  - Respect the session preflight: review budget 400 changed lines;
+    delivery strategy ask-on-risk; exception-ok only with explicit
+    size:exception acceptance.
+  - No spec phase may introduce generative-AI components; any proposal that
+    weakens determinism/explainability must be flagged as a scope risk.
+  - YAML taxonomy changes are first-class spec surface: schema validation and
+    reference/duplicate-slug/orphan checks belong in CI from the start.
+  - Docs artifacts (README, architecture) in English; user-facing copy
+    examples may remain Spanish.

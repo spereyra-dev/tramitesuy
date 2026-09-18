@@ -1,0 +1,12 @@
+# Local Pi runtime state
+.atl/
+.pi/
+.gga
+
+# Rust
+/target/
+Cargo.lock.bak
+
+# Local environment
+.env
+*.local.yml

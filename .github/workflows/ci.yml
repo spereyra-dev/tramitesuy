@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          components: rustfmt, clippy
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tramitesuy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.1
+      - name: cargo test --workspace
+        run: cargo test --workspace
+        # TODO(D-7): the golden gate becomes a required step here once the
+        # golden-dataset baselines exist: `cargo test -p search --test golden`.
+
+  # taxonomy-validate:
+  #   TODO(task 26/90): wire the DB-free `taxonomy-validate <data-dir> <snapshot-file>`
+  #   CLI as a required check once crates/taxonomy ships its CLI.
+
+  # golden-gate:
+  #   TODO(task 34/38): required check running `cargo test -p search --test golden`
+  #   against tests/search/golden_dataset.yaml once slice (a) lands baselines.

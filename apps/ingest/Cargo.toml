@@ -1,0 +1,14 @@
+[package]
+name = "ingest"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Ingestion and maintenance CLI (ingest, seed-taxonomy, export-ids)"
+
+[[bin]]
+name = "ingest"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
