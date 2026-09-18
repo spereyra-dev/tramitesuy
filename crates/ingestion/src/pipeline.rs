@@ -1,15 +1,16 @@
 //! The fixture-driven ingestion pipeline (design §4.1): resolve → download
 //! → parse → validate → dedup → normalize → hash → diff → persist, entirely
-//! behind ports so unit tests run offline against a `FixtureFetcher` and an
-//! in-memory repository (spec IN-1, D-5).
+//! behind ports so unit tests run offline against a `FixtureFetcher` and the
+//! canonical in-memory repository (spec IN-1, D-5).
 
 use crate::dedup::dedup;
+use crate::diff;
 use crate::error::IngestionError;
 use crate::format::csv::CsvStrategy;
 use crate::ports::{FormatStrategy, ProcedureRepository, SourceFetcher};
 use crate::row::validate_rows;
-use crate::summary::{ProcedureUpsert, RunStamp, RunSummary, UpsertCounts};
-use sha2::{Digest, Sha256};
+use crate::summary::{RunStamp, RunSummary};
+use std::collections::BTreeSet;
 
 /// Runs one full ingestion pass and returns the deterministic summary.
 /// Validation findings (skips, duplicates) are warnings on the summary;
@@ -32,63 +33,42 @@ pub fn run(
     // validate (skip-and-report, IN-4)
     let (valid, skipped) = validate_rows(rows);
     summary.record_skips(&skipped);
-    // dedup (IN-5)
+    // dedup (IN-5): winners only; losers land in the summary's row accounting
     let outcome = dedup(valid);
-    summary.record_duplicates(outcome.warnings);
-    // normalize + hash + diff vs latest known hashes (IN-6)
+    summary.record_duplicates(outcome.warnings, outcome.resolved_rows);
+
+    // normalize + hash + diff vs latest known hashes (IN-6, DM-3).
     let latest = repo.latest_hashes()?;
-    let mut upserts = Vec::new();
-    for winner in &outcome.winners {
-        let external_id = winner.get("id").unwrap_or_default().to_string();
-        let payload = winner.to_raw_data_json();
-        let payload_json = serde_json::to_string(&payload).map_err(|e| {
-            IngestionError::from(crate::error::ParseError::Malformed(e.to_string()))
-        })?;
-        let content_hash = digest_hex(payload_json.as_bytes());
-        match latest.get(&external_id) {
-            Some(existing) if existing == &content_hash => {}
-            _ => {
-                upserts.push(ProcedureUpsert {
-                    external_id,
-                    name: winner.get("nombre_tramite").unwrap_or_default().to_string(),
-                    description: winner.get("ques_es").unwrap_or_default().to_string(),
-                    organization_external_id: winner
-                        .get("institucion_oid")
-                        .unwrap_or_default()
-                        .to_string(),
-                    organization_name: winner
-                        .get("institucion_nombre")
-                        .unwrap_or_default()
-                        .to_string(),
-                    official_url: winner.get("url").unwrap_or_default().to_string(),
-                    content_hash,
-                    raw_data: payload,
-                });
-            }
-        }
-    }
-    // persist (storage-agnostic through the port; single tx per batch in B4)
-    let counts: UpsertCounts = repo.upsert_procedures(&upserts, now.clone())?;
+    let plan = diff::plan(&outcome.winners, &latest)?;
+
+    // persist (storage-agnostic through the port; single tx per batch in B4):
+    // new and changed rows upsert exactly one new version each.
+    let counts = repo.upsert_procedures(&plan.upserts, now.clone())?;
     summary.created += counts.inserted;
     summary.updated += counts.updated;
-    // touch last_seen for every surviving row (IN-9 groundwork)
-    let mut seen: Vec<String> = outcome
+    summary.unchanged += plan.unchanged.len();
+    // close the prior open version of every changed row at the run stamp
+    // (DM-3: valid_until is the only post-insert write, only on the prior
+    // open version).
+    if !plan.closes.is_empty() {
+        repo.close_versions(&plan.closes, now.clone())?;
+    }
+    // soft delete (IN-7): rows absent from the source become inactive with
+    // deactivated_at stamped, never deleted.
+    let present: BTreeSet<String> = outcome
         .winners
         .iter()
-        .map(|w| w.get("id").unwrap_or_default().to_string())
+        .map(|winner| winner.get("id").unwrap_or_default().to_string())
         .collect();
-    seen.sort();
+    summary.deactivated += repo.deactivate_missing(&present, now.clone())?;
+    // touch last_seen for every surviving row (IN-7, IN-9); BTreeSet order
+    // keeps the call row-order invariant (SE-1).
+    let seen: Vec<String> = present.into_iter().collect();
     repo.touch_last_seen(&seen, now)?;
+    // canonical warning order keeps the summary permutation-invariant (SE-1).
+    summary.canonicalize_warnings();
 
     Ok(summary)
-}
-
-/// SHA-256 hex of a byte slice.
-fn digest_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
 }
 
 /// Convenience: run with the default CSV strategy.

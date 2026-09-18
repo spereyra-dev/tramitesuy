@@ -6,6 +6,7 @@
 //! fixtures only.
 
 pub mod dedup;
+pub mod diff;
 pub mod error;
 pub mod format;
 pub mod in_memory;
@@ -15,6 +16,5 @@ pub mod row;
 pub mod summary;
 
 pub use in_memory::{
-    InMemoryProcedureRepository, OrganizationRecord, ProcedureRecord, ProcedureStatus,
-    VersionRecord,
+    InMemoryProcedureRepository, OrganizationRecord, ProcedureRecord, ProcedureStatus, VersionRecord,
 };

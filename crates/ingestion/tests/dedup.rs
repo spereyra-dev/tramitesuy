@@ -166,7 +166,7 @@ fn findings_land_in_run_summary_as_warnings_not_errors() {
         rows_read: 5,
         ..Default::default()
     };
-    summary.record_duplicates(outcome.warnings.clone());
+    summary.record_duplicates(outcome.warnings.clone(), outcome.resolved_rows);
     summary.record_skips(&[SkippedRow {
         id: Some("9999".into()),
         reason: "missing required field(s): url".into(),

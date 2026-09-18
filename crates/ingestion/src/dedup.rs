@@ -18,6 +18,9 @@ pub struct DedupOutcome {
     pub winners: Vec<RawRow>,
     /// One warning per resolved duplicate id, sorted by id.
     pub warnings: Vec<RunWarning>,
+    /// Source rows eliminated by the winner rule (the losers) — the IN-10
+    /// row-accounting component.
+    pub resolved_rows: usize,
 }
 
 /// Sort key for the winner rule: (timestamp digits, digest hex, raw
@@ -60,6 +63,7 @@ fn describe(row: &RawRow) -> String {
 /// Groups rows by `id` and applies the deterministic winner rule per group
 /// (IN-5). Output order and warnings are deterministic for any row order.
 pub fn dedup(rows: Vec<RawRow>) -> DedupOutcome {
+    let total = rows.len();
     let mut groups: BTreeMap<String, Vec<RawRow>> = BTreeMap::new();
     for row in rows {
         let id = row.get("id").unwrap_or_default().to_string();
@@ -67,6 +71,7 @@ pub fn dedup(rows: Vec<RawRow>) -> DedupOutcome {
     }
 
     let mut winners = Vec::new();
+    let mut winner_count = 0usize;
     let mut warnings = Vec::new();
     for (id, mut group) in groups {
         group.sort_by_key(winner_key);
@@ -81,7 +86,12 @@ pub fn dedup(rows: Vec<RawRow>) -> DedupOutcome {
             });
         }
         winners.push(winner);
+        winner_count += 1;
     }
 
-    DedupOutcome { winners, warnings }
+    DedupOutcome {
+        winners,
+        warnings,
+        resolved_rows: total - winner_count,
+    }
 }
