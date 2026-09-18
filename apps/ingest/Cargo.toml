@@ -10,6 +10,10 @@ description = "Ingestion and maintenance CLI (ingest, seed-taxonomy, export-ids)
 name = "ingest"
 path = "src/main.rs"
 
+[lib]
+name = "ingest"
+path = "src/lib.rs"
+
 [dependencies]
 clap.workspace = true
 db = { path = "../../crates/db" }

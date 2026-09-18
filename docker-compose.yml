@@ -1,6 +1,7 @@
 # TrámitesUY development stack (design D-6).
 # Start the database only: `docker compose up -d db` (or `make dev`).
-# The `api` and `ingest` services are wired in slice (c).
+# Full stack: `docker compose up --build` boots db + api + ingest (task 88);
+# there is no `web` service — the Next.js UI is a separate follow-up (D-6).
 
 services:
   db:
@@ -20,18 +21,31 @@ services:
       timeout: 3s
       retries: 10
 
-  # api:
-  #   build: .
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #   ports: ["8080:8080"]
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/tramitesuy
+      TRAMITESUY_BIND: 0.0.0.0:8080
+      TRAMITESUY_DATA_DIR: /app/data
+    # The api applies the embedded migrations at boot (idempotent), so the
+    # full stack self-bootstraps on a fresh database.
 
-  # ingest:
-  #   build: .
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
+  ingest:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/tramitesuy
+      CKAN_BASE_URL: https://catalogodatos.gub.uy
+      TRAMITESUY_DATA_DIR: /app/data
+    # Daily-loop service mode (IN-1): one pass at boot, then sleep until
+    # 03:00 UTC every day. No web service, no cron orchestration (design §10).
 
 volumes:
   tramitesuy-db-data:

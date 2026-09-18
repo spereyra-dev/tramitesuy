@@ -11,16 +11,25 @@ use ingestion::pipeline;
 use ingestion::summary::RunStamp;
 
 pub fn run() {
-    let fetcher = match build_fetcher() {
-        Ok(fetcher) => fetcher,
+    match run_once() {
+        Ok(()) => {}
         Err(message) => {
             eprintln!("error: {message}");
             std::process::exit(1);
         }
-    };
+    }
+}
+
+/// One ingestion pass: build the fetcher, run the pipeline, print the
+/// deterministic run summary. Returns a message on configuration or run
+/// failure so the daemon loop can log and retry without exiting.
+pub fn run_once() -> Result<(), String> {
+    let fetcher = build_fetcher()?;
     let repo = support::repository_for(None);
-    let summary = pipeline::run_csv(&fetcher, &repo, now_stamp()).expect("ingestion run completes");
+    let summary =
+        pipeline::run_csv(&fetcher, &repo, now_stamp()).map_err(|error| error.to_string())?;
     print!("{}", summary.report());
+    Ok(())
 }
 
 fn build_fetcher() -> Result<ingestion::ckan::CkanFetcher<ingestion::ckan::ReqwestTransport>, String>

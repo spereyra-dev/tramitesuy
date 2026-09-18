@@ -24,6 +24,9 @@ enum Command {
     /// Resolve the AGESIC dataset via package_show, download the CSV
     /// resource, and run the diff/persist pipeline against the database.
     Ingest,
+    /// Service mode (compose `ingest` service, task 88): run one ingestion
+    /// pass, then sleep until 03:00 UTC and repeat daily, forever.
+    Daemon,
     /// Load the YAML taxonomy (data/) into the database tables.
     SeedTaxonomy {
         /// Data directory holding events/, categories/, synonyms/.
@@ -52,6 +55,7 @@ fn main() {
     let cli = Cli::parse();
     match cli.command {
         Command::Ingest => commands::ingest::run(),
+        Command::Daemon => commands::daemon::run(),
         Command::SeedTaxonomy {
             data_dir,
             snapshot,
