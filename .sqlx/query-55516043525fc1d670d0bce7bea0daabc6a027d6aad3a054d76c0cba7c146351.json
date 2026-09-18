@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH q AS (SELECT plainto_tsquery('simple', $1) AS tsq)\n                   SELECT e.slug AS \"slug!\", ts_rank(e.generated_tsvector, q.tsq) AS \"rank!\"\n                   FROM life_events e, q\n                   WHERE e.status = 'active'\n                     AND e.generated_tsvector @@ q.tsq",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "life_events",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "rank!",
+        "type_info": "Float4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "55516043525fc1d670d0bce7bea0daabc6a027d6aad3a054d76c0cba7c146351"
+}
