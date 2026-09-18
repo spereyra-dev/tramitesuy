@@ -54,6 +54,16 @@ testing:
   capability: available        # resolved: backend stack = Rust (user decision, session 2026-09-17)
   tdd_mode: strict             # strict TDD required once a runner exists
   runner: cargo test           # rust backend; crates/search stays pure for data-driven golden tests
+  web:
+    capability: available      # resolved: web stack = Next.js 15 + TypeScript (change add-web-frontend)
+    runner: npm test --prefix apps/web   # vitest; apps/web is a standalone app, not an npm workspace
+    rules:
+      - Web units follow strict TDD failing-test-first with vitest: no
+        behavioral web code may ship without its RED predecessor.
+      - API-client contract tests run against committed fixture JSON under
+        apps/web/tests/fixtures/ with no live network and no database.
+      - cargo test remains the Rust runner; the golden gate is unchanged and
+        never runs web code.
   rules:
     - No source-code phase may start until the language stack decision is
       recorded in openspec/project.md and a test runner is configured here.
