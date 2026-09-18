@@ -49,6 +49,25 @@ jobs:
         # per-event seed tests, and the taxonomy validation fixtures; the
         # ignored live-CKAN test is NOT run here (isolated job below).
 
+  web:
+    name: web (next build + vitest)
+    # Fully parallel to the Rust jobs (design §6): no Postgres service, no
+    # Rust toolchain, no needs: coupling. Hermetic vitest contract tests
+    # run against committed fixtures — no API, no DB, no network.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: install, lint, test, build
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          npm run build
+
   taxonomy-validate:
     name: taxonomy validate
     runs-on: ubuntu-latest
