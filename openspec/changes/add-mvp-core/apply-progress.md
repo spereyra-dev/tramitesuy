@@ -1036,3 +1036,54 @@ pre-provisioned instance, migration application, `DROP DATABASE ... WITH
 - Unit B2 (tasks 45–50): ingestion parse layer — ports, CSV strategy, row
   validation, dedup, fixture fetcher (DB-free; scratch-DB pattern from B1
   reusable by B4).
+
+## Work unit B2a1 (PR 9, task 45) — 2026-09-17
+
+Split guard fired at unit level: the full B2 authored diff exceeds 400 lines,
+so B2 is delivered as split commits B2a1 → B2a2 → B2b → B2c (each
+Conventional-Commit referencing unit B2 / PR 9, no push). This commit covers
+task 45 only.
+
+### B2a1.0 — RED (task 45, before implementation)
+- RED evidence: `cargo test -p ingestion` after authoring
+  `crates/ingestion/tests/csv_parse.rs` + fixture
+  `tramites_embedded_newline.csv` →
+  `error[E0433]: failed to resolve: could not find format in ingestion` ×3,
+  `error[E0432]: unresolved import ingestion::ports` ×3,
+  `error[E0432]: unresolved import ingestion::row` ×3; test binaries
+  csv_parse/raw_row/row_validation all failed to compile. Captured before any
+  src implementation.
+- Fixture mirrors the AGESIC 31-column shape (quoted fields; the first
+  row's `ques_es` spans 3 physical lines).
+
+### B2a1.1 (task 45) — GREEN ports + CSV strategy
+- `src/ports.rs`: `FormatStrategy`, `SourceFetcher` (`resolve_dataset` /
+  `download_resource`), `DatasetManifest {resource_id, last_modified, hash}`,
+  `ProcedureRepository` (`latest_hashes`, `upsert_procedures`,
+  `close_versions`, `deactivate_missing`, `touch_last_seen`,
+  `all_external_ids`) — storage-agnostic per design §3/D-5.
+- **Deviation from design §3 sketch (recorded):** the sketch types
+  `close_versions(.., at: DateTime<Utc>)`. `chrono` is not a
+  `[workspace.dependencies]` pin and the workspace root `Cargo.toml` is
+  outside this unit's allowed edit surfaces, so the port carries
+  `summary::RunStamp = String` (RFC 3339 wall-clock string, applied only at
+  the `apps/ingest` boundary) instead of `DateTime<Utc>`. B4's sqlx repo
+  converts at the boundary; no behavioral loss.
+- `src/summary.rs`: `RunStamp` (run timestamp string), `ProcedureUpsert`,
+  `UpsertCounts`, `RunWarning`, `RunSummary` — the deterministic run
+  summary surface; warnings-not-errors per design §3 (duplicates and skip
+  findings land here in B2a2/B2b).
+- `src/error.rs`: thiserror `ParseError`/`FetchError`/`RepoError` +
+  `IngestionError` (transparent wrap). Structural problems are hard errors;
+  row findings are warnings (see B2a2/B2b).
+- `src/format/csv.rs`: `CsvStrategy` on the `csv` crate (UTF-8 via
+  `str::from_utf8` guard, comma delimiter, standard double-quote, embedded
+  newlines intact; `flexible(false)` so ragged records are hard errors).
+- `crates/ingestion/src/placeholder.rs` removed (its own doc comment
+  prescribed removal when slice (b) lands).
+- GREEN evidence: `cargo test -p ingestion` → csv_parse 3/3 ok.
+
+### B2a1 review-budget accounting
+- Authored diff: ≈ 229 lines (ports 67, csv_parse 67, csv 41, error 41,
+  row.rs base 84, summary 51, lib 5, fixture 5, −2 placeholder) — within
+  the 400-line default budget.

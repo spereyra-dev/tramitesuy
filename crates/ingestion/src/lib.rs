@@ -5,4 +5,8 @@
 //! repositories) live in `apps/ingest` and `crates/db` so unit tests run on
 //! fixtures only.
 
-pub mod placeholder;
+pub mod error;
+pub mod format;
+pub mod ports;
+pub mod row;
+pub mod summary;
