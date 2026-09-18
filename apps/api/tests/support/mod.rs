@@ -45,14 +45,32 @@ fn unique_db_name() -> String {
 }
 
 /// Creates a uniquely named scratch database, provisions the compose-init
-/// extensions, and applies the embedded migrations.
+/// extensions, and applies the embedded migrations. The name is retried on
+/// a collision: parallel test binaries share the process id space and the
+/// wall clock, so two `pid+nanos` draws can theoretically coincide
+/// (observed once under full-workspace parallelism).
 pub async fn fresh_migrated_db() -> (PgPool, String) {
-    let name = unique_db_name();
     let admin = admin_pool().await;
-    sqlx::query(audited(format!("CREATE DATABASE {name}")))
-        .execute(&admin)
-        .await
-        .expect("create scratch test database");
+    let mut name = unique_db_name();
+    loop {
+        let result = sqlx::query(audited(format!("CREATE DATABASE {name}")))
+            .execute(&admin)
+            .await;
+        match result {
+            Ok(_) => break,
+            // SQLSTATE 23505 on pg_database.datname = a concurrent parallel
+            // test binary drew the same pid+nanos name; redraw and retry.
+            Err(err)
+                if matches!(
+                    &err,
+                    sqlx::Error::Database(db) if db.code().as_deref() == Some("23505")
+                ) =>
+            {
+                name = unique_db_name();
+            }
+            Err(err) => panic!("create scratch test database: {err:?}"),
+        }
+    }
     let url = format!("{}/{}", admin_url().trim_end_matches("/postgres"), name);
     let pool = PgPoolOptions::new()
         .max_connections(5)

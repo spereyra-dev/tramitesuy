@@ -9,7 +9,7 @@ use ingestion::error::RepoError;
 use ingestion::ports::ProcedureRepository;
 use ingestion::summary::{ProcedureUpsert, RunStamp, UpsertCounts};
 use sqlx::PgPool;
-use sqlx::types::chrono::{DateTime, FixedOffset};
+use sqlx::types::chrono::{DateTime, FixedOffset, Utc};
 use std::collections::{BTreeSet, HashMap};
 use std::sync::OnceLock;
 
@@ -268,4 +268,141 @@ impl ProcedureRepository for PostgresProcedureRepository {
             Ok(rows.into_iter().map(|r| r.external_id).collect())
         })
     }
+}
+
+// ---------------------------------------------------------------------------
+// Read-side queries for the API read surface (tasks 71/73; design §7 maps
+// GET /events/:slug to `repos::procedures::by_event` and GET /procedures/:id
+// to `repos::procedures::by_external_id`). Justified crates/db addition: D-5
+// forbids SQL in apps/api, and the allowed-surface note for C1 requires any
+// db addition to be justified here — these are exactly the read queries the
+// C1 endpoint contracts need.
+// ---------------------------------------------------------------------------
+
+/// Event metadata for the event page (task 71).
+#[derive(Debug)]
+pub struct EventMeta {
+    pub slug: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub category_slug: String,
+}
+
+/// One related procedure on the event page, ordered by `order_index` (TX-6).
+#[derive(Debug)]
+pub struct EventProcedure {
+    pub external_id: String,
+    pub name: String,
+    pub official_url: Option<String>,
+    pub raw_data: Option<serde_json::Value>,
+    pub last_seen_at: DateTime<Utc>,
+    pub order_index: i32,
+    pub required: bool,
+}
+
+/// The full event-page projection: event metadata plus its relations.
+#[derive(Debug)]
+pub struct EventProcedures {
+    pub event: EventMeta,
+    pub procedures: Vec<EventProcedure>,
+}
+
+/// One procedure with its organization name, for the detail endpoint (task
+/// 73). Inactive procedures remain fetchable (API-8): the active row wins
+/// when several rows share an external_id, and the latest row otherwise.
+#[derive(Debug)]
+pub struct ProcedureDetail {
+    pub external_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub organization_name: Option<String>,
+    pub official_url: Option<String>,
+    pub status: String,
+    pub raw_data: Option<serde_json::Value>,
+    pub last_seen_at: DateTime<Utc>,
+}
+
+/// Loads the event-page projection for one slug, or None for an unknown
+/// slug. Relations are ordered by `order_index` (TX-6); deactivated
+/// procedures keep their relation (rows are never deleted, IN-7) and stay
+/// on the page with their attribution intact.
+pub async fn by_event(pool: &PgPool, slug: &str) -> Result<Option<EventProcedures>, sqlx::Error> {
+    let meta = sqlx::query!(
+        "SELECT e.slug, e.name, e.description, c.slug AS category_slug \
+         FROM life_events e JOIN categories c ON c.id = e.category_id \
+         WHERE e.slug = $1",
+        slug,
+    )
+    .fetch_optional(pool)
+    .await?;
+    let Some(meta) = meta else {
+        return Ok(None);
+    };
+
+    let rows = sqlx::query!(
+        "SELECT p.external_id, p.name, p.official_url, p.raw_data, p.last_seen_at, \
+                r.order_index, r.required \
+         FROM life_event_procedures r \
+         JOIN procedures p ON p.id = r.procedure_id \
+         JOIN life_events e ON e.id = r.life_event_id \
+         WHERE e.slug = $1 \
+         ORDER BY r.order_index",
+        slug,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(Some(EventProcedures {
+        event: EventMeta {
+            slug: meta.slug,
+            name: meta.name,
+            description: meta.description,
+            category_slug: meta.category_slug,
+        },
+        procedures: rows
+            .into_iter()
+            .map(|r| EventProcedure {
+                external_id: r.external_id,
+                name: r.name,
+                official_url: r.official_url,
+                raw_data: r.raw_data,
+                last_seen_at: r.last_seen_at,
+                order_index: r.order_index,
+                required: r.required,
+            })
+            .collect(),
+    }))
+}
+
+/// Loads one procedure by external id with its organization name, or None
+/// for an unknown id. Active rows win over inactive ones sharing the id
+/// (the partial unique index only constrains active rows), matching the
+/// upsert's present-row selection; an inactive-only id still resolves so a
+/// deactivated procedure stays fetchable with `status: "inactive"` (API-8).
+pub async fn by_external_id(
+    pool: &PgPool,
+    external_id: &str,
+) -> Result<Option<ProcedureDetail>, sqlx::Error> {
+    let row = sqlx::query!(
+        "SELECT p.external_id, p.name, p.description, \
+                o.name AS \"organization_name: Option<String>\", \
+                p.official_url, p.status, p.raw_data, p.last_seen_at \
+         FROM procedures p LEFT JOIN organizations o ON o.id = p.organization_id \
+         WHERE p.external_id = $1 \
+         ORDER BY (p.status = 'active') DESC, p.created_at DESC \
+         LIMIT 1",
+        external_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| ProcedureDetail {
+        external_id: r.external_id,
+        name: r.name,
+        description: r.description,
+        organization_name: r.organization_name,
+        official_url: r.official_url,
+        status: r.status,
+        raw_data: r.raw_data,
+        last_seen_at: r.last_seen_at,
+    }))
 }

@@ -441,3 +441,77 @@ async fn seed_synonyms(
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Read-side queries for the API category endpoints (task 72; design §7 maps
+// GET /categories and GET /categories/:slug/events to
+// `repos::taxonomy_seed::categories` / `events_by_category`). Justified
+// crates/db addition: D-5 forbids SQL in apps/api, and these are exactly
+// the read queries the C1 category contracts need — the same seeded
+// projection the write side maintains.
+// ---------------------------------------------------------------------------
+
+/// One category on the ordered list (API-7): slug, name, order_index.
+#[derive(Debug)]
+pub struct CategorySummaryRow {
+    pub slug: String,
+    pub name: String,
+    pub order_index: i32,
+}
+
+/// Lists every category ordered by `order_index` ascending (vehiculos
+/// first for the seed; slug ascending as the deterministic tie-break).
+pub async fn categories(pool: &sqlx::PgPool) -> Result<Vec<CategorySummaryRow>, sqlx::Error> {
+    let rows =
+        sqlx::query!("SELECT slug, name, order_index FROM categories ORDER BY order_index, slug")
+            .fetch_all(pool)
+            .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| CategorySummaryRow {
+            slug: r.slug,
+            name: r.name,
+            order_index: r.order_index,
+        })
+        .collect())
+}
+
+/// One event on a category's listing (API-7): slug and name.
+#[derive(Debug)]
+pub struct EventSummaryRow {
+    pub slug: String,
+    pub name: String,
+}
+
+/// Lists a category's events ordered by slug, or None when the category
+/// slug is unknown (the handler maps None to 404).
+pub async fn events_by_category(
+    pool: &sqlx::PgPool,
+    category_slug: &str,
+) -> Result<Option<Vec<EventSummaryRow>>, sqlx::Error> {
+    let known = sqlx::query!(
+        "SELECT 1 AS one FROM categories WHERE slug = $1",
+        category_slug
+    )
+    .fetch_optional(pool)
+    .await?;
+    if known.is_none() {
+        return Ok(None);
+    }
+    let rows = sqlx::query!(
+        "SELECT e.slug, e.name FROM life_events e \
+         JOIN categories c ON c.id = e.category_id \
+         WHERE c.slug = $1 ORDER BY e.slug",
+        category_slug,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(Some(
+        rows.into_iter()
+            .map(|r| EventSummaryRow {
+                slug: r.slug,
+                name: r.name,
+            })
+            .collect(),
+    ))
+}

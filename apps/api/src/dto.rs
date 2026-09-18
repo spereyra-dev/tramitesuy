@@ -129,3 +129,155 @@ fn walk_slugs(value: &Value, offenders: &mut Vec<String>) {
         _ => {}
     }
 }
+
+// ---------------------------------------------------------------------------
+// Read-endpoint payload assembly (task 77, API-6/7/8): composes the
+// attribution block (API-4) and the missing-cost rule (API-3) into every
+// payload carrying procedure data. `apps/api` stays SQL-free — these
+// functions consume the `crates/db` read records.
+// ---------------------------------------------------------------------------
+
+use db::repos::procedures::{EventProcedures, ProcedureDetail};
+use db::repos::taxonomy_seed::{CategorySummaryRow, EventSummaryRow};
+
+/// One procedure card on an event page (API-6): name, order, required,
+/// official_url, the cost pair, and the attribution block.
+#[derive(Debug, Serialize)]
+pub struct ProcedureCard {
+    pub external_id: String,
+    pub name: String,
+    pub order: i32,
+    pub required: bool,
+    pub official_url: Option<String>,
+    pub cost: Option<String>,
+    pub cost_display: String,
+    pub source: SourceAttribution,
+}
+
+/// The event-page payload (API-6): name, description, category, and the
+/// procedures ordered by `order_index`.
+#[derive(Debug, Serialize)]
+pub struct EventPage {
+    pub slug: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub category: String,
+    pub procedures: Vec<ProcedureCard>,
+}
+
+/// Assembles the event page from the db projection (unknown slug never
+/// reaches here: the handler maps it to 404).
+pub fn event_page(projection: EventProcedures) -> EventPage {
+    EventPage {
+        slug: projection.event.slug,
+        name: projection.event.name,
+        description: projection.event.description,
+        category: projection.event.category_slug,
+        procedures: projection
+            .procedures
+            .into_iter()
+            .map(|p| {
+                let CostFields { cost, cost_display } = cost_fields_from_raw(p.raw_data.as_ref());
+                ProcedureCard {
+                    external_id: p.external_id,
+                    name: p.name,
+                    order: p.order_index,
+                    required: p.required,
+                    official_url: p.official_url.clone(),
+                    cost,
+                    cost_display,
+                    source: source_attribution(p.official_url, Some(p.last_seen_at.to_rfc3339())),
+                }
+            })
+            .collect(),
+    }
+}
+
+/// The procedure-detail payload (API-8): name, description, organization,
+/// official_url, cost fields, status, and the attribution block.
+#[derive(Debug, Serialize)]
+pub struct ProcedureDetailPage {
+    pub external_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub organization: Option<String>,
+    pub official_url: Option<String>,
+    pub cost: Option<String>,
+    pub cost_display: String,
+    pub status: String,
+    pub source: SourceAttribution,
+}
+
+/// Assembles the procedure detail from the db record (an inactive procedure
+/// keeps its attribution block and reports `status: "inactive"`).
+pub fn procedure_detail_page(detail: ProcedureDetail) -> ProcedureDetailPage {
+    let CostFields { cost, cost_display } = cost_fields_from_raw(detail.raw_data.as_ref());
+    ProcedureDetailPage {
+        external_id: detail.external_id,
+        name: detail.name,
+        description: detail.description,
+        organization: detail.organization_name,
+        official_url: detail.official_url.clone(),
+        cost,
+        cost_display,
+        status: detail.status,
+        source: source_attribution(detail.official_url, Some(detail.last_seen_at.to_rfc3339())),
+    }
+}
+
+/// One category on the ordered list (API-7).
+#[derive(Debug, Serialize)]
+pub struct CategoryPage {
+    pub slug: String,
+    pub name: String,
+    pub order_index: i32,
+}
+
+/// The categories-list payload (API-7): ordered by `order_index` ascending.
+#[derive(Debug, Serialize)]
+pub struct CategoriesPage {
+    pub categories: Vec<CategoryPage>,
+}
+
+pub fn categories_page(rows: Vec<CategorySummaryRow>) -> CategoriesPage {
+    CategoriesPage {
+        categories: rows
+            .into_iter()
+            .map(|r| CategoryPage {
+                slug: r.slug,
+                name: r.name,
+                order_index: r.order_index,
+            })
+            .collect(),
+    }
+}
+
+/// One event on a category's listing (API-7).
+#[derive(Debug, Serialize)]
+pub struct EventSummaryPage {
+    pub slug: String,
+    pub name: String,
+}
+
+/// The category-events payload (API-7).
+#[derive(Debug, Serialize)]
+pub struct CategoryEventsPage {
+    pub category: String,
+    pub events: Vec<EventSummaryPage>,
+}
+
+pub fn category_events_page(
+    category_slug: String,
+    rows: Vec<EventSummaryRow>,
+) -> CategoryEventsPage {
+    CategoryEventsPage {
+        category: category_slug,
+        events: rows
+            .into_iter()
+            .map(|r| EventSummaryPage {
+                slug: r.slug,
+                name: r.name,
+            })
+            .collect(),
+    }
+}

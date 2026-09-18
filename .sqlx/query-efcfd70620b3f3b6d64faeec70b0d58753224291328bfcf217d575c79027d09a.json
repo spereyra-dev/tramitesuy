@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.external_id, p.name, p.official_url, p.raw_data, p.last_seen_at, r.order_index, r.required FROM life_event_procedures r JOIN procedures p ON p.id = r.procedure_id JOIN life_events e ON e.id = r.life_event_id WHERE e.slug = $1 ORDER BY r.order_index",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "external_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "procedures",
+            "name": "external_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "procedures",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "official_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "procedures",
+            "name": "official_url"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "raw_data",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "procedures",
+            "name": "raw_data"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "procedures",
+            "name": "last_seen_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "order_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "life_event_procedures",
+            "name": "order_index"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "required",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "life_event_procedures",
+            "name": "required"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "efcfd70620b3f3b6d64faeec70b0d58753224291328bfcf217d575c79027d09a"
+}
