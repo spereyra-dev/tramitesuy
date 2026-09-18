@@ -3,6 +3,8 @@
 //! `CandidateProvider` implementations consumed by the pure `search` engine.
 //!
 //! Migration files live in `../../migrations` and are embedded with
-//! `sqlx::migrate!` when slice (b) lands.
+//! `sqlx::migrate!` (see [`pool::run_migrations`]).
 
-pub mod placeholder;
+pub mod pool;
+
+pub use pool::{connect, run_migrations};

@@ -901,3 +901,138 @@ artifacts. `data/**` was never modified.
 - Slice (a) is complete: pure engine + taxonomy + seed + golden gate.
 - Unit B1 (tasks 39–44): migrations 0001–0011 + `crates/db` pool — first
   unit of stage (b); needs the compose Postgres for the migration tests.
+
+## Work unit B1 (PR 8, tasks 39–44) — 2026-09-17
+
+Executed by the delegated `sdd-apply` executor with strict TDD (`cargo test`
+against the compose Postgres, service `db`, which was already running and was
+left running after verification; no other service started). Allowed edit
+surfaces honored: `migrations/**`, `crates/db/**`, and the two openspec
+artifacts. `docker-compose.yml` and `docker/` were NOT changed.
+
+### B1.0 — RED batch (tasks 41–44, before any implementation)
+Authored first: `crates/db/tests/{migrations,constraints,versions,pool}.rs`
+plus the shared `tests/common/mod.rs` helper (scratch-DB lifecycle: unique
+`b1_<pid>_<nanos>` database, extension provisioning simulating a D-6
+pre-provisioned instance, migration application, `DROP DATABASE ... WITH
+(FORCE)` cleanup, SQLSTATE classification, minimal fixture seeder), and the
+`tokio` dev-dependency on `crates/db`.
+- RED evidence: `cargo test -p db` → all four test binaries fail to compile,
+  `error[E0433]: could not find 'pool' in 'db'` (×3: pool.rs:7, pool.rs:14,
+  common/mod.rs:70) plus the dependent E0282 inference errors; binaries
+  `pool`, `migrations`, `versions`, `constraints` all fail. Full output
+  retained in the session transcript. No migration file existed yet.
+- sqlx 0.9 gotcha found while authoring (recorded): dynamic SQL strings now
+  require `AssertSqlSafe` (`SqlSafeStr` gate). The scratch-DB DDL strings are
+  internally generated (no user input) and wrapped via an audited
+  `AssertSqlSafe(format!(...))` helper in the test module.
+
+### B1.1 (tasks 39–40) — migrations 0001–0011 GREEN
+- `migrations/0001`–`0006`: categories (uuid pk, unique slug, icon,
+  order_index), organizations (unique external_id, created_at/updated_at per
+  D-4), life_events (unique slug, category FK, status default 'active' with
+  CHECK active|inactive), life_event_keywords (FK ON DELETE CASCADE, type
+  CHECK ∈ ACTION|ENTITY|MODIFIER|CONTEXT, weight > 0, negative bool),
+  procedures (status CHECK, raw_data jsonb, first/last_seen_at,
+  deactivated_at, partial unique index `external_id WHERE status='active'`),
+  procedure_versions (payload jsonb, valid_from/until, index
+  `(procedure_id, valid_until)`).
+- `migrations/0007`–`0011`: life_event_procedures (composite PK
+  (life_event_id, procedure_id), order_index/importance/required/condition
+  jsonb/notes); synonyms; search_logs (redacted query, normalized_query,
+  nullable selected/top event FKs, top_score float8, created_at);
+  search_feedback (log FK, event FK, correct); `0011_search_indexes.sql`
+  adds `life_events.generated_tsvector` (generated STORED column over
+  weighted `simple`-config to_tsvector of name + description), GIN on it,
+  pg_trgm GIN on name, and helper indexes.
+- Design notes recorded: (1) tsvector uses the `simple` config with
+  setweight(name='A', description='B') — deterministic and portable; the FTS
+  provider (C2) will query it, the ranker stays keyword-driven. (2) DM-2's
+  "no two open versions of the same procedure share a hash" is enforced by a
+  partial unique index `(procedure_id, content_hash) WHERE valid_until IS
+  NULL` in 0006 — additive to the design §6 table sketch, required by the
+  data-model spec and tested by task 42. (3) Migration 0011 requires
+  pg_trgm to pre-exist (gin_trgm_ops opclass), which is exactly the D-6
+  portability contract; tests simulate the pre-provisioned instance.
+
+### B1.2 (task 41) — pool + embedded migrations GREEN
+- `crates/db/src/pool.rs`: `connect(url)` (PgPoolOptions, 5 conns) and
+  `run_migrations(&pool)` via `sqlx::migrate!("../../migrations")`;
+  `placeholder.rs` removed as its doc comment prescribed. lib.rs re-exports.
+- GREEN: `cargo test -p db` → 10 passed / 0 failed (migrations 2,
+  constraints 6, pool 1, versions 1).
+
+### B1.3 (task 42) — constraint tests GREEN + TRIANGULATE
+- Duplicate `(life_event_id, procedure_id)` pair → 23505 unique violation.
+- Second ACTIVE procedure with same external_id → 23505; TRIANGULATE:
+  deactivating the original frees the id — a fresh active row reuses it
+  (soft-delete semantics proven at DB level).
+- Duplicate open content_hash for the same procedure → 23505 (partial
+  unique index); TRIANGULATE: closing the open version frees the pair.
+- Every cross-table reference is a real FK: nine bogus-FK inserts all
+  rejected with 23503 (life_events.category_id, keywords.life_event_id,
+  procedures.organization_id, versions.procedure_id, both relation FKs,
+  search_logs.selected_event_id, both feedback FKs); keywords CASCADE with
+  their event (asserted).
+- TRIANGULATE additions: domain CHECK constraints (status 'archived',
+  keyword type 'VERB', weight 0) all → 23514; migrations re-run is an
+  idempotent no-op (still exactly ten application tables).
+
+### B1.4 (tasks 43–44) — append-only + extension portability GREEN
+- `versions.rs`: a procedure with two versions (v1 closed, v2 open) is
+  snapshotted (`SELECT id, content_hash, payload, valid_from, valid_until`),
+  an unchanged re-ingestion replay touches nothing in procedure_versions,
+  and the after-snapshot is byte-identical with exactly 2 rows, v1 still
+  closed and v2 the only open version (DM-3).
+- `migrations_create_no_extensions`: extension count is snapshotted on a
+  provisioned scratch DB before migrations and asserted unchanged after —
+  migrations create no extensions (D-6 portability, asserted in the task 41
+  test binary as required).
+
+### B1 verification evidence
+- `cargo test -p db` → 10 passed / 0 failed.
+- `cargo test --workspace` → 97 passed / 0 failed (search 60 incl. golden +
+  per_event, taxonomy 21, db 10, lib stubs).
+- `cargo fmt --all -- --check` → exit 0 (after `cargo fmt`).
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0 (one
+  dead-code finding fixed: documented module-level allow on the shared test
+  helper, same pattern as crates/search tests/support).
+- Compose `db` healthy and left running; scratch test databases dropped via
+  `DROP DATABASE ... WITH (FORCE)`; no `docker-compose.yml`/`docker/` change
+  was needed (reported per the allowed-surfaces note).
+
+### B1 review-budget accounting and split guard (task 44)
+- Authored diff: **≈ 848 changed lines** (17 new files, 837 lines: pool.rs
+  25, tests 650 [common 179, constraints 318, migrations 70, versions 67,
+  pool 16], migrations SQL 162; tracked +11/−4 incl. Cargo.lock/Cargo.toml).
+  The pre-declared intra-unit split guard (B1a 0001–0006 + pool → B1b
+  0007–0011 + tests) technically fired. This launch's parent instruction
+  explicitly mandated tasks 39–44 as ONE work-unit commit, so the split was
+  not applied here; the delivery decision (accept the overage / retro-split
+  into two commits / chained PRs) belongs to the maintainer before PR 8 is
+  opened (`ask-on-risk`). Nothing was compressed, restyled, or deleted to
+  approach the number; no comments, docs, or tests were dropped.
+
+### Pending maintainer decisions (carried from A1–A6, still not decided here)
+1. **Review-budget overage:** PRs 2–7 (≈554, ≈714, ≈786, ≈1273, ≈630, ≈809)
+   and now PR 8 (≈848) all exceed the 400-line budget. `size:exception`
+   acceptance vs a chaining decision remains **pending** — required before
+   the first PR is opened.
+2. **Chain strategy: pending** — `stacked-to-main` vs `feature-branch-chain`
+   still unchosen while the change's total forecast is ~4,800–6,150 lines
+   (risk High, chained PRs recommended). This run continued the established
+   single-work-unit-commit-on-master pattern (no PR opened, no push) on the
+   user's explicit instruction.
+
+### Task state (cumulative)
+- Completed: 1–5 (S0), 6–10 (A1), 11–15 (A2), 16–19 (A3), 20–26 (A4),
+  27–33 (A5), 34–38 (A6), 39–44 (B1). 50 unchecked remain (units B2…C3 +
+  baseline rebase).
+- Commit: B1 work-unit commit created on `master` (Conventional Commit
+  referencing unit B1 / PR 8), no push (23 files, +988/−10); the full hash
+  is recorded in the phase report to avoid the self-referential amend loop.
+
+### Remaining after B1
+- Unit B2 (tasks 45–50): ingestion parse layer — ports, CSV strategy, row
+  validation, dedup, fixture fetcher (DB-free; scratch-DB pattern from B1
+  reusable by B4).
