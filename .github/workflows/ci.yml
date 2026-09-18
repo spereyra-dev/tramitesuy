@@ -36,17 +36,29 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+    env:
+      # The DB-backed integration suites (crates/db, apps/api, apps/ingest)
+      # hit this Postgres through the admin URL the scratch-DB helpers use.
+      TRAMITESUY_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.94.1
       - name: cargo test --workspace
         run: cargo test --workspace
-        # The golden gate runs as its own required job below (task 38,
-        # D-7): `cargo test -p search --test golden`.
+        # Includes the golden gate (crates/search/tests/golden.rs), the
+        # per-event seed tests, and the taxonomy validation fixtures; the
+        # ignored live-CKAN test is NOT run here (isolated job below).
 
-  # taxonomy-validate:
-  #   TODO(task 26/90): wire the DB-free `taxonomy-validate <data-dir> <snapshot-file>`
-  #   CLI as a required check once crates/taxonomy ships its CLI.
+  taxonomy-validate:
+    name: taxonomy validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.1
+      - name: taxonomy-validate against the committed snapshot
+        # D-2: the DB-free orphan check — every relation external_id in the
+        # community YAML must exist in data/external_ids.snapshot.txt.
+        run: cargo run -p taxonomy --bin taxonomy-validate -- data/ data/external_ids.snapshot.txt
 
   golden-gate:
     name: golden dataset gate
@@ -56,3 +68,32 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.94.1
       - name: cargo test -p search --test golden
         run: cargo test -p search --test golden
+
+  integration:
+    name: compose integration (non-gating)
+    # Isolated compose-based job (task 90, D-6/D-7): boots the dev stack and
+    # exercises the container-level integration surface. Non-gating per
+    # design D-7's nightly-job framing — it performs real network calls to
+    # the live AGESIC CKAN (the feature-gated `--ignored` test) and a full
+    # image build, so failures surface here without blocking PRs.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.1
+      - name: build the multi-stage image (api + ingest)
+        run: docker compose build
+      - name: boot db + api + ingest
+        run: docker compose up -d
+      - name: end-to-end search returns an open result
+        run: |
+          timeout 60 bash -c 'until curl -fsS "http://localhost:8080/api/v1/search?q=compre%20un%20auto" | grep -q "\"mode\":\"open\""; do sleep 3; done'
+      - name: ingestion/API integration tests against the compose Postgres
+        env:
+          TRAMITESUY_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: |
+          cargo test -p db
+          cargo test -p api
+          cargo test -p ingest --test export_ids --test seed_taxonomy
+      - name: ignored live-CKAN test (one real package_show)
+        run: cargo test -p ingestion --features live-ckan --test ckan_live -- --ignored
