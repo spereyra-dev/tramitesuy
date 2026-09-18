@@ -12,3 +12,11 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+# Optional: the ONLY network dependency of this crate, compiled solely under
+# the `live-ckan` feature (ckan.rs real fetcher — design D-5 exception).
+# Default builds stay network-free: the feature is off unless explicitly
+# enabled, so no HTTP code or dependency is compiled by default.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
+
+[features]
+live-ckan = ["dep:reqwest"]

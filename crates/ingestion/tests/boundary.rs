@@ -20,18 +20,30 @@ fn crate_dir() -> String {
 
 #[test]
 fn no_sqlx_or_reqwest_outside_ckan() {
-    // Manifest guard: neither dependency may appear in the crate manifest.
+    // Manifest guard: `sqlx` never appears; `reqwest` is permitted only as an
+    // OPTIONAL dependency (the `live-ckan` feature, task 62) so default
+    // builds stay network-free (D-5).
     let manifest = std::fs::read_to_string(format!("{}/Cargo.toml", crate_dir()))
         .expect("crate manifest readable");
-    for dep in FORBIDDEN {
+    assert!(
+        !manifest.contains("sqlx"),
+        "crates/ingestion/Cargo.toml must not depend on 'sqlx'"
+    );
+    if manifest.contains("reqwest") {
+        let reqwest_line = manifest
+            .lines()
+            .find(|line| line.trim_start().starts_with("reqwest"))
+            .expect("a 'reqwest' mention must be a dependency line");
         assert!(
-            !manifest.contains(dep),
-            "crates/ingestion/Cargo.toml must not depend on '{dep}'"
+            reqwest_line.contains("optional = true"),
+            "reqwest must stay an OPTIONAL dependency (feature live-ckan, ckan.rs exception) so \
+             default builds stay network-free: {reqwest_line}"
         );
     }
 
-    // Source guard: no forbidden token outside `ckan.rs` (the real fetcher,
-    // landed in unit B5), after stripping comment lines.
+    // Source guard: no forbidden token outside `ckan.rs` (the real fetcher —
+    // the one sanctioned network exception, task 62/65), after stripping
+    // comment lines.
     let src = format!("{}/src", crate_dir());
     let mut files = Vec::new();
     collect_rs_files(std::path::Path::new(&src), &mut files);
@@ -40,6 +52,10 @@ fn no_sqlx_or_reqwest_outside_ckan() {
         "the source scan must actually visit files"
     );
     for file in files {
+        if file.ends_with("ckan.rs") {
+            // Sanctioned exception: the real CKAN fetcher, feature-gated.
+            continue;
+        }
         let content = std::fs::read_to_string(&file).expect("source readable");
         let stripped: String = content
             .lines()

@@ -15,6 +15,11 @@ pub mod ports;
 pub mod row;
 pub mod summary;
 
+/// Real CKAN fetcher: the crate's sanctioned network exception (D-5).
+/// Compiled only under `live-ckan` so default builds stay network-free.
+#[cfg(feature = "live-ckan")]
+pub mod ckan;
+
 pub use in_memory::{
     InMemoryProcedureRepository, OrganizationRecord, ProcedureRecord, ProcedureStatus,
     VersionRecord,

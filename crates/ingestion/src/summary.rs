@@ -1,6 +1,13 @@
 //! Deterministic run summary types (design §3, spec IN-10): validation
 //! findings (skipped rows, duplicate ids) are warnings collected here, not
 //! hard errors; structural problems stay hard errors.
+//!
+//! Persistence contract (task 61): the summary is a deterministic stdout/CI
+//! artifact ONLY. Design §4.1's mention of a persisted `search_ops` run
+//! record is superseded by the data-model spec, which closes the schema at
+//! exactly ten application tables (DM-1, enforced by the task-41 allowlist
+//! test) — no run-record table exists and none may be added without a spec
+//! delta. Divergence recorded in apply-progress.md and the B4/PR 11 commit.
 
 /// Timestamp of an ingestion run (RFC 3339 string; wall-clock only at the
 /// `apps/ingest` boundary, keeping this crate deterministic).
