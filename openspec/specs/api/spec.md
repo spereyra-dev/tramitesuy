@@ -45,10 +45,18 @@ Event slugs in responses MUST always be hyphen slugs.
 
 #### Scenario: Dominant query opens the event
 
-- GIVEN `q=compre un auto usado` with confidence 0.80 and top1 ≥ `MIN_OPEN_SCORE`
+- GIVEN `q=compre un auto usado` with confidence 0.82 and top1 ≥ `MIN_OPEN_SCORE`
 - WHEN `GET /api/v1/search` responds
 - THEN `mode` is `open`, `results` contains `comprar-vehiculo` first, and the
-  payload includes score and confidence 0.80
+  payload includes score and confidence 0.82
+
+Confidence 0.82 is the measured value for the seeded taxonomy: with the real
+seed distribution (top1 36, top2 8), the ratified D-1 formula
+`round(top1 / (top1 + top2), 2) = round(36 / 44, 2) = 0.82`, which is what the
+test suite asserts. The illustrative 36-vs-9 example from SE-9 (yielding 0.80)
+is a hypothetical of the formula, not a claim about shipped behavior. This
+amendment realigns the prose to the normative D-1 formula in the search-engine
+spec; it does not change any threshold, constant, or measured gate.
 
 #### Scenario: Ambiguous query offers options
 
