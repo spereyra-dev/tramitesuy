@@ -9,6 +9,7 @@
 
 export const SOURCE_LINK_UNAVAILABLE_COPY = 'Enlace a la fuente no disponible';
 export const LAST_SYNCED_UNAVAILABLE_COPY = 'Fecha de actualización no disponible';
+export const EMPTY_PROCEDURES_COPY = 'Aún no hay trámites vinculados a este evento';
 
 /** The `required`-flag copy shown on every procedure card. */
 export function requiredFlagCopy(required: boolean): string {

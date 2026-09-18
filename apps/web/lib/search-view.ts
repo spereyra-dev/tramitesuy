@@ -8,7 +8,7 @@
  * disambiguation one) a compile error, so a page cannot cross the arms.
  */
 
-import type { SearchResponse } from './api';
+import type { ProcedureCard, SearchResponse } from './api';
 
 /** Cards render in API `order`, never raw array position. */
 function ordered<T extends { order: number }>(cards: T[]): T[] {
@@ -21,7 +21,7 @@ export type SearchView =
       eventName: string;
       eventHref: string;
       confidence: number;
-      procedures: Array<{ order: number; name: string; required: boolean; costDisplay: string }>;
+      procedures: ProcedureCard[];
     }
   | {
       kind: 'disambiguation';
@@ -44,13 +44,10 @@ export function searchView(response: SearchResponse): SearchView {
         eventName: result.event.name,
         eventHref: `/events/${result.event.slug}`,
         confidence: result.confidence,
-        procedures: ordered(result.procedures).map((card) => ({
-          order: card.order,
-          name: card.name,
-          required: card.required,
-          costDisplay: card.cost_display,
-        })),
-      };
+      // Full cards, not projections: every rendered card must carry its
+      // per-card attribution block (spec "Procedure card attribution").
+      procedures: ordered(result.procedures),
+    };
     }
     case 'disambiguation':
       return {
