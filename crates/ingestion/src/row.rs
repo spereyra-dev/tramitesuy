@@ -84,6 +84,19 @@ impl RawRow {
         }
         Value::Object(obj)
     }
+
+    /// Canonical raw serialization: `column=value` lines in column order —
+    /// the input to the duplicate tie-break digest (spec IN-5).
+    pub fn raw_serialization(&self) -> String {
+        let mut out = String::new();
+        for (c, v) in &self.values {
+            out.push_str(c);
+            out.push('=');
+            out.push_str(v);
+            out.push('\n');
+        }
+        out
+    }
 }
 
 /// The source's required fields (spec IN-4). A row missing any of these is

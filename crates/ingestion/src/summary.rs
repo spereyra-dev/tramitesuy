@@ -49,3 +49,25 @@ pub struct RunSummary {
     pub duplicates_resolved: usize,
     pub warnings: Vec<RunWarning>,
 }
+
+impl RunSummary {
+    /// Records skipped rows as warnings (design §3 error strategy: skip
+    /// findings are warnings, never hard errors).
+    pub fn record_skips(&mut self, skipped: &[crate::row::SkippedRow]) {
+        self.rows_skipped += skipped.len();
+        self.warnings
+            .extend(skipped.iter().map(|s| RunWarning::SkippedRow {
+                id: s.id.clone(),
+                reason: s.reason.clone(),
+            }));
+    }
+
+    /// Records duplicate-resolution warnings (IN-5).
+    pub fn record_duplicates(&mut self, warnings: Vec<RunWarning>) {
+        self.duplicates_resolved += warnings
+            .iter()
+            .filter(|w| matches!(w, RunWarning::DuplicateId { .. }))
+            .count();
+        self.warnings.extend(warnings);
+    }
+}

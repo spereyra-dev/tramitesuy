@@ -1118,3 +1118,47 @@ task 45 only.
 - Authored diff: ≈ 203 lines (row.rs +103, row_validation.rs 101 — minus
   the shared fixture which landed in B2a1) — within the 400-line default
   budget.
+
+## Work unit B2b (PR 9, tasks 48–49) — 2026-09-17
+
+### B2b.0 — RED (tasks 48–49, before implementation)
+- RED evidence: `cargo test -p ingestion --test dedup` after authoring
+  `crates/ingestion/tests/dedup.rs` → `error[E0432]: unresolved import
+  ingestion::dedup`, `error[E0433]: could not find dedup in ingestion`,
+  `error[E0599]: no method named raw_serialization found for reference
+  &RawRow` + E0282 inference errors. Captured before any implementation.
+
+### B2b.1 (task 48) — GREEN dedup
+- `src/row.rs` gains `raw_serialization()` (canonical `column=value` lines
+  in column order) — the digest input for the IN-5 tie-break.
+- `src/dedup.rs`: `dedup(rows) -> DedupOutcome {winners, warnings}`.
+  Winner key = (timestamp digits, SHA-256 hex of raw serialization, raw
+  serialization) — the third component keeps the order total and
+  row-order-invariant even for byte-identical rows (groundwork for task
+  57's permutation invariance). Timestamp key parses the digit characters
+  of `actualizado`; malformed values collapse to 0, deterministic either
+  way. Winners sorted by id; grouping via BTreeMap.
+- Determinism notes recorded: lexicographic-hex comparison of SHA-256 hex
+  digests is order-free; `sort_by_key` over the total key makes the outcome
+  independent of source row order.
+- GREEN: dedup 6/6 ok — newest `actualizado` wins; exact tie → greater hex
+  digest wins; same fixture twice → same winner; warning names id, winner,
+  losers; unique ids untouched.
+- **Test-authoring bug caught at GREEN:** an earlier draft carried a
+  vestigial stub helper (`winner_digest_hex_of`) returning `String::new()`;
+  removed before GREEN (the test computes the expected digest itself via
+  sha2 over `raw_serialization`, so the assertion is self-verifying).
+
+### B2b.2 (task 49) — GREEN/REFACTOR findings-as-warnings
+- `src/summary.rs`: `RunSummary::record_skips` (skip findings →
+  `RunWarning::SkippedRow`) and `record_duplicates` (`RunWarning::DuplicateId`
+  counting into `duplicates_resolved`). Dedup and skip findings are
+  warnings, never hard errors; structural problems (invalid UTF-8, ragged
+  records, missing headers) remain hard errors via `IngestionError` /
+  `csv` crate failures (csv_parse binary).
+- GREEN: the new summary test + full binary green.
+
+### B2b review-budget accounting
+- Authored diff: ≈ 172 lines (dedup.rs 100, row.rs +15, summary.rs +30,
+  tests/dedup.rs ≈ 195 authored — one fixture already landed in B2a2).
+  Within the 400-line default budget.

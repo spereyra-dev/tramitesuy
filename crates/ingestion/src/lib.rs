@@ -5,6 +5,7 @@
 //! repositories) live in `apps/ingest` and `crates/db` so unit tests run on
 //! fixtures only.
 
+pub mod dedup;
 pub mod error;
 pub mod format;
 pub mod ports;
