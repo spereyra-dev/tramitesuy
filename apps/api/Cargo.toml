@@ -6,11 +6,26 @@ license.workspace = true
 rust-version.workspace = true
 description = "HTTP API for TrámitesUY (axum router, handlers, DTOs, query redaction)"
 
+[lib]
+name = "api"
+path = "src/lib.rs"
+
 [[bin]]
 name = "api"
 path = "src/main.rs"
 
 [dependencies]
 axum.workspace = true
+db = { path = "../../crates/db" }
 search = { path = "../../crates/search" }
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+taxonomy = { path = "../../crates/taxonomy" }
 tokio.workspace = true
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+[lints]
+workspace = true

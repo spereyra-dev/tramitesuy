@@ -72,8 +72,14 @@ name = "api"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "db",
  "search",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "taxonomy",
  "tokio",
+ "tower",
 ]
 
 [[package]]
