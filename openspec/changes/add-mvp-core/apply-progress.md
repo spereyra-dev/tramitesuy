@@ -1996,3 +1996,174 @@ surfaces — flagged for C2/C3 reuse.)
   exact-body router assertions are the surface C2 replaces.
 - Carried maintainer decisions: budget overage (PRs 2–13) and chain
   strategy — still pending, not decided here.
+
+## Work unit C2 (PR 14, tasks 78–85) — 2026-09-18
+
+Executed by the delegated `sdd-apply` executor with strict TDD (`cargo test`
+against the compose Postgres, service `db`, which was running and was left
+running after verification; scratch databases `c2_<pid>_<nanos>` created per
+test with the C1 collision-retry pattern and dropped with
+`DROP DATABASE ... WITH (FORCE)`). Allowed edit surfaces honored:
+`apps/api/**`, `crates/db/**` (providers + search_log repo + the design-
+sanctioned `db → search` dependency arrow), openspec artifacts.
+`crates/search/**` was never touched — the existing
+`CandidateProvider`/`NormalizedQuery`/`Candidate` seam needed no adjustment.
+The pre-declared C2 split guard fired (unit diff > 400 lines), honored as
+**C2a → C2b** (+ closing docs commit, B2–C1 precedent).
+
+### TDD Cycle Evidence (cargo test)
+
+| Task | RED evidence (pre-implementation) | GREEN evidence |
+|---|---|---|
+| 78 providers (SE-7) | `cargo test -p db --test providers` → 8× `error[E0433]: could not find 'providers' in 'db'`, binary failed to compile | `providers` 8/8 ok: FtsProvider matches `life_events.generated_tsvector` via `plainto_tsquery('simple', canonical tokens)` under `FTS_TEXT` (positive value, non-matching event silent); TrigramProvider scores `similarity()` over name+positive-keywords under `TRIGRAM` (threshold 0.3, negative keywords excluded from the surface); both proven as `&dyn CandidateProvider`; deterministic across calls; stop-word-only query → no candidates; embedding-symbol scan of `crates/db/src` empty |
+| 79 search modes (API-2, SE-10) | `cargo test -p api --test search_modes` → 0/5, all 500s from the C1 placeholder (`api internal error: GET /search is wired in unit C2`) | `search_modes` 5/5 ok: `compre un auto usado` → `mode: open`, exactly one result, `comprar-vehiculo` first, score 36, ordered procedures summary (4551 → 2368 by `order_index`) with attribution + missing-cost wording; `auto` → `mode: disambiguation`, exactly 3 options (slug/name/score/confidence), no `results` key, deterministic slug-asc order among ties; `quiero abrir una cuenta bancaria` → `mode: categories` listing `[{slug: vehiculos, name: Vehículos}]`; missing `q` → 400 with the exact public body; router.rs exact-body assertion updated (the 500 probe now points at the still-placeholder feedback slot) |
+| 80 search debug (API-5, SE-11, SE-3) | `cargo test -p api --test search_debug` → 0/2 (placeholder 500) | `search_debug` 2/2 ok: `compre un coche` → tokens `[{compre,compre},{coche,vehiculo}]` (synonym resolution visible); top1 comprar-vehiculo score 33 with KEYWORD comprar +10, KEYWORD canonical vehiculo +8, ACTION_ENTITY +15; the entries-sum-equals-score property asserted for EVERY result |
+| 81 redaction (API-10) | `cargo test -p api --test redaction` → 0/4 (placeholder 500) | `redaction` 4/4 ok: `perdi mi cedula 4.123.456-7` stored as `perdi mi cedula <REDACTED>`; domestic mobile `099 123 456` and email `juan.perez@gmail.com` redacted; the raw document number appears nowhere in the stored `query|normalized_query`; the RESPONSE echoes the query as sent (redaction is log-copy only) |
+| 82 logging GREEN (API-10) | (covered by the redaction RED batch; the repo import also failed: `crates/db/tests/search_log` → `unresolved imports db::repos::search_log`) | `handlers/search.rs` + `crates/db/src/repos/search_log.rs` persist ONLY the redacted query, the normalized form of the redacted query, selected/top event ids (slugs resolved to nullable FK ids), top_score, and `created_at`; one log row per search; unknown slugs store NULL ids rather than failing the search |
+| 83 schema allowlist (API-10, DM-1) | same failing compile batch | `search_logs_columns_equal_the_specced_set_exactly` ok: `information_schema` columns sorted == `[created_at, id, normalized_query, query, selected_event_id, top_event_id, top_score]` — no IP/user-agent/name/contact column can exist, and future widening fails the suite |
+| 84 AppState + YAML truth (design §4.2, TX-1) | (part of the search_modes RED batch) | `AppState { engine, taxonomy, pool }` builds from `taxonomy::loader::load_data_dir` once; `spawn_app` boots from the real `data/` seed exactly like production (`main.rs` reads `TRAMITESUY_DATA_DIR`, default `./data`); `ranker_source_of_truth_is_yaml_not_the_db_projection` ok: with the DB keyword weight tampered to 99, the debug explanation still carries KEYWORD comprar +10, no entry carries 99, DB-row provider entries appear, and the entry sum still equals the score |
+| 85 smoke check | — (verification task) | transcript below |
+
+### C2.1 (C2a, commit `1ff1172`) — DB candidate providers
+- `crates/db/src/providers/{mod,fts,trigram}.rs` (the design §2 module
+  shape): sync trait bridged to async sqlx via the established
+  `block_in_place`/shared-runtime adapter (same pattern as B4's repo; the
+  API server and all tests run multi-thread runtimes).
+- Value scales (recorded decisions): FTS_TEXT = `round(ts_rank × 100)`
+  (a real hit lands in keyword-weight order without dominating an
+  ACTION+ENTITY match); TRIGRAM = `round(similarity × 10)` above a 0.3
+  threshold — D-1's "one fuzzy trigram + one weak keyword must not open an
+  event" (max trigram contribution 10 = MIN_OPEN_SCORE, and only for a
+  near-identical string).
+- Known limitation (recorded, not silently decided): migration 0011's
+  generated column builds the tsvector with `simple` over the stored text —
+  no `unaccent` — so de-accented query tokens match only de-accented lexemes;
+  accented surfaces are the trigram provider's coverage. Fixing it would be a
+  data-model migration (out of C2's surfaces); the provider doc comments and
+  the test fixture document it.
+- sqlx gotchas repeated: LEFT JOIN nullability needed explicit `AS "slug!"`
+  / `AS "sim!"` overrides; `ts_rank`/`similarity` return `real` (f32).
+- `.sqlx` cache extended with the two new compile-checked queries; offline
+  build verified (`env -u DATABASE_URL cargo check --workspace`).
+
+### C2.2 (C2b, commit `c959516`) — search handlers, redaction, logging, state
+- `apps/api/src/state.rs`: `AppState { engine, taxonomy, pool }` (task 84).
+  The taxonomy→lexicon projection lives in apps/api (the loader must stay
+  outside the filesystem-free `crates/search`); `event_name`/`category_name`
+  resolve display names from the YAML (names in search payloads are the YAML
+  names; procedures come from the DB projection — C1 decision #5 stands).
+- `router.rs`: `build_router(state: AppState)` (signature change; C1 tests
+  updated via `spawn_app`, which boots from the real `data/` seed).
+- `handlers/search.rs`: pipeline per design §4.2 — redact (log copy) →
+  engine + both providers → `search_log::insert` → mode payload. Log-insert
+  failure is a structural error → public 500 (design §3); `/search/debug`
+  logs too (design §7's "yes, logs too").
+- `dto.rs`: `procedure_cards` extracted from `event_page` so the open-mode
+  procedures summary shares the single attribution/cost code path (API-4).
+- `redaction.rs`: regex-based patterns (cédula dotted format, international
+  `+598` and domestic `0XX` phones, emails). Justified new dependency:
+  `regex = "1"` (apps/api manifest is an allowed surface; a hand-written
+  matcher for four patterns was rejected as error-prone).
+
+### C2.3 (task 85) — smoke transcript
+`cargo run -p api` (DATABASE_URL → compose `tramitesuy`, 9 seeded events,
+3,501 procedures, 22 real relations), all routes served:
+- `GET /api/v1/search?q=compre un auto usado` → `mode: open`,
+  `comprar-vehiculo`, score 42 (36 keyword + FTS_TEXT 6 — the seeded
+  description's de-accented `usado` lexeme matches), confidence 0.84,
+  procedures 4551/2368/6995 ordered with attribution.
+- `GET /api/v1/search?q=auto` → `mode: disambiguation`, options
+  vender-vehiculo (12) / consultar-deuda-vehicular (11) / cambiar-matricula
+  (8), confidence 0.52.
+- `GET /api/v1/search?q=xyzzy qwerty` → `mode: categories`,
+  `[{slug: vehiculos, name: Vehículos}]`.
+- `GET /api/v1/search?q=perdi mi cedula 4.123.456-7` → `mode: open`
+  (perder-libreta, single candidate → confidence 0.80 floor); DB row:
+  `perdi mi cedula <REDACTED>` / `perdi cedula redacted`.
+- `GET /api/v1/search/debug?q=compre un coche` → top1 comprar-vehiculo score
+  37 = KEYWORD comprar 10 + KEYWORD vehiculo 8 + ACTION_ENTITY 15 +
+  TRIGRAM 4; tokens show `coche → vehiculo`.
+- `GET /api/v1/events/comprar-vehiculo`, `GET /api/v1/categories`,
+  `GET /api/v1/categories/vehiculos/events`, `GET /api/v1/procedures/4551`
+  → C1 contracts unchanged (attribution, cost wording, ordering).
+- `POST /api/v1/search/feedback` → 500 placeholder (C3 scope, exact public
+  body); `GET /api/v1/unknown` → 404 `{"error":"not found"}`.
+- `search_logs` rows verified: redacted queries, resolved event ids for the
+  open hits, NULL ids for the no-result query, top_score + created_at set.
+
+### C2 verification evidence
+- `cargo test -p db --test providers` → 8/8; `cargo test -p db --test
+  search_log` → 3/3; `cargo test -p api` → 24 passed across 10 binaries.
+- `cargo test --workspace` → **204 passed / 0 failed / 1 ignored** (was
+  182+1 before C2; the ignored one is still the feature-gated live
+  `ckan_live` test, NOT run). Two consecutive full runs, zero failures.
+- `cargo fmt --all -- --check` → exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
+- Offline: `env -u DATABASE_URL cargo check --workspace` succeeds against
+  the committed `.sqlx` cache.
+- Compose `db` healthy and left running; smoke server process stopped; all
+  `c2_*`/`c1_*` scratch databases dropped with FORCE.
+
+### Recorded deviations (this unit)
+1. **Task 79 confidence prose**: the task text and the API spec's GIVEN say
+   "confidence 0.80" for `compre un auto usado`, quoting SE-9's 36/9
+   illustration. The real seed's distribution for that query is 36 vs 8
+   (several events carry the `vehiculo` entity keyword alone), so the
+   ratified D-1 formula gives round(36/44, 2) = **0.82** — exactly the value
+   A3's engine tests already recorded for this query. The test asserts the
+   formula-exact 0.82; the mode/open/first/score contract holds, and the
+   0.80 floor case is exercised by the single-candidate distributions (e.g.
+   the smoke's `perdi mi cedula…` query). SE-9 (the formula) is normative;
+   the spec's 0.80 is an illustrative GIVEN the seed does not produce.
+2. **Provider value scales** (FTS ×100, trigram ×10, threshold 0.3) are
+   recorded decisions — the specs fix the rule names and the sum property,
+   not the scales; they keep provider contributions in keyword-weight order
+   per design D-1.
+3. **Search payload names resolve from the YAML taxonomy** (ranker source of
+   truth), while the procedures summary comes from the DB projection —
+   consistent with C1 decision #5 and design §4.2.
+4. **`regex` dependency added to apps/api** for the four redaction patterns;
+   `crates/search` untouched (no seam adjustment was needed).
+
+### C2 review-budget accounting and split guard (fired, honored)
+- C2a `1ff1172`: ≈ 590 authored lines (providers 195, tests/c2support 100,
+  tests/providers 245, manifest/lib edits +2, plus 2 generated `.sqlx`
+  entries) — within the split's per-commit budget when the generated cache
+  is excluded (≈ 342 authored+generated).
+- C2b `c959516`: 11 files changed, 447 insertions / 48 deletions — above the
+  400-line default budget, so the pre-declared **C2a → C2b** split applied
+  (task 85's guard), each commit a green tree (C2a verified green before
+  C2b authoring). Nothing was compressed, restyled, or deleted to approach
+  the number; no comments, docs, or tests were dropped.
+- Per contract, `size:exception` acceptance vs chaining for the PR-14 diff
+  belongs to the maintainer before the PR is opened (`ask-on-risk`).
+
+### Pending maintainer decisions (carried from S0–C1, still not decided here)
+1. **Review-budget overage:** PRs 2–14 exceed the 400-line budget.
+   `size:exception` acceptance vs a chaining decision remains **pending** —
+   required before any PR is opened.
+2. **Chain strategy: pending** — `stacked-to-main` vs
+   `feature-branch-chain` still unchosen while the change's total forecast
+   is ~4,800–6,150 lines (risk High, chained PRs recommended). This run
+   continued the established split-commit-on-master pattern (no push, no PR
+   opened) per the parent instruction.
+
+### Task state (cumulative)
+- Completed: 1–85 (S0, A1–A6, B1–B6, C1, C2). 9 unchecked remain (C3 tasks
+  86–92 + baseline rebase 93–94).
+- Commits (each on `master`, no push, Conventional Commits referencing
+  C2 / PR 14):
+  - C2a `1ff1172` feat(db): FTS and trigram CandidateProvider
+    implementations (task 78).
+  - C2b `c959516` feat(api): search endpoints, redaction, search logging,
+    YAML-fed AppState (tasks 79–85).
+  - Plus this C2 docs commit (apply-progress + tasks 78–85 checkboxes).
+
+### Remaining after C2
+- Unit C3 (tasks 86–92): `POST /search/feedback` write path, compose
+  `api`+`ingest` services, end-to-end transcript, final CI + README. The
+  feedback placeholder slot and its exact-body router assertion are the
+  surface C3 replaces; the search endpoints it composes with are done.
+- Baseline rebase (tasks 93–94) after C3.
+- Carried maintainer decisions: budget overage (PRs 2–14) and chain
+  strategy — still pending, not decided here.

@@ -271,14 +271,14 @@ dependency diagram with the current PR marked `📍`.
 
 ### Unit `C2` (PR 14, tasks 78–85) — search endpoints, logging, redaction
 
-- [ ] 78. RED `crates/db/tests/providers.rs`: `FtsProvider` queries `life_events.generated_tsvector` with `tsquery` and `TrigramProvider` uses `similarity()` over name+keywords, both implementing `CandidateProvider` with rule names `FTS_TEXT` and `TRIGRAM`, and no embedding implementation exists anywhere (SE-7).
-- [ ] 79. RED `apps/api/tests/search_modes.rs`: `q=compre un auto usado` returns `mode: open` with `comprar-vehiculo` first, score, and confidence 0.80; an ambiguous query returns `mode: disambiguation` with up to 3 options and no single answer; a zero-match query returns `mode: categories` listing available category slugs (API-2, SE-10).
-- [ ] 80. RED `apps/api/tests/search_debug.rs`: the payload returns `tokens` with `original` and `canonical` (showing `coche → vehiculo`) and per-result explanation entries carrying `rule`, `term`/`canonical`, and value whose sum equals the reported score (API-5, SE-11, SE-3).
-- [ ] 81. RED `apps/api/tests/redaction.rs`: `perdi mi cedula 4.123.456-7` is stored as `perdi mi cedula <REDACTED>`, phone and email patterns are redacted too, the raw document number appears nowhere in `search_logs`, and no IP/user-agent/name/contact column exists (API-10).
-- [ ] 82. GREEN `apps/api/src/redaction.rs`, `handlers/search.rs`, and `crates/db/src/repos/search_log.rs` persisting only redacted query, normalized_query, selected/top event ids, top_score, and timestamp (API-10).
-- [ ] 83. RED schema-allowlist assertion: `search_logs` columns equal the specced set exactly, so a future field cannot silently widen telemetry (API-10, DM-1).
-- [ ] 84. GREEN `AppState { engine, taxonomy, pool }` loading the taxonomy from `data/events/*.yaml` at boot and caching it, with a test asserting the ranker's source of truth is YAML (not the DB projection) so debug reconstruction stays exact (design §4.2, TX-1).
-- [ ] 85. Smoke check: `cargo run -p api` serves the seven routes against compose Postgres with the seeded taxonomy; record the request/response transcript. Split guard: if this unit exceeds 400 lines, split `C2a` (providers) → `C2b` (search handlers + logging + redaction).
+- [x] 78. RED `crates/db/tests/providers.rs`: `FtsProvider` queries `life_events.generated_tsvector` with `tsquery` and `TrigramProvider` uses `similarity()` over name+keywords, both implementing `CandidateProvider` with rule names `FTS_TEXT` and `TRIGRAM`, and no embedding implementation exists anywhere (SE-7).
+- [x] 79. RED `apps/api/tests/search_modes.rs`: `q=compre un auto usado` returns `mode: open` with `comprar-vehiculo` first, score, and confidence 0.80; an ambiguous query returns `mode: disambiguation` with up to 3 options and no single answer; a zero-match query returns `mode: categories` listing available category slugs (API-2, SE-10).
+- [x] 80. RED `apps/api/tests/search_debug.rs`: the payload returns `tokens` with `original` and `canonical` (showing `coche → vehiculo`) and per-result explanation entries carrying `rule`, `term`/`canonical`, and value whose sum equals the reported score (API-5, SE-11, SE-3).
+- [x] 81. RED `apps/api/tests/redaction.rs`: `perdi mi cedula 4.123.456-7` is stored as `perdi mi cedula <REDACTED>`, phone and email patterns are redacted too, the raw document number appears nowhere in `search_logs`, and no IP/user-agent/name/contact column exists (API-10).
+- [x] 82. GREEN `apps/api/src/redaction.rs`, `handlers/search.rs`, and `crates/db/src/repos/search_log.rs` persisting only redacted query, normalized_query, selected/top event ids, top_score, and timestamp (API-10).
+- [x] 83. RED schema-allowlist assertion: `search_logs` columns equal the specced set exactly, so a future field cannot silently widen telemetry (API-10, DM-1).
+- [x] 84. GREEN `AppState { engine, taxonomy, pool }` loading the taxonomy from `data/events/*.yaml` at boot and caching it, with a test asserting the ranker's source of truth is YAML (not the DB projection) so debug reconstruction stays exact (design §4.2, TX-1).
+- [x] 85. Smoke check: `cargo run -p api` serves the seven routes against compose Postgres with the seeded taxonomy; record the request/response transcript. Split guard: if this unit exceeds 400 lines, split `C2a` (providers) → `C2b` (search handlers + logging + redaction).
 
 ### Unit `C3` (PR 15, tasks 86–92) — feedback, compose services, end-to-end
 
