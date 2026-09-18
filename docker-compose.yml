@@ -32,6 +32,7 @@ services:
       DATABASE_URL: postgres://postgres:postgres@db:5432/tramitesuy
       TRAMITESUY_BIND: 0.0.0.0:8080
       TRAMITESUY_DATA_DIR: /app/data
+    command: ["/usr/local/bin/api"]
     # The api applies the embedded migrations at boot (idempotent), so the
     # full stack self-bootstraps on a fresh database.
 
@@ -44,6 +45,7 @@ services:
       DATABASE_URL: postgres://postgres:postgres@db:5432/tramitesuy
       CKAN_BASE_URL: https://catalogodatos.gub.uy
       TRAMITESUY_DATA_DIR: /app/data
+    command: ["/usr/local/bin/ingest", "daemon"]
     # Daily-loop service mode (IN-1): one pass at boot, then sleep until
     # 03:00 UTC every day. No web service, no cron orchestration (design §10).
 

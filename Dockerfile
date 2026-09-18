@@ -22,9 +22,9 @@ FROM debian:bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
 COPY --from=build /build/target/release/api /usr/local/bin/api
 COPY --from=build /build/target/release/ingest /usr/local/bin/ingest
 # The YAML taxonomy is the ranker's source of truth (design §4.2) and the
 # seed input; it ships with the image (TRAMITESUY_DATA_DIR=/app/data).
 COPY data ./data
-WORKDIR /app
