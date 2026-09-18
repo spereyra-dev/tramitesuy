@@ -224,7 +224,7 @@ dependency diagram with the current PR marked `📍`.
 - [x] 47. RED `crates/ingestion/tests/raw_row.rs`: every one of the 31 source columns is preserved in `RawRow` (assert the column-name set), including the `institucion_padre_organizacional_*` fields destined for `raw_data` JSONB (IN-8, D-4).
 - [x] 48. RED `crates/ingestion/tests/dedup.rs` with `fixtures/tramites_duplicate_ids.csv`: the row with the most recent `actualizado` wins; on an exact timestamp tie the row whose raw serialization has the lexicographically greater SHA-256 hex digest wins; running the same fixture twice yields the same winner; the outcome is a warning listing the duplicate `id`, the winner, and the losers (IN-5).
 - [x] 49. GREEN `crates/ingestion/src/dedup.rs` and `row.rs`; REFACTOR so duplicate/skip findings are collected as `RunSummary` warnings rather than hard errors, while structural problems stay hard errors (design §3 error strategy).
-- [ ] 50. RED `crates/ingestion/tests/pipeline_offline.rs`: a full fixture-driven run uses a `FixtureFetcher` (committed bytes + fixed manifest) and completes resolve → download → parse → validate → dedup → normalize → hash → diff → persist with zero network access (IN-1, D-5).
+- [x] 50. RED `crates/ingestion/tests/pipeline_offline.rs`: a full fixture-driven run uses a `FixtureFetcher` (committed bytes + fixed manifest) and completes resolve → download → parse → validate → dedup → normalize → hash → diff → persist with zero network access (IN-1, D-5).
 
 ### Unit `B3` (PR 10, tasks 51–57) — version diffing, soft delete, pipeline
 

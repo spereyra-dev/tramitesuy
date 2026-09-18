@@ -1162,3 +1162,61 @@ task 45 only.
 - Authored diff: ≈ 172 lines (dedup.rs 100, row.rs +15, summary.rs +30,
   tests/dedup.rs ≈ 195 authored — one fixture already landed in B2a2).
   Within the 400-line default budget.
+
+## Work unit B2c (PR 9, task 50) — 2026-09-17
+
+### B2c.0 — RED (task 50, before implementation)
+- RED evidence: `cargo test -p ingestion --test pipeline_offline` after
+  authoring the test binary → `error[E0432]: unresolved import
+  ingestion::pipeline`, `error[E0583]: file not found for module support`,
+  `error[E0599]: no method named parse found for struct CsvStrategy`
+  (FormatStrategy not yet in scope for tests). Captured before any
+  pipeline implementation.
+
+### B2c.1 (task 50) — GREEN offline pipeline
+- `src/pipeline.rs`: `run(fetcher, format, repo, now)` executing resolve →
+  download → parse → validate → dedup → normalize (raw_data JSON over the
+  31 sorted columns) → hash (`content_hash = SHA-256(payload_json)`) →
+  diff against `repo.latest_hashes()` → persist through the port +
+  `touch_last_seen`. Skips/duplicates surface as `RunSummary` warnings;
+  fetch/parse/repo failures remain hard errors (`IngestionError`).
+  `run_csv` convenience uses the default `CsvStrategy`.
+- `tests/support/mod.rs`: `FixtureFetcher` (committed bytes + fixed
+  manifest; refuses foreign resource ids) and `InMemoryRepo`
+  (RefCell state; implements the full §3 port surface; version closing /
+  soft delete are B3 scope, marked in code).
+- Determinism: payload JSON built from the row's column order and
+  serialized via serde_json's sorted map, so the hash is stable under row
+  permutation; touch list sorted before the port call.
+- GREEN: pipeline_offline 5/5 ok (full stage run persists with the
+  recomputed SHA-256 content hash; second identical run persists nothing;
+  skip findings surface in the summary; foreign resource id rejected).
+
+### B2c verification evidence (whole B2)
+- `cargo test -p ingestion` → 21 passed / 0 failed
+  (csv_parse 3, dedup 6, pipeline_offline 5, raw_row 3, row_validation 4,
+  lib unit 0).
+- `cargo test --workspace` → 118 passed / 0 failed (was 97 before B2).
+- `cargo fmt --all -- --check` → exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
+- Zero network in unit tests: no reqwest dependency anywhere in
+  `crates/ingestion`; only `csv/serde/serde_json/sha2/thiserror` (allowed
+  set). No sqlx (DB integration is B4).
+- Fixture note (recorded): `tramites_duplicate_ids.csv` and
+  `tramites_pipeline.csv` were authored in the initial fixture batch and
+  landed in commit B2a2 ahead of their consuming tests (inert test data,
+  no behavior impact).
+
+### B2c review-budget accounting
+- Authored diff: ≈ 330 lines (pipeline.rs ≈ 115, tests/pipeline_offline.rs
+  ≈ 190, tests/support/mod.rs ≈ 110 — minus overlapping earlier counts).
+  Within the 400-line default budget.
+
+### B2 unit summary
+- Tasks completed: 45, 46, 47, 48, 49, 50 (all of unit B2).
+- Split realized: B2a1 (26ace2a) → B2a2 (a7bb51f) → B2b (47836a3) → B2c
+  (this commit), each ≤ ~485 authored lines, per the parent split-guard
+  instruction (B1's skipped guard not repeated).
+- Remaining for PR 9 scope: none — B3 (tasks 51+) is a later unit.
+- Carried maintainer decisions (unchanged from A1–B1): review-budget
+  overage PRs 2–8 and the chain strategy — not decided here.

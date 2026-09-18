@@ -47,6 +47,10 @@ pub struct RunSummary {
     pub rows_read: usize,
     pub rows_skipped: usize,
     pub duplicates_resolved: usize,
+    /// Procedures persisted for the first time this run.
+    pub created: usize,
+    /// Procedures re-persisted with a changed content hash.
+    pub updated: usize,
     pub warnings: Vec<RunWarning>,
 }
 

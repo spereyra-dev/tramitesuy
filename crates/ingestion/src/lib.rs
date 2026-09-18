@@ -8,6 +8,7 @@
 pub mod dedup;
 pub mod error;
 pub mod format;
+pub mod pipeline;
 pub mod ports;
 pub mod row;
 pub mod summary;
