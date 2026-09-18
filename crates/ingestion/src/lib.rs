@@ -16,5 +16,6 @@ pub mod row;
 pub mod summary;
 
 pub use in_memory::{
-    InMemoryProcedureRepository, OrganizationRecord, ProcedureRecord, ProcedureStatus, VersionRecord,
+    InMemoryProcedureRepository, OrganizationRecord, ProcedureRecord, ProcedureStatus,
+    VersionRecord,
 };
