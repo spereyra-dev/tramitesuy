@@ -4,3 +4,4 @@
 
 pub mod orgs;
 pub mod procedures;
+pub mod taxonomy_seed;

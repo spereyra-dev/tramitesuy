@@ -8,6 +8,7 @@ description = "sqlx persistence: migrations, repositories, and the FTS/trigram C
 
 [dependencies]
 ingestion = { path = "../ingestion" }
+taxonomy = { path = "../taxonomy" }
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
