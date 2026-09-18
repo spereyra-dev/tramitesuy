@@ -163,11 +163,11 @@ dependency diagram with the current PR marked `📍`.
 
 ### Unit `A2` (PR 3, tasks 11–15) — scoring core and explanations
 
-- [ ] 11. RED `crates/search/tests/matcher.rs`: query `compre un auto usado` against `comprar-vehiculo` (`comprar` ACTION 10, `vehiculo` ENTITY 8) produces explanation entries `KEYWORD comprar +10` and `KEYWORD vehiculo +8` (the second via the `auto → vehiculo` synonym); GREEN `crates/search/src/matcher.rs` accumulating matched keyword weights under rule name `KEYWORD` (SE-4).
-- [ ] 12. RED `crates/search/tests/rules.rs`: the rule `comprar + vehiculo → +15` adds an `ACTION_ENTITY` entry for `compre un auto` and adds nothing for `auto usado` (entity only); GREEN `crates/search/src/rules.rs` (SE-5).
-- [ ] 13. RED negative-keyword case in `crates/search/tests/rules.rs`: with `comprar-vehiculo` declaring `vender: -15`, the query `vendi mi auto` yields a `NEGATIVE_KEYWORD vender −15` entry (SE-6).
-- [ ] 14. RED `crates/search/tests/ranker.rs`: candidates merge into one ranked list ordered by score descending, equal scores order by event slug ascending, and provider-sourced entries (`FTS_TEXT`, `TRIGRAM`) are preserved per event; GREEN `crates/search/src/ranker.rs` (SE-8, SE-7).
-- [ ] 15. RED property test `crates/search/tests/explanation.rs`: over a table of seed-shaped queries, the sum of explanation entry values equals the reported score exactly, including the hand-reconstructible case `compre un auto usado` → 10 + 8 + 3 + ACTION_ENTITY 15 = 36 (SE-11).
+- [x] 11. RED `crates/search/tests/matcher.rs`: query `compre un auto usado` against `comprar-vehiculo` (`comprar` ACTION 10, `vehiculo` ENTITY 8) produces explanation entries `KEYWORD comprar +10` and `KEYWORD vehiculo +8` (the second via the `auto → vehiculo` synonym); GREEN `crates/search/src/matcher.rs` accumulating matched keyword weights under rule name `KEYWORD` (SE-4).
+- [x] 12. RED `crates/search/tests/rules.rs`: the rule `comprar + vehiculo → +15` adds an `ACTION_ENTITY` entry for `compre un auto` and adds nothing for `auto usado` (entity only); GREEN `crates/search/src/rules.rs` (SE-5).
+- [x] 13. RED negative-keyword case in `crates/search/tests/rules.rs`: with `comprar-vehiculo` declaring `vender: -15`, the query `vendi mi auto` yields a `NEGATIVE_KEYWORD vender −15` entry (SE-6).
+- [x] 14. RED `crates/search/tests/ranker.rs`: candidates merge into one ranked list ordered by score descending, equal scores order by event slug ascending, and provider-sourced entries (`FTS_TEXT`, `TRIGRAM`) are preserved per event; GREEN `crates/search/src/ranker.rs` (SE-8, SE-7).
+- [x] 15. RED property test `crates/search/tests/explanation.rs`: over a table of seed-shaped queries, the sum of explanation entry values equals the reported score exactly, including the hand-reconstructible case `compre un auto usado` → 10 + 8 + 3 + ACTION_ENTITY 15 = 36 (SE-11).
 
 ### Unit `A3` (PR 4, tasks 16–19) — confidence, selection, engine facade
 

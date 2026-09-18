@@ -176,3 +176,143 @@ All edits stayed inside the allowed surfaces: `crates/search/**`,
   test — consumes `tests/support/mod.rs` directly.
 - Pending decision flagged in tasks.md: chain strategy
   (stacked-to-main vs feature-branch-chain) before the first PR is opened.
+
+---
+
+## Work unit A2 (PR 3, tasks 11–15) — 2026-09-17
+
+Executed by the delegated `sdd-apply` executor with strict TDD (`cargo test`).
+All edits stayed inside the allowed surfaces: `crates/search/**`,
+`openspec/changes/add-mvp-core/{tasks.md,apply-progress.md}`.
+
+### A2.1 (task 11) — matcher RED → GREEN → TRIANGULATE
+- RED evidence: `cargo test -p search` after authoring the new test binaries
+  (before any implementation) → all five new test binaries fail to compile:
+  `unresolved import search::matcher`, `search::rules`, `search::ranker`,
+  `search::types::{Keyword, KeywordKind, CombinationRule, EventLexicon,
+  EventScore}` across tests matcher/rules/ranker/explanation/determinism
+  (tokenizer also fails: it imports the shared support module that now
+  references the new types).
+- GREEN: `crates/search/src/matcher.rs` — `matches()` predicate +
+  `match_keywords()` accumulating one entry per matched keyword (in
+  declaration order, at most once per keyword) under rule name `KEYWORD`;
+  negative keywords report `NEGATIVE_KEYWORD -weight` in the same pass
+  (design §2). `cargo test -p search` → matcher 2/2 ok.
+- TRIANGULATE: stem-rule table (`compra`/`compro`/`comprando`/`vendi`/
+  `vehiculos`/`usada` match; `comer`/`usar`/`iba`/`venta` do not),
+  once-per-keyword across synonym surfaces, negative-never-positive.
+  matcher → 5/5 ok.
+- **Design note (spec-driven, recorded):** the SE-4/SE-6 scenarios require
+  `compre`→`comprar` and `vendi`→`vender` to match with **no declared
+  synonym**, and the manifest allowlist excludes a stemmer crate. The
+  matcher therefore implements a deterministic suffix-stem fallback (strip
+  `-ando`/`-iendo`, then one trailing vowel or `s`; stems < 3 chars only
+  match exactly). The taxonomy synonym dictionary remains the primary
+  normalization layer (research R9). Consequence for A5 (task 27): noun
+  forms the stem rule cannot reach (`venta`, plural synonym surfaces like
+  `autos`) must be enumerated in `data/synonyms/synonyms.yaml`.
+- **Explanation-entry semantics (recorded):** `ScoreEntry.term`/`canonical`
+  carry the matched keyword's declared `term`/`canonical` (taxonomy side),
+  so the debug entry is stable regardless of surface form; the synonym
+  resolution (`coche → vehiculo`) stays visible in the tokens array per the
+  API-5 debug contract.
+
+### A2.2 (tasks 12–13) — rules RED → GREEN → TRIANGULATE
+- RED evidence: same failing run (unresolved `search::rules` + missing
+  `action_entity_entries`).
+- GREEN: `crates/search/src/rules.rs` — `action_entity_entries()` fires a
+  rule's bonus once, under `ACTION_ENTITY` (entry carries `term` = action,
+  `canonical` = entity), only when both sides are matched by the query
+  tokens. `compre un auto` → +15; `auto usado` → no bonus.
+- TRIANGULATE: fires at most once even when three synonym surfaces match
+  the entity; another event's rule does not fire (`compre un auto` vs
+  `vender-vehiculo`'s rule); task 13's penalty case asserted through the
+  full per-event composition (matcher + rules): `vendi mi auto` →
+  `NEGATIVE_KEYWORD vender −15`, no `KEYWORD vender` entry. rules → 5/5 ok.
+
+### A2.3 (task 14) — ranker RED → GREEN
+- RED evidence: same failing run (unresolved `search::ranker`).
+- GREEN: `crates/search/src/ranker.rs` — `rank()` merges taxonomy-derived
+  `EventScore`s and provider candidates per slug (BTreeMap, deterministic),
+  sums the explanation entries into the score, and orders by score desc
+  with equal scores broken by slug asc (SE-8). Provider entries are
+  preserved with `term: None` under the provider's rule name (SE-7).
+  Tests: merge + provider entries preserved + sums, score-desc order,
+  equal-score slug-asc tie-break, empty inputs → no results. ranker 4/4 ok.
+
+### A2.4 (task 15) — explanation property RED → GREEN
+- RED evidence: same failing run.
+- GREEN: `crates/search/tests/explanation.rs` — property over a table of
+  seed-shaped queries (8 queries × fixture events): sum of explanation
+  entries == score for every ranked result; hand-reconstructible case
+  `compre un auto usado` → comprar-vehiculo = 10 + 8 + 3 + ACTION_ENTITY
+  15 = 36; ranking-order property (score desc, slug asc). explanation
+  → 3/3 ok.
+- `vendi mi auto` yields a negative comprar-vehiculo score (8 − 15 = −7)
+  under vender-vehiculo's 33 — negative-scored events stay in the ranked
+  list (the disambiguation band may still show them; selection logic is
+  unit A3).
+
+### A2.5 — determinism extension (task 8 follow-up, recorded A1 deviation)
+- `tests/determinism.rs` gains `ranked_scores_and_ordering_are_identical`
+  across runs: normalize → tokenize → matcher → rules → rank executed twice
+  yields a byte-identical `Vec<ScoredEvent>` (ranker stage of SE-1). The
+  confidence/selection stages of the full-pipeline assertion remain with
+  task 18 (A3). determinism → 3/3 ok.
+
+### A2 fixture consumption (task 10 follow-up)
+- `tests/support/mod.rs` adds `event_lexicon()` (FixtureEvent → engine-side
+  `EventLexicon`, including the new `Keyword.canonical` field) and
+  `score_event()` (matcher + rules composition). The module-level
+  `#![allow(dead_code)]` stays, now scoped to `FixtureEvent::name`/`category`
+  which remain ahead of their consumers (A3 selection / A5 seed tests); the
+  comment was updated accordingly. The A1 gotcha about dead-code allowances
+  is resolved for the matcher/rules fields, which are now genuinely read.
+
+### A2 verification evidence
+- `cargo test -p search` → 33 passed, 0 failed (constants 2, determinism 3,
+  explanation 3, matcher 5, no_forbidden_deps 2, normalizer 6, ranker 4,
+  rules 5, tokenizer 3).
+- `cargo test --workspace` → all green (search 33 + workspace lib stubs).
+- `cargo fmt --all -- --check` → exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0 (three
+  clippy findings fixed during REFACTOR: collapsible ifs, unused binding,
+  redundant guard).
+- Purity: `tests/no_forbidden_deps.rs` still green; new src modules import
+  only `crate::*` and `std::collections`.
+
+### A2 review-budget accounting
+- Authored diff: **≈ 714 changed lines** — 594 lines in seven new files
+  (matcher.rs 92, rules.rs 38, ranker.rs 57, tests/matcher.rs 118,
+  tests/rules.rs 99, tests/ranker.rs 111, tests/explanation.rs 79) plus
+  ~120 net lines in tracked files (types.rs +50, support/mod.rs +52/−4,
+  determinism.rs +19, lib.rs +3). Above the 400-line default budget.
+  The overage is structural: every GREEN module carries its RED contract
+  tests in the same unit, and the stem-rule semantics required explicit
+  triangulate tables. Nothing was compressed, restyled, or deleted to
+  approach the number; no comments, docs, or tests were dropped.
+- Per contract, the decision belongs to the maintainer before PR 3 is
+  opened.
+
+### Pending maintainer decisions carried from A1 (recorded, not decided here)
+1. **Review-budget overage:** PR 2 (A1, ≈554 net lines) already exceeded
+   the 400-line budget and PR 3 (A2, ≈714 changed lines) exceeds it
+   further. `size:exception` acceptance vs a chaining decision for the
+   already-authored units is **pending** — required before the first PR is
+   opened.
+2. **Chain strategy: pending** — `stacked-to-main` vs
+   `feature-branch-chain` still unchosen while the change's total forecast
+   is ~4,800–6,150 lines (risk High, chained PRs recommended). This run
+   continued the established single-work-unit-commit-on-master pattern (no
+   PR opened, no push) on the user's explicit instruction, so no PR-level
+   decision was made by this unit.
+
+### Task state (cumulative)
+- Completed: 1–5 (S0), 6–10 (A1), 11–15 (A2). 79 unchecked remain (units
+  A3…C3 + baseline rebase).
+- Commit: A2 work-unit commit created on `master` (Conventional Commit
+  referencing unit A2 / PR 3), no push.
+
+### Remaining after A2
+- Unit A3 (tasks 16–19): confidence, selection, engine facade,
+  embedding-seam check — consumes the A2 scoring stages directly.

@@ -5,13 +5,15 @@
 //! This is test support only: `crates/search/src` stays free of filesystem
 //! access, and fixtures never touch disk.
 //!
-//! `allow(dead_code)`: fixture fields (keywords, rules, negatives) are
-//! intentionally ahead of their consumers — the matcher/rules engine in unit
-//! A2 (tasks 11–13) starts reading them next, while unit A1 tests consume
-//! only `SearchFixture::synonyms`.
+//! `allow(dead_code)`: `FixtureEvent::name`/`category` are still ahead of
+//! their consumers (unit A3 selection / A5 seed tests); every matcher/rules
+//! field is now read by unit A2 via `event_lexicon`.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
+
+use search::types::KeywordKind as EngineKeywordKind;
+use search::types::{CombinationRule, EventLexicon, EventScore, Keyword};
 
 /// Keyword type in the seed schema (TX-2 allowed set).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,6 +114,52 @@ pub fn vehiculos_fixture() -> SearchFixture {
     SearchFixture {
         events: vec![comprar_vehiculo, vender_vehiculo],
         synonyms,
+    }
+}
+
+/// Converts one fixture event into the engine-side scoring lexicon the
+/// matcher and rules modules consume (unit A2 onward).
+pub fn event_lexicon(event: &FixtureEvent) -> EventLexicon {
+    EventLexicon {
+        slug: event.slug.to_string(),
+        keywords: event
+            .keywords
+            .iter()
+            .map(|k| Keyword {
+                term: k.term.to_string(),
+                canonical: k.canonical.to_string(),
+                kind: match k.kind {
+                    KeywordKind::Action => EngineKeywordKind::Action,
+                    KeywordKind::Entity => EngineKeywordKind::Entity,
+                    KeywordKind::Modifier => EngineKeywordKind::Modifier,
+                    KeywordKind::Context => EngineKeywordKind::Context,
+                },
+                weight: k.weight,
+                negative: k.negative,
+            })
+            .collect(),
+        rules: event
+            .rules
+            .iter()
+            .map(|r| CombinationRule {
+                action: r.action.to_string(),
+                entity: r.entity.to_string(),
+                bonus: r.bonus,
+            })
+            .collect(),
+    }
+}
+
+/// Scores one fixture event for a tokenized query through the matcher and
+/// the ACTION_ENTITY rules — the per-event composition the engine repeats
+/// and units A2/A3 tests reuse.
+pub fn score_event(query: &search::types::NormalizedQuery, event: &FixtureEvent) -> EventScore {
+    let lex = event_lexicon(event);
+    let mut entries = search::matcher::match_keywords(query, &lex.keywords);
+    entries.extend(search::rules::action_entity_entries(query, &lex.rules));
+    EventScore {
+        slug: lex.slug,
+        entries,
     }
 }
 

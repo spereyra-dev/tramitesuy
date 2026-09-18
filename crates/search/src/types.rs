@@ -84,3 +84,53 @@ pub struct SearchOutcome {
     pub confidence: f64,
     pub selection: Selection,
 }
+
+/// Keyword type in the seed schema (TX-2 allowed set: ACTION, ENTITY,
+/// MODIFIER, CONTEXT).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeywordKind {
+    Action,
+    Entity,
+    Modifier,
+    Context,
+}
+
+/// One typed keyword of a life event's scoring lexicon (SE-4, SE-6). Terms
+/// are de-accented lowercase (the normalizer's output alphabet). Negative
+/// keywords carry a positive `weight` and are reported as
+/// `NEGATIVE_KEYWORD` penalties of `-weight`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Keyword {
+    pub term: String,
+    /// Canonical term the keyword resolves to (usually the term itself).
+    pub canonical: String,
+    pub kind: KeywordKind,
+    pub weight: i64,
+    pub negative: bool,
+}
+
+/// One ACTION_ENTITY combination rule (SE-5): the bonus is added when the
+/// same query matches both the action and the entity term.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CombinationRule {
+    pub action: String,
+    pub entity: String,
+    pub bonus: i64,
+}
+
+/// The taxonomy-fed scoring lexicon of one life event. The ranker's source
+/// of truth is the YAML taxonomy, never the DB projection (design §4.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventLexicon {
+    pub slug: String,
+    pub keywords: Vec<Keyword>,
+    pub rules: Vec<CombinationRule>,
+}
+
+/// Per-event taxonomy-derived score entries (KEYWORD, NEGATIVE_KEYWORD,
+/// ACTION_ENTITY) handed to the ranker, where provider candidates merge in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventScore {
+    pub slug: String,
+    pub entries: Vec<ScoreEntry>,
+}

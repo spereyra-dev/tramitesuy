@@ -56,3 +56,22 @@ fn synonym_map_lookup_order_does_not_affect_output() {
         assert_eq!(a, b, "token canonicalization must be order-independent");
     }
 }
+
+#[test]
+fn ranked_scores_and_ordering_are_identical_across_runs() {
+    // Ranker stage of the SE-1 determinism clause (task 14): identical inputs
+    // produce an identical ranked list, byte for byte, in one process.
+    let fixture = support::vehiculos_fixture();
+
+    let run = || -> Vec<search::types::ScoredEvent> {
+        let query = search::tokenizer::tokenize("compre un auto usado", &fixture.synonyms);
+        let scores: Vec<search::types::EventScore> = fixture
+            .events
+            .iter()
+            .map(|event| support::score_event(&query, event))
+            .collect();
+        search::ranker::rank(&query, &scores, &[])
+    };
+
+    assert_eq!(run(), run(), "two identical runs must be byte-identical");
+}
