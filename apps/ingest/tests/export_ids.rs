@@ -53,6 +53,14 @@ async fn export_ids_writes_sorted_lf_snapshot_with_trailing_newline() {
         "snapshot must be sorted, one id per line, including inactive ids"
     );
 
+    // The reported count must equal the number of ids in the file (ingestion
+    // delta: "Exported count matches snapshot content") — not a byte length.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("exported 5 external id(s) to"),
+        "stdout must report the true external-id count; got: {stdout:?}"
+    );
+
     // Byte-stability across runs (task 68 readiness evidence).
     let second = output_dir.join("snapshot2.txt");
     let rerun = Command::new(env!("CARGO_BIN_EXE_ingest"))
@@ -65,6 +73,49 @@ async fn export_ids_writes_sorted_lf_snapshot_with_trailing_newline() {
     assert_eq!(
         bytes, bytes2,
         "two runs over the same database must produce byte-identical snapshots"
+    );
+
+    common::drop_test_db(&db_name).await;
+    let _ = std::fs::remove_dir_all(&output_dir);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn export_ids_reports_zero_on_an_empty_source() {
+    let (_, db_name) = common::fresh_migrated_db().await;
+    // No procedures seeded: the empty-source contract pins the format, not
+    // the arithmetic — an empty snapshot rendered zero bytes before and after
+    // the count fix, so this test guards the "0 external id(s)" wording.
+
+    let output_dir = std::env::temp_dir().join(format!(
+        "b5_export_empty_{}_{}",
+        std::process::id(),
+        db_name
+    ));
+    std::fs::create_dir_all(&output_dir).expect("temp dir");
+    let output_path = output_dir.join("snapshot.txt");
+
+    let url = format!("postgres://postgres:postgres@localhost:5432/{db_name}");
+    let output = Command::new(env!("CARGO_BIN_EXE_ingest"))
+        .args(["export-ids", "--database-url", &url, "--output"])
+        .arg(&output_path)
+        .output()
+        .expect("binary runs");
+    assert!(
+        output.status.success(),
+        "export-ids must succeed on an empty source; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let bytes = std::fs::read(&output_path).expect("snapshot written");
+    assert!(
+        bytes.is_empty(),
+        "an empty source must produce an empty snapshot; got: {:?}",
+        String::from_utf8_lossy(&bytes)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("exported 0 external id(s) to"),
+        "stdout must report zero external ids; got: {stdout:?}"
     );
 
     common::drop_test_db(&db_name).await;
