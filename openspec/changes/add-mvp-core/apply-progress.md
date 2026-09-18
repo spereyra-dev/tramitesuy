@@ -1807,3 +1807,192 @@ correctly left pending by the seed).
 - Pending maintainer decisions carried forward (unchanged): review-budget
   overage (`size:exception` acceptance vs chaining) for PRs 2–12;
   chain strategy unchosen. Not decided here.
+
+
+## Work unit C1 (PR 13, tasks 70–77) — 2026-09-18
+
+Executed by the delegated `sdd-apply` executor with strict TDD (`cargo test`
+against the compose Postgres, service `db`, which was running and was left
+running after verification; scratch databases `c1_<pid>_<nanos>` created per
+test and dropped with `DROP DATABASE ... WITH (FORCE)`). Allowed edit
+surfaces honored: `apps/api/**`, `crates/db/**` (read-query additions
+justified below and in code comments), and the two openspec artifacts.
+`crates/search` was never touched. The pre-declared C1 split guard fired
+(unit diff > 400 lines), honored as **C1a → C1b** (plus the closing docs
+commit, B3/B5 precedent).
+
+### C1.0 — RED batch (before any implementation)
+- **C1a RED** (`cargo test -p api` after authoring `tests/router.rs`,
+  `tests/slug_validator.rs`, `tests/support/mod.rs`, the lib-target manifest
+  change, and a doc-only `src/lib.rs`): both new binaries fail to compile —
+  `error[E0425]: cannot find function build_router in crate api`,
+  `error[E0432]: unresolved import api::dto` + `E0433: unresolved module
+  dto`. Captured before any router/error/dto implementation existed.
+- **C1b RED** (`cargo test -p api --no-fail-fast` after authoring
+  `tests/{events,categories,procedures,attribution,missing_cost}.rs` against
+  the C1a placeholder handlers): all five new binaries FAIL behaviorally,
+  0 passed each — every request returned the placeholder's 500
+  `{"error":"internal server error"}` where 200 + contract payloads are
+  expected (`api internal error: GET /events/:slug read handler lands with
+  task 71 (C1b)` etc. in server logs). C1a's router (4) and slug_validator
+  (5) suites stayed green throughout.
+
+### TDD Cycle Evidence (cargo test)
+
+| Task | RED evidence (pre-implementation) | GREEN evidence |
+|---|---|---|
+| 70 route inventory (API-1) | `tests/router` E0425/E0432 compile failure | `router` 4/4 ok: seven routes respond non-404 (axum 0.8 `{param}` syntax); unknown routes (`/api/v1/unknown`, `/api/v1/events`, `/api/v1/search/extra`, `/api/v2/search`, `/api/v1`) → 404; wrong method on registered routes → 405 (inventory-closure probe); 404/500 bodies are the EXACT public shapes `{"error":"not found"}` / `{"error":"internal server error"}` — no path/query/internal echo (leak-none); internals logged server-side only |
+| 71 event endpoint (API-6, TX-6) | `tests/events` 0/3 (placeholder 500) | `events` 3/3 ok: name/description/category/slug; procedures ordered by `order_index` even though the fixture inserts order 2 first; each carries `order`, `required`, `official_url`, cost pair, and the attribution block; deactivated related procedure stays visible with attribution intact (IN-7); unknown slug → 404 |
+| 72 category endpoints (API-7) | `tests/categories` 0/3 | `categories` 3/3 ok: list ordered by `order_index` ascending with `vehiculos` first (slug, name, order_index); per-category events with slug+name ordered by slug; unknown category slug → 404 |
+| 73 procedure endpoint (API-8) | `tests/procedures` 0/3 | `procedures` 3/3 ok: name, description, organization, official_url, cost fields, `status: "active"`, attribution; deactivated procedure still 200 with `status: "inactive"` and attribution intact; unknown id → 404 |
+| 74 attribution (API-4) | `tests/attribution` 0/3 | `attribution` 3/3 ok: shared `assert_source_attribution` helper applied to EVERY procedure payload found in the response tree — `source.official=true`, `source.name` = the exact Spanish catalog name, `source.official_url`, `source.last_synced_at` = the seeded `procedures.last_seen_at` formatted RFC 3339 (last run that touched the procedure — see decisions), `source.license="odc-uy"` |
+| 75 missing cost (API-3) | `tests/missing_cost` 0/4 | `missing_cost` 4/4 ok: empty `tiene_costo`/`valor` → `cost: null` + `cost_display: "Sin costo informado"`; populated value `55.70` passes verbatim (`cost` and `cost_display`); NULL `raw_data` → null + same wording (no default, no estimate); event-page procedure cards share the exact same rule via one dto code path |
+| 76 slug exposure (TX-4) | `tests/slug_validator` compile failure (C1a RED) | `slug_validator` 5/5 ok: `dto::SLUG_PATTERN` is exactly `^[a-z0-9]+(-[a-z0-9]+)*$`; valid/invalid slug tables (underscore, case, edges, spaces); shared recursive `validate_slugs_in_response` applied to every parsed payload in every read-endpoint test (`assert_hyphen_slugs` in support); validator delegates to `taxonomy::validator::is_valid_slug` so the seed and API share one implementation; payload-walk test catches an underscore slug and names it |
+| 77 dto + handlers GREEN (split capstone) | — (GREEN task behind the rows above) | `dto.rs` composes attribution + cost into `ProcedureCard` / `ProcedureDetailPage`; `handlers/{event,category,procedure}.rs` call the db read records; all seven integration binaries green against compose Postgres |
+
+### C1.1 (C1a, commit `cb4624f`) — router/error/DTO
+- `src/lib.rs` (new lib target; `main.rs` is thin pool+router wiring per
+  design §1) + `src/router.rs`: exactly the seven specced routes; axum 0.8
+  requires `{param}` path syntax (not the `:param` of older axum); a
+  `fallback` returns the exact public 404 body (axum's default unmatched
+  404 has an empty body — caught by the leak-none test).
+- `src/error.rs`: `ApiError { NotFound, BadRequest, InternalServerError }`
+  → 404/400/500; internals logged server-side (stderr), bodies stay the
+  exact public shapes. No tracing dependency introduced in C1; C3 may move
+  to structured logging if wanted (recorded).
+- `src/state.rs`: `AppState { pool }`; engine + taxonomy arrive with task 84
+  (C2), per the task-70 scope note.
+- `src/dto.rs` (C1 part): `SLUG_PATTERN`, `SOURCE_NAME` (exact Spanish
+  catalog name with em dash), `SOURCE_LICENSE`, `SIN_COSTO_INFORMADO`,
+  `source_attribution()`, `cost_fields()`/`cost_fields_from_raw()`
+  (API-3 rule over `raw_data.tiene_costo`/`valor`), and the shared
+  recursive slug response validator.
+- `handlers/{search,feedback}.rs`: registered slots only (task 70 scope) —
+  they answer with `ApiError::InternalServerError` → public 500 until C2/C3
+  dial up the real contracts (never 404, never a fabricated payload; the
+  exact-body assertions in `tests/router.rs` pin this until those units
+  replace the placeholders).
+- `handlers/{event,category,procedure}.rs` in C1a are placeholder stubs
+  returning the same public 500 (replaced by C1b).
+- `tests/support/mod.rs` (shared, forward-loaded for all C1 binaries):
+  scratch-DB lifecycle (`c1_` prefix, extensions, migrations, FORCE drop),
+  read-surface fixture (2 categories, 2 events, org, 4 procedures covering
+  populated/empty/NULL-cost + deactivated, relations inserted out of order
+  to prove ordering), in-process router request helper, and the two shared
+  contract helpers (`assert_source_attribution`, `assert_hyphen_slugs`).
+
+### C1.2 (C1b, commit `3e56342`) — read endpoints + db read queries
+- `crates/db/src/repos/procedures.rs` gains
+  `by_event(pool, slug) -> Option<EventProcedures>` (event meta + relations
+  ordered by `order_index`; deactivated procedures keep their relation per
+  IN-7) and `by_external_id(pool, external_id) -> Option<ProcedureDetail>`
+  (active row wins when several share an external_id — matching the upsert's
+  present-row selection — so an inactive-only id still resolves, API-8).
+- `crates/db/src/repos/taxonomy_seed.rs` gains the read-side `categories()`
+  and `events_by_category()` (design §7 maps the category endpoints to this
+  module). **Justified crates/db addition** (per the allowed-surfaces note):
+  D-5 forbids SQL in apps/api, and these are exactly the read queries the
+  task 71/72/73 contracts need; documented in code comments too. apps/api
+  stays SQL-free and composes pool + repos (D-5).
+- All new queries are `sqlx::query!` compile-time-checked; the offline
+  `.sqlx` cache was regenerated with `cargo sqlx prepare --workspace`
+  (6 new query files) and committed; offline build verified
+  (`env -u DATABASE_URL cargo check -p db`).
+- sqlx nullability gotcha (recorded): the LEFT JOIN's `o.name AS
+  organization_name` was inferred NON-null by the query! macro — wrong under
+  LEFT JOIN; fixed with the explicit
+  `AS "organization_name: Option<String>"` override. Output timestamptz
+  maps to `DateTime<Utc>` (struct adjusted).
+- `dto.rs` gains the payload assembly (`event_page`, `procedure_detail_page`,
+  `categories_page`, `category_events_page`) — one code path for attribution
+  + cost across all procedure-bearing payloads.
+
+### Recorded decisions (spec-driven, not silent)
+1. **`source.last_synced_at` = `procedures.last_seen_at`** — API-4's "the
+   timestamp of the last ingestion run that touched this procedure": IN-9's
+   idempotent run advances exactly `last_seen_at` (even for unchanged rows),
+   while `updated_at` only fires on content change. Test asserts equality
+   with the seeded `last_seen_at` per procedure.
+2. **Cost display for a populated value** = the source `valor` string
+   verbatim (`cost` AND `cost_display` carry "55.70"). API-3 fixes only the
+   missing wording; no currency formatting is invented. The emptiness test
+   trims; the reported value is passed through untrimmed.
+3. **Deactivated related procedures stay on event pages** (relations are
+   never deleted, IN-7); the procedure detail endpoint reports their status.
+4. **Search/debug/feedback slots** are registered (task 70) and answer the
+   public 500 shape until C2/C3; the C1a router tests pin the exact bodies.
+5. **Design §7 deviation for the event handler**: §7 sketches
+   `taxonomy::loader` for event metadata; the implementation serves the
+   seeded DB projection (`by_event`) — same YAML-derived content, one
+   query, and the projection is what the website/FTS providers read. The
+   YAML remains the ranker's source of truth (§4.2, task 84).
+6. **axum 0.8 route syntax** is `{slug}` (the task text's `:slug` is spec
+   prose); unknown-route 404s need an explicit fallback to carry the public
+   error body.
+
+### Flakiness found and fixed during C1b
+One test failure under full-workspace parallelism: two test binaries drew
+the same `c1_<pid>_<nanos>` scratch-DB name (Windows wall-clock resolution
+collision; `CREATE DATABASE` → SQLSTATE 23505 on `pg_database_datname_index`).
+`fresh_migrated_db` now retries with a fresh name on that SQLSTATE. Five
+consecutive full-workspace runs after the fix: zero failures. (The earlier
+B1/B5 helpers carry the same theoretical risk; not touched in this unit's
+surfaces — flagged for C2/C3 reuse.)
+
+### C1 verification evidence
+- `cargo test -p api` → 7 binaries, 25 tests passing (router 4,
+  slug_validator 5, events 3, categories 3, procedures 3, attribution 3,
+  missing_cost 4).
+- `cargo test --workspace` → **182 passed / 0 failed / 1 ignored** (was 157
+  + 1 ignored before C1; the ignored one is still the feature-gated live
+  `ckan_live` test, NOT run). Five consecutive clean runs recorded.
+- `cargo fmt --all -- --check` → exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0 (one
+  unused-import finding fixed during REFACTOR).
+- Offline compile: `env -u DATABASE_URL cargo check -p db` succeeds against
+  the regenerated `.sqlx` cache.
+- Compose `db` healthy and left running; all `c1_*` scratch databases
+  dropped with FORCE.
+
+### C1 review-budget accounting and split guard (fired, honored)
+- Authored diff: C1a `cb4624f` = 832 insertions / 4 deletions; C1b `3e56342`
+  = 15 files, ≈ 460 insertions (repos +197, dto +165, handlers ≈ 60, tests
+  ≈ 700 across the five new binaries, .sqlx 6 machine-generated). Unit total
+  well above the 400-line default budget, so the pre-declared split applied:
+  **C1a** (router/error/DTO + task-70/76 contracts, ≈ 832 lines — of which
+  the shared 294-line test-support module is forward-loaded infrastructure
+  for every C1 binary, same structural overage as A1's fixture) and **C1b**
+  (read endpoints + db queries + endpoint contracts). Nothing was
+  compressed, restyled, or deleted to approach the number; no comments,
+  docs, or tests were dropped.
+- Per contract, `size:exception` acceptance vs chaining for the PR-13 diff
+  belongs to the maintainer before the PR is opened (`ask-on-risk`).
+
+### Pending maintainer decisions (carried from S0–B6, still not decided here)
+1. **Review-budget overage:** PRs 2–13 all exceed the 400-line budget.
+   `size:exception` acceptance vs a chaining decision remains **pending** —
+   required before any PR is opened.
+2. **Chain strategy: pending** — `stacked-to-main` vs
+   `feature-branch-chain` still unchosen while the change's total forecast
+   is ~4,800–6,150 lines (risk High, chained PRs recommended). This run
+   continued the established split-commit-on-master pattern (no push, no PR
+   opened) per the parent instruction.
+
+### Task state (cumulative)
+- Completed: 1–77 (S0, A1–A6, B1–B6, C1). 17 unchecked remain (C2 tasks
+  78–85, C3 tasks 86–92, baseline rebase 93–94).
+- Commits (each on `master`, no push, Conventional Commits referencing
+  C1 / PR 13):
+  - C1a `cb4624f` feat(api): router skeleton, ApiError mapping, DTO rules
+    (tasks 70, 76; 17 files, +832/−4).
+  - C1b `3e56342` feat(api): read endpoints — event, category, procedure
+    (tasks 71–75, 77; 15 files incl. 6 generated `.sqlx` entries).
+  - Plus this C1 docs commit (apply-progress + tasks 70–77 checkboxes).
+
+### Remaining after C1
+- Unit C2 (tasks 78–85): FTS/trigram providers, `/search` +
+  `/search/debug` contracts, redaction, `search_logs`, AppState taxonomy
+  loading, smoke check. The search/feedback placeholder slots and their
+  exact-body router assertions are the surface C2 replaces.
+- Carried maintainer decisions: budget overage (PRs 2–13) and chain
+  strategy — still pending, not decided here.
