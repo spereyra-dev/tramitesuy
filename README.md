@@ -26,8 +26,9 @@ Requirements: Rust 1.94.1 (pinned in `rust-toolchain.toml`), Docker (Docker
 Desktop or any engine with `docker compose`), GNU make in a POSIX shell.
 
 ```bash
-# 1. Start the dev database (postgres:16-alpine with pg_trgm + unaccent).
-make dev          # = docker compose up -d db + migrations + seeding (wired in task 91)
+# 1. Start the dev database (postgres:16-alpine with pg_trgm + unaccent),
+#    apply migrations, and seed the YAML taxonomy (idempotent per slug).
+make dev          # = docker compose up -d db + migrations + seed-taxonomy
 
 # 2. Run the whole test suite (strict TDD: RED, GREEN, TRIANGULATE, REFACTOR).
 make test         # = cargo test --workspace
@@ -37,11 +38,38 @@ make lint         # = cargo fmt --check + cargo clippy -D warnings
 
 # 4. Validate the community taxonomy (slice (a)).
 make validate-data
+
+# 5. Re-seed the taxonomy after taxonomy edits (safe to re-run).
+make seed-taxonomy
 ```
 
 The dev database listens on `localhost:5432` (`postgres`/`postgres`, database
 `tramitesuy`); `docker/init/01-extensions.sql` installs `pg_trgm` and `unaccent`
 on first boot. Stop it with `make db-down`.
+
+## External-id snapshot regeneration
+
+`data/external_ids.snapshot.txt` is the committed list of ingested procedure
+external ids (one per line, sorted, LF line endings, trailing newline). The
+community taxonomy's event→procedure relations reference those ids, and the
+DB-free CI orphan check (`make validate-data`) validates them against this
+file.
+
+Regenerate it after an ingestion run has populated the database:
+
+```bash
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/tramitesuy
+cargo run -p ingest -- export-ids --output data/external_ids.snapshot.txt
+```
+
+The export is byte-stable for the same database state, so re-running it only
+rewrites the file when ids actually changed — commit that diff together with
+any taxonomy change that references the new ids.
+
+The current snapshot still holds **provisional** ids (`100001`–`100022`) used
+while the seed was authored. The first maintainer-authorized live ingestion
+run (task 68) will populate real AGESIC external ids; afterwards, regenerate
+and commit the snapshot so the seed relations resolve to real procedures.
 
 ## License
 

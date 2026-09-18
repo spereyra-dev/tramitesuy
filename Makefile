@@ -3,15 +3,16 @@
 
 SHELL := /bin/bash
 
-.PHONY: dev test lint fmt migrate ingest search validate-data db-down
+.PHONY: dev test lint fmt migrate ingest seed-taxonomy search validate-data db-down
 
 ## dev: start the dev database, run migrations, seed taxonomy, ingest fixtures.
-## End-to-end wiring is completed in task 91 (slice c); until then this is the
-## documented entry point.
+## Fixture-ingest wiring is completed in task 91 (slice c); seed-taxonomy is
+## wired here (task 69) and is idempotent, so re-running is safe.
 dev:
 	docker compose up -d db
 	$(MAKE) migrate
-	@echo "TODO(task 91): seed-taxonomy + fixture ingest wiring lands in slice (c)."
+	cargo run -p ingest -- seed-taxonomy --data-dir data --snapshot data/external_ids.snapshot.txt
+	@echo "TODO(task 91): fixture ingest wiring lands in slice (c)."
 
 ## test: run the full workspace test suite (strict TDD runner).
 test:
@@ -40,6 +41,11 @@ search:
 ## validate-data: strict taxonomy validation over data/ (slice (a), task 26).
 validate-data:
 	cargo run -p taxonomy --bin taxonomy-validate -- data/ data/external_ids.snapshot.txt
+
+## seed-taxonomy: project the YAML taxonomy into the database (task 69).
+## Idempotent per slug; relations pending a procedure skip with a warning.
+seed-taxonomy:
+	cargo run -p ingest -- seed-taxonomy --data-dir data --snapshot data/external_ids.snapshot.txt
 
 ## db-down: stop the dev database.
 db-down:
