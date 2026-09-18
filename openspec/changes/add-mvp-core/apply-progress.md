@@ -2167,3 +2167,173 @@ The pre-declared C2 split guard fired (unit diff > 400 lines), honored as
 - Baseline rebase (tasks 93–94) after C3.
 - Carried maintainer decisions: budget overage (PRs 2–14) and chain
   strategy — still pending, not decided here.
+
+## Work unit C3 (PR 15, tasks 86–92) — 2026-09-18
+
+Executed by the delegated `sdd-apply` executor with strict TDD (`cargo test`
+against the compose Postgres, service `db`, running and left running; scratch
+databases created per test with the C1 collision-retry pattern and FORCE-
+dropped). Allowed edit surfaces honored: `apps/api/**` (feedback + smoke
+fixes), `crates/db/**` (feedback repo), `docker-compose.yml`, `Dockerfile`,
+`apps/ingest/**` (daemon daily-loop), `.github/workflows/ci.yml`,
+`README.md`, `Makefile`, and the two openspec artifacts. The pre-declared
+C3 split guard was honored as **C3a → C3b → C3c → C3d** (+ closing docs
+commit).
+
+### TDD Cycle Evidence (cargo test)
+
+| Task | RED evidence (pre-implementation) | GREEN evidence |
+|---|---|---|
+| 86 feedback write path (API-9, D-3) | `cargo test -p api --test feedback` → compile failure (no handler payload types), then behavioral RED **0 passed / 4 failed** against the C1 placeholder slot: valid body 500 (expect 201), unknown log/event id 500 (expect 400), malformed body 500 | `feedback` 4/4 ok: valid `{search_log_id, event_id, correct}` → 201 + exact body `{"status":"created"}` and one `search_feedback` row linking log+event with the `correct` flag; unknown `search_log_id` → 400 exact public body, nothing persisted; unknown `event_id` → 400; non-JSON / missing-field / non-UUID bodies → 400 (manual `Bytes` parse so no axum extractor echo can leak); `router.rs` exact-body probe updated (feedback no longer pins a 500 — it pins the 400 public shape) |
+| 88 daily loop (D-6, IN-1) | `cargo test -p ingest --test daily_loop` → `error[E0433]: use of unresolved module or unlinked crate ingest` (no lib target, no module) | `daily_loop` 5/5 ok: pure `seconds_until_next_run` over UTC day-seconds — before 03:00 sleeps to 03:00 today; at 03:00 exactly a full day; after 03:00 to tomorrow's 03:00; midnight → 3h; sleep always in `1..=86400` s. `ingest daemon` runs one pass at boot, applies migrations, then sleeps until 03:00 UTC daily (failed pass logged, never fatal) |
+| 89 end-to-end (SE-10, design §8 slice c) | (verification task; the RED predecessor is task 88's failing state plus the api-boot panic captured live: `boot: taxonomy load failed: cannot read /app/data/events`) | transcript below |
+
+### C3a (commit `086b05e`) — POST /search/feedback
+- `crates/db/src/repos/search_feedback.rs`: one `query!`-checked INSERT …
+  RETURNING id into `search_feedback` (DM-1 table 10); FK violation `23503`
+  is the unknown-log/unknown-event signal; no update/delete path exists
+  (write path only, D-3). `.sqlx` offline cache extended (1 new query) and
+  offline build verified (`env -u DATABASE_URL cargo check --workspace`).
+- `apps/api/src/handlers/feedback.rs`: body parsed manually from
+  `axum::body::Bytes` so every malformed payload maps through `ApiError` to
+  the exact public body; ids deserialize as strings and parse to UUIDs
+  explicitly (clean 400 for non-UUIDs; sqlx's uuid build has no serde
+  feature — recorded gotcha).
+- UUID-in-`serde_json::json!` gotcha (recorded): tests serialize ids with
+  `.to_string()` because `uuid`'s serde impl is not enabled in this
+  workspace build.
+
+### C3b (commit `3309343`) — compose api + ingest services (task 88)
+- Multi-stage `Dockerfile`: `rust:1.94.1-slim` builder with
+  `SQLX_OFFLINE=true` (hermetic — the committed `.sqlx` cache means the
+  build never touches a DB), `debian:bookworm-slim` runtime with
+  ca-certificates, both release binaries + the YAML taxonomy seed shipped
+  (`TRAMITESUY_DATA_DIR=/app/data`). rustls everywhere, no openssl packages.
+- `docker-compose.yml`: `api` (0.0.0.0:8080 via `TRAMITESUY_BIND`, embedded
+  migrations applied at boot so the stack self-bootstraps) + `ingest`
+  (`daemon` daily-loop) + the existing `db`; per-service `command:` since
+  the shared image has no default CMD; **no `web` service** (D-6).
+- `apps/api/src/main.rs`: idempotent `run_migrations` at boot +
+  `TRAMITESUY_BIND` env override (smoke fixes).
+- `apps/ingest`: new lib target (`daily_loop` module), `daemon` subcommand,
+  `ingest::run_once()` extracted so the loop reuses the exact CLI pipeline.
+
+### C3c (commit `d7f3d98`, task 89) — end-to-end boot + transcript
+- First boot caught two real image bugs (fixed in `d7f3d98`): the runtime
+  `WORKDIR /app` followed the `data` COPY (seed landed at `/data`; api
+  panicked), and the missing default CMD exited both services silently.
+- **End-to-end transcript (slice (c) evidence, 2026-09-18):**
+  `docker compose up --build` → db (healthy) + api + ingest all Up.
+  - `GET /api/v1/search?q=compre un auto` → `mode: open`,
+    `comprar-vehiculo`, confidence 0.77, procedures `4551 → 2368 → 6995`
+    ordered, attribution block (`official: true`, catalog name, `odc-uy`),
+    `cost_display: "Sin costo informado"` (UTF-8 verified byte-exact:
+    `Comprar un vehículo`, `Catálogo de trámites y servicios del Estado —
+    AGESIC` — an earlier `Ã­` was a Windows-pipe console artifact, not API
+    output).
+  - `GET /api/v1/search?q=xyzzy qwerty` → `mode: categories`,
+    `[{slug: vehiculos}]`.
+  - `POST /api/v1/search/feedback` (unknown ids) → 400; malformed body →
+    400; `GET /api/v1/events/comprar-vehiculo` → 200 — all against the
+    running container.
+  - The `ingest` daemon completed a REAL ingestion pass inside the
+    container (live CKAN: duplicates resolved, idempotent pass) and
+    scheduled the next run at 03:00 UTC (`next ingestion run in 70881 s`).
+  - Docker build on this Windows host: SUCCEEDED (both images) — no
+    hand-waving required.
+
+### C3d (commit `225ee9c`) — final CI (task 90)
+- Required `taxonomy-validate` job: the DB-free CLI validates `data/`
+  against `data/external_ids.snapshot.txt` (D-2; the slot reserved since
+  task 3 is closed).
+- `test` job documents the full workspace scope (golden gate + per-event +
+  taxonomy fixtures + DB-backed suites via the service Postgres); the
+  ignored live-CKAN test stays out of it.
+- New **non-gating** `integration` job (D-7's nightly/compose framing):
+  builds the multi-stage image, boots the stack, asserts the end-to-end
+  open-mode search, runs `cargo test -p db / -p api / -p ingest`
+  (export_ids + seed_taxonomy) against the compose Postgres, and runs the
+  feature-gated `--ignored` live-CKAN test (one real `package_show`).
+
+### C3e (commit `f19ddca`) — README runbook + Makefile (task 91)
+- English runbook: dev story, migrations (embedded boot application +
+  offline `.sqlx` builds), taxonomy seeding (idempotent per slug, pending-
+  relation warnings), full compose stack (no web service), the daily
+  03:00-UTC ingestion loop, the `Sin costo informado` rule, the feedback
+  write path, privacy redaction, attribution/license note.
+- `make dev` verified command-by-command on the dev database (compose db up
+  → `sqlx migrate run` exit 0 → seed-taxonomy idempotency `inserted=0`
+  everywhere). **Honesty note:** GNU make itself is not installed on this
+  Windows host, so the exact Makefile recipes were executed directly rather
+  than through `make`; the `search` target was smoke-shaped (compose path
+  is the primary runbook story). Carried as a host-tooling note, not a
+  design deviation.
+
+### Task 87 — D-3 deferral trigger (RECORDED, did not fire)
+- Rule: if the unit exceeds 400 authored lines, `POST /search/feedback` is
+  the FIRST candidate to drop (spec delta → follow-up change, ask-on-risk
+  pause); never an inferred `size:exception`.
+- Outcome: the pre-declared splits covered the unit — per-commit authored
+  diffs: C3a ≈ 290 lines (incl. the 190-line RED contract file), C3b ≈ 235,
+  C3c ≈ 3, C3d ≈ 51, C3e ≈ 91, plus two small fix commits (`e120d62`
+  clippy identity_op, and the C3c smoke fixes inside `d7f3d98`). Every
+  split commit is within the 400-line budget, so the trigger did NOT fire
+  and **feedback shipped**. No STOP was required; no exception was inferred.
+
+### Task 92 — design §10 checklist + proposal success criteria (RECORDED)
+
+- ✅ No DB/HTTP/FS deps in `crates/search`: `cargo test -p search --test
+  no_forbidden_deps` → 4/4 ok (manifest allowlist, src scan, embedding
+  seam, trait seam).
+- ✅ No literal AGESIC resource URL: `no_hardcoded_url` → 1/1 ok.
+- ✅ Ten tables only via migrations: `cargo test -p db --test migrations`
+  → 2/2 ok (allowlist + no-extensions portability).
+- ✅ Golden gate falsifiable: `cargo test -p search --test golden` → 5/5 ok
+  (includes the A6 degraded-weight falsifiability case).
+- ✅ Snapshot + CLI reproduce the orphan-check failure: `taxonomy-validate
+  data/ data/external_ids.snapshot.txt` → `taxonomy OK: 9 event(s),
+  1 category(ies), 14 synonym(s), 3501 external id(s)` (the failure-text
+  path is pinned by the A4 cli tests).
+- ✅ RED evidence recorded per slice: every unit section in this file
+  carries RED-before-GREEN captures (S0 through C3).
+- Final state: `cargo test --workspace` → **213 passed / 0 failed**
+  (71 ok test binaries; the 1 ignored test is the feature-gated live-CKAN,
+  NOT run); `cargo fmt --all -- --check` exit 0; `cargo clippy --workspace
+  --all-targets -- -D warnings` exit 0.
+
+### C3 review-budget accounting and split guard (honored)
+- Unit total ≈ 705 authored lines across six code/doc commits + this docs
+  commit; every split commit ≤ 400 authored lines (C2–C1 precedent: one
+  cohesive work unit delivered as split commits, each a green tree, each a
+  Conventional Commit referencing C3 / PR 15, no push). Nothing was
+  compressed, restyled, or deleted to approach the number.
+
+### Commits (each on `master`, no push)
+- C3a `086b05e` feat(api): POST /search/feedback write path (task 86).
+- C3b `3309343` feat(compose): api + ingest services, multi-stage
+  Dockerfile, daily loop (task 88).
+- C3c `d7f3d98` fix(compose): image workdir + per-service commands
+  (task 89 smoke fixes; end-to-end transcript recorded here).
+- C3d `225ee9c` ci: finalize pipeline — taxonomy-validate gate + compose
+  integration job (task 90).
+- C3e `f19ddca` docs: README runbook + make dev/search finalization
+  (task 91).
+- `e120d62` test(ingest): identity_op clippy fix (task 88 polish).
+- Plus this C3f docs commit (apply-progress + tasks 86–92 checkboxes).
+
+### Pending maintainer decisions (carried from S0–C2, still not decided here)
+1. **Review-budget overage:** PRs 2–15 exceed the 400-line budget at unit
+   granularity (C3 honored the splits, staying per-commit compliant).
+   `size:exception` acceptance vs a chaining decision remains **pending** —
+   required before any PR is opened.
+2. **Chain strategy: pending** — `stacked-to-main` vs
+   `feature-branch-chain` still unchosen. This run continued the split-
+   commit-on-master pattern (no push, no PR opened) per the parent
+   instruction.
+
+### Remaining after C3
+- Baseline rebase (tasks 93–94): re-run the golden harness against the real
+  nine-event corpus and record measured baselines as its own tiny commit
+  (separate post-slice launch).
+- Implementation of the change is otherwise complete: all of tasks 1–92
+  are checked.

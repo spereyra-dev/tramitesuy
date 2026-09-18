@@ -282,13 +282,13 @@ dependency diagram with the current PR marked `📍`.
 
 ### Unit `C3` (PR 15, tasks 86–92) — feedback, compose services, end-to-end
 
-- [ ] 86. RED `apps/api/tests/feedback.rs`: a valid `{search_log_id, event_id, correct}` returns 201 and creates a `search_feedback` row linked to the log; an unknown `search_log_id` or `event_id` returns 400; no feedback UI is added (API-9, D-3).
-- [ ] 87. Record the D-3 deferral trigger in the PR: if this unit's authored diff exceeds 400 lines, `POST /search/feedback` is the first candidate to drop, which defers its api spec delta to a follow-up change and requires an `ask-on-risk` pause — never an inferred `size:exception` (D-3).
-- [ ] 88. Add the compose services `api` and `ingest` (multi-stage Dockerfile; `ingest` runs the daily loop sleep-until-03:00 UTC), with no `web` service, completing the D-6 dev story (D-6, IN-1).
-- [ ] 89. RED end-to-end check: `docker compose up` boots db + api + ingest and `GET /api/v1/search?q=compre un auto` returns `mode: open`; capture the transcript as slice (c) evidence (SE-10, design §8 slice c).
-- [ ] 90. Finalize `.github/workflows/ci.yml`: `fmt + clippy -D warnings` → `cargo test --workspace` (golden gate + per-event tests + taxonomy validation fixtures) → `taxonomy validate` CLI against `data/external_ids.snapshot.txt`, plus an isolated compose-based job for ingestion/API integration tests and the ignored live-CKAN test (D-2, D-7).
-- [ ] 91. Write the English `README.md` runbook: `make dev`, migrations, taxonomy seeding, snapshot regeneration, the `sin costo informado` wording, and the attribution/license note; verify `make dev` end to end (task 5, config conventions).
-- [ ] 92. Verify the design §10 checklist and the proposal success criteria — no DB/HTTP/FS deps in `crates/search`, no literal resource URL, ten tables only via migrations, golden gate falsifiable, snapshot + CLI reproducing the orphan failure text, RED evidence recorded per slice — and link the evidence in the PR (design verification checklist).
+- [x] 86. RED `apps/api/tests/feedback.rs`: a valid `{search_log_id, event_id, correct}` returns 201 and creates a `search_feedback` row linked to the log; an unknown `search_log_id` or `event_id` returns 400; no feedback UI is added (API-9, D-3).
+- [x] 87. Record the D-3 deferral trigger in the PR: if this unit's authored diff exceeds 400 lines, `POST /search/feedback` is the first candidate to drop, which defers its api spec delta to a follow-up change and requires an `ask-on-risk` pause — never an inferred `size:exception` (D-3).
+- [x] 88. Add the compose services `api` and `ingest` (multi-stage Dockerfile; `ingest` runs the daily loop sleep-until-03:00 UTC), with no `web` service, completing the D-6 dev story (D-6, IN-1).
+- [x] 89. RED end-to-end check: `docker compose up` boots db + api + ingest and `GET /api/v1/search?q=compre un auto` returns `mode: open`; capture the transcript as slice (c) evidence (SE-10, design §8 slice c).
+- [x] 90. Finalize `.github/workflows/ci.yml`: `fmt + clippy -D warnings` → `cargo test --workspace` (golden gate + per-event tests + taxonomy validation fixtures) → `taxonomy validate` CLI against `data/external_ids.snapshot.txt`, plus an isolated compose-based job for ingestion/API integration tests and the ignored live-CKAN test (D-2, D-7).
+- [x] 91. Write the English `README.md` runbook: `make dev`, migrations, taxonomy seeding, snapshot regeneration, the `sin costo informado` wording, and the attribution/license note; verify `make dev` end to end (task 5, config conventions).
+- [x] 92. Verify the design §10 checklist and the proposal success criteria — no DB/HTTP/FS deps in `crates/search`, no literal resource URL, ten tables only via migrations, golden gate falsifiable, snapshot + CLI reproducing the orphan failure text, RED evidence recorded per slice — and link the evidence in the PR (design verification checklist).
 
 ---
 
