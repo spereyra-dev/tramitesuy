@@ -5,12 +5,12 @@
 //! Both implement the pure engine's `CandidateProvider` trait, and no
 //! embedding implementation exists anywhere.
 //!
-//! The fixture events carry deliberately de-accented names/descriptions: the
-//! `0011` generated column builds the tsvector with the `simple` config over
-//! the stored text (no unaccent), so only de-accented lexemes can match the
-//! engine's de-accented query tokens. This limitation is recorded in the
-//! apply progress; fuzzy coverage of accented surfaces is the trigram
-//! provider's job.
+//! The fixture events carry accented names/descriptions: migration 0012
+//! rebuilds `life_events.generated_tsvector` through the `unaccent_immutable`
+//! wrapper, so accented surfaces produce de-accented lexemes that match the
+//! engine's de-accented query tokens through the FTS_TEXT path. Fuzzy
+//! subsequence coverage of accented surfaces remains the trigram provider's
+//! job.
 
 #[path = "c2support/mod.rs"]
 mod c2support;
@@ -28,7 +28,7 @@ use search::types::NormalizedQuery;
 async fn seed_provider_fixture(pool: &sqlx::PgPool) {
     sqlx::query(
         "INSERT INTO categories (slug, name, icon, order_index) \
-         VALUES ('vehiculos', 'Vehiculos', 'car', 1)",
+         VALUES ('vehiculos', 'Vehículos', 'car', 1)",
     )
     .execute(pool)
     .await
@@ -36,8 +36,8 @@ async fn seed_provider_fixture(pool: &sqlx::PgPool) {
 
     sqlx::query(
         "INSERT INTO life_events (slug, name, description, category_id) \
-         SELECT 'alta-vehiculo', 'Alta de vehiculos', \
-                'Registro inicial de un vehiculo.', id \
+         SELECT 'alta-vehiculo', 'Alta de vehículos', \
+                'Registro inicial de un vehículo.', id \
          FROM categories WHERE slug = 'vehiculos'",
     )
     .execute(pool)
@@ -46,7 +46,7 @@ async fn seed_provider_fixture(pool: &sqlx::PgPool) {
 
     sqlx::query(
         "INSERT INTO life_events (slug, name, description, category_id) \
-         SELECT 'otro-tramite', 'Tramite generico', 'Otro tramite.', id \
+         SELECT 'otro-tramite', 'Trámite genérico', 'Otro trámite.', id \
          FROM categories WHERE slug = 'vehiculos'",
     )
     .execute(pool)
@@ -115,6 +115,69 @@ async fn fts_provider_matches_the_generated_tsvector() {
     assert!(
         !candidates.iter().any(|c| c.event_slug == "otro-tramite"),
         "a non-matching event must receive no FTS_TEXT contribution"
+    );
+
+    // TRIANGULATE over the accented fixture: the A-weight path (name token
+    // plus a description token) and the B-weight path (description-only
+    // tokens) each select exactly the matching event, and the generic event
+    // stays absent (data-model scenario "Weights and GIN index are preserved").
+    for probe in ["alta vehiculos", "registro vehiculo"] {
+        let weighted = fts
+            .candidates(&query_of(probe))
+            .expect("weighted probe query succeeds");
+        assert_eq!(
+            weighted
+                .iter()
+                .filter(|c| c.event_slug == "alta-vehiculo")
+                .count(),
+            1,
+            "exactly one FTS_TEXT candidate for probe {probe:?}, got: {weighted:?}"
+        );
+        assert!(
+            weighted
+                .iter()
+                .find(|c| c.event_slug == "alta-vehiculo")
+                .expect("weighted candidate present")
+                .value
+                > 0,
+            "the weighted contribution must be positive for probe {probe:?}"
+        );
+        assert!(
+            !weighted.iter().any(|c| c.event_slug == "otro-tramite"),
+            "the generic event must stay absent for probe {probe:?}"
+        );
+    }
+
+    // Schema contract, asserted directly through sqlx: the GIN index exists,
+    // the wrapper is IMMUTABLE, and the column is a stored generated column.
+    let index: (String,) = sqlx::query_as(
+        "SELECT indexdef FROM pg_indexes \
+         WHERE indexname = 'life_events_generated_tsvector_gin_idx'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("the generated tsvector GIN index exists");
+    assert!(
+        index.0.contains("USING gin"),
+        "the generated tsvector index must be a GIN index, got: {index:?}"
+    );
+    let volatility: (String,) = sqlx::query_as(
+        "SELECT provolatile::text FROM pg_proc WHERE proname = 'unaccent_immutable'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("unaccent_immutable exists");
+    assert_eq!(volatility.0, "i", "the unaccent wrapper must be IMMUTABLE");
+    let attgenerated: (String,) = sqlx::query_as(
+        "SELECT attgenerated::text FROM pg_attribute \
+         WHERE attrelid = 'life_events'::regclass AND attname = 'generated_tsvector'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("generated_tsvector attribute exists");
+    assert_eq!(
+        attgenerated.0, "s",
+        "generated_tsvector must be a STORED generated column"
     );
 
     drop_db(&db_name).await;

@@ -1,13 +1,15 @@
 //! FTS candidate provider (SE-7, task 78): matches the query's canonical
-//! tokens against `life_events.generated_tsvector` (migration 0011: weighted
-//! `simple`-config tsvector over name='A' + description='B') via
-//! `plainto_tsquery`, reporting each match under the `FTS_TEXT` rule name.
+//! tokens against `life_events.generated_tsvector` (migration 0012: weighted
+//! `simple`-config tsvector over name='A' + description='B', unaccented
+//! through the `public.unaccent_immutable` wrapper) via `plainto_tsquery`,
+//! reporting each match under the `FTS_TEXT` rule name.
 //!
-//! Known limitation (recorded, apply progress): the generated column does
-//! not `unaccent` the stored text, so only de-accented lexemes can match the
-//! engine's de-accented query tokens; fuzzy coverage of accented surfaces is
-//! the trigram provider's job. Changing the generated column would be a
-//! data-model migration and is deliberately out of this unit's scope.
+//! Since migration 0012, the generated column unaccents stored text through
+//! `public.unaccent_immutable`, so accented catalog surfaces match the
+//! engine's de-accented query tokens via FTS_TEXT; fuzzy subsequence coverage
+//! remains the trigram provider's job. See the migration 0012 header for the
+//! full mechanics (IMMUTABLE wrapper, drop-and-re-add rebuild, replay
+//! idempotency).
 //!
 //! Value scale: `ts_rank` sits in [0, ~0.1) for this column shape; the
 //! contribution is `(rank * 100).round()` so a real FTS hit lands in the
