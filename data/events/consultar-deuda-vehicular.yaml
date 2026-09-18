@@ -21,10 +21,10 @@ rules:
     entity: deuda
     bonus: 15
 relations:
-  - external_id: "100015"
+  - external_id: "4388"
     order: 1
     required: true
-  - external_id: "100016"
+  - external_id: "2033"
     order: 2
     required: false
 tests:

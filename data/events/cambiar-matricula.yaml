@@ -25,10 +25,10 @@ rules:
     entity: matricula
     bonus: 15
 relations:
-  - external_id: "100017"
+  - external_id: "4447"
     order: 1
     required: true
-  - external_id: "100018"
+  - external_id: "4932"
     order: 2
     required: false
 tests:

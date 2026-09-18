@@ -28,10 +28,10 @@ rules:
     entity: patente
     bonus: 15
 relations:
-  - external_id: "100013"
+  - external_id: "7159"
     order: 1
     required: true
-  - external_id: "100014"
+  - external_id: "4379"
     order: 2
     required: false
 tests:

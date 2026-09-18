@@ -66,10 +66,11 @@ The export is byte-stable for the same database state, so re-running it only
 rewrites the file when ids actually changed — commit that diff together with
 any taxonomy change that references the new ids.
 
-The current snapshot still holds **provisional** ids (`100001`–`100022`) used
-while the seed was authored. The first maintainer-authorized live ingestion
-run (task 68) will populate real AGESIC external ids; afterwards, regenerate
-and commit the snapshot so the seed relations resolve to real procedures.
+The snapshot holds real AGESIC external ids since the first
+maintainer-authorized live ingestion run (task 68); the seed relations
+resolve to real procedures. After every later ingestion run, regenerate
+and commit the snapshot together with any taxonomy change that references
+the new ids.
 
 ## License
 

@@ -1673,3 +1673,137 @@ ids `100001`–`100022`).
 - Unit C1 (tasks 70–77): `apps/api` read surface — depends on B1, B5, A4
   (all complete except the task-68 live data, which C1's tests do not need:
   they seed via fixtures).
+
+## Work unit B6 (PR 12, task 68) — first maintainer-authorized live ingestion run
+
+The maintainer authorized the live network run in this session. All steps
+below ran against the real AGESIC CKAN (catalogodatos.gub.uy) and the dev
+compose Postgres (`tramitesuy`), which started empty in `procedures` and
+`life_event_procedures` (0 rows each; the 22 provisional relations were
+correctly left pending by the seed).
+
+### B6.1 — live package_show transcript (read-only reconnaissance)
+- `GET https://catalogodatos.gub.uy/api/3/action/package_show?id=agesic-guia-de-tramites`
+  → HTTP 200, `success: true`, dataset `agesic-guia-de-tramites`
+  ("Catálogo de trámites y servicios del Estado").
+- Selected CSV resource (the fetcher's auto-selection: the CSV-format
+  resource): id `41b02575-5cd6-461c-ab45-a54e93d751be`, name
+  "Tramites y servicios", last_modified `2026-09-17T06:00:31.874861`,
+  hash `8b0f67d1235ec5772e0e2b96cbc6c96a`, size 10,124,929 bytes,
+  mimetype `text/csv`.
+- Direct CSV reconnaissance (read-only, before the CLI run): 31 header
+  fields (header names differ from the task-47 fixture catalog — e.g.
+  `institucion_oid`, `casuistica`, `requisitos_generales`; the parse is
+  header-driven and the 5 required fields `id`, `nombre_tramite`,
+  `institucion_nombre`, `url`, `ques_es` are all present), 3,505 data
+  rows, 0 ragged rows (RFC 4180 framing holds), 3,501 unique ids, 0 empty
+  ids. The recorded B2 "CSV shape mismatch" risk did NOT fire.
+
+### B6.2 — live ingestion run 1 (`ingest ingest`, task 68)
+- Command: `CKAN_BASE_URL=https://catalogodatos.gub.uy cargo run -q -p
+  ingest -- ingest` (note: the fetcher appends `/api/3/action/...` itself,
+  so the env var must be the site ROOT — a first attempt with
+  `.../api/3` failed with a 404 double-prefix and was corrected by
+  configuration only, no source change).
+- RunSummary (stdout, task-61 contract):
+  `rows_read=3505 rows_skipped=0 duplicates_resolved=4 created=3501
+  updated=0 unchanged=0 deactivated=0`
+- IN-5 duplicate resolution (3 ids, 4 loser rows, winner by
+  actualizado+sha256):
+  - `2301-1` winner sha256 `5f07a594…` (1 loser)
+  - `261-1` winner sha256 `d4703c69…` (1 loser)
+  - `7907-1` winner sha256 `b4289680…` (2 losers)
+- Exit 0; no stderr. Dev DB `procedures` = 3,501 rows after the run.
+
+### B6.3 — idempotency run 2 (IN-9 evidence)
+- Same command re-run immediately: `rows_read=3505 rows_skipped=0
+  duplicates_resolved=4 created=0 updated=0 unchanged=3501 deactivated=0`
+  (same duplicate warnings, byte-identical counts section). Zero new
+  rows on the second live run — IN-9 holds against the live source.
+
+### B6.4 — snapshot regeneration (`export-ids`)
+- `cargo run -q -p ingest -- export-ids` →
+  `data/external_ids.snapshot.txt` regenerated with 3,501 REAL AGESIC
+  external ids (provisional `100001`–`100022` are gone; they were never
+  procedure rows).
+- Format verified: sorted (lexicographic, `sort -c` passes), one per
+  line, LF-only (0 CR bytes), trailing newline (last bytes `…83\n9\n`);
+  byte-stability re-proven live: a second `export-ids --output` to a
+  scratch file is `cmp`-identical to the committed file.
+- Cosmetic finding (no code change, non-blocking): the CLI success
+  message prints the byte count as "external id(s)"
+  (`exported 17701 external id(s)` for 3,501 ids / 17,701 bytes) —
+  `render()`'s output is correct; only the message is mislabeled.
+  Recorded for a future cosmetic fix.
+
+### B6.5 — relation re-pointing to real ids (minimal data change)
+- The nine events' `relations[].external_id` values were updated from the
+  provisional `100001`–`100022` to real AGESIC ids, verified present in
+  both the snapshot and the live DB. Order/required structure untouched.
+  Mapping (event → order: id — procedure name):
+  - comprar-vehiculo → 1: `4551` Solicitud de empadronamientos (req);
+    2: `2368` Alta de vehículos ante la DNT; 3: `6995` Registro de
+    Automotoras o Gestoría para Empadronamiento de Vehículos
+  - vender-vehiculo → 1: `6984` Baja Total de Vehículo - Canelones (req);
+    2: `6984-3` …Por desuso; 3: `2322` Baja o desafectación de vehículo
+  - transferir-vehiculo → 1: `6980` Cambio de titularidad de vehículo
+    (Transferencia) - Canelones (req); 2: `6980-1` …Título singular (req);
+    3: `6184` Cambio de titularidad del vehículo o transferencia -
+    Maldonado; 4: `3956` Cambio de titularidad (Transferencias) de
+    vehículos - San José
+  - perder-libreta → 1: `4327` Duplicado de libreta de propiedad o DIV
+    por extravío o hurto - Paysandú (req); 2: `4428` Duplicado de licencia
+    de conducir (por extravío o hurto) - Paysandú
+  - pagar-patente → 1: `7159` Convenios de pago de adeudos de patente
+    y/o multas de tránsito - Canelones (req); 2: `4379` Convenios de
+    refinanciación de adeudos de patente - Paysandú
+  - consultar-deuda-vehicular → 1: `4388` Consulta de deudas de vehículos
+    - Paysandú (req); 2: `2033` Constancia de libre de deuda
+  - cambiar-matricula → 1: `4447` Cambio de matrículas autos y similares
+    - Cerro Largo (req); 2: `4932` Cambio de matrícula vehícular - Rivera
+  - vehiculo-robado → 1: `6984-1` Baja Total de Vehículo - Canelones -
+    Por hurto (req); 2: `6310` Baja por hurto - Lavalleja
+  - accidente-de-transito → 1: `2632` Solicitud de parte de Siniestro de
+    Tránsito sin Lesionados (req); 2: `4177` Reclamaciones por accidentes
+    de tránsito en Rutas Nacionales
+
+### B6.6 — seed-taxonomy against the real snapshot
+- Run 1: `relations written=22 pending=0` (all nine events' relations now
+  resolve to real procedures); categories/events/keywords/synonyms
+  `inserted=0` (already seeded from B5.4, idempotent per slug).
+- Run 2 (idempotency): `relations written=0 pending=0`, everything
+  `inserted=0/removed=0`.
+- DB check: `SELECT count(*) FROM life_event_procedures r JOIN procedures
+  p ON p.id = r.procedure_id` → 22 rows, order_index and required flags
+  preserved exactly as declared.
+
+### B6.7 — taxonomy-validate against the REAL snapshot
+- `cargo run -q -p taxonomy --bin taxonomy-validate -- data/
+  data/external_ids.snapshot.txt` → exit 0,
+  `taxonomy OK: 9 event(s), 1 category(ies), 14 synonym(s), 3501
+  external id(s)` — the D-2 orphan check passes with real ids.
+
+### B6.8 — workspace suite with the real snapshot
+- `cargo test --workspace` → **157 passed / 0 failed / 1 ignored** (the
+  ignored one is the feature-gated live `ckan_live` binary, still NOT the
+  vehicle for this run — the CLI was). Includes the golden and per_event
+  suites, which load the real seed and validate against the committed
+  snapshot; `apps/ingest` seed/export tests seed their scratch DBs from
+  the real snapshot (3,501 procedures) and stay green.
+- `cargo fmt --all -- --check` → exit 0.
+- `cargo clippy` not re-run (no Rust source touched in this unit).
+
+### B6.9 — review-budget accounting
+- Authored diff: data `external_ids.snapshot.txt` +3,501 committed data
+  lines (machine-generated artifact, not review prose), 9 event YAMLs
+  22 one-value id edits, README 4-line note rewrite, openspec artifacts.
+  Hand-authored/changed review-relevant lines ≈ 30; far below the 400
+  budget. Single work-unit commit on master (B6, no push), Conventional
+  Commit referencing task 68 / PR 12.
+
+### Task state after B6
+- Completed: 1–69 inclusive (task 68 done here). Remaining: units
+  C1–C3 (tasks 70–92) + baseline rebase 93–94.
+- Pending maintainer decisions carried forward (unchanged): review-budget
+  overage (`size:exception` acceptance vs chaining) for PRs 2–12;
+  chain strategy unchosen. Not decided here.

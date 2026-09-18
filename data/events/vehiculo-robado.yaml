@@ -29,10 +29,10 @@ rules:
     entity: vehiculo
     bonus: 15
 relations:
-  - external_id: "100019"
+  - external_id: "6984-1"
     order: 1
     required: true
-  - external_id: "100020"
+  - external_id: "6310"
     order: 2
     required: false
 tests:
