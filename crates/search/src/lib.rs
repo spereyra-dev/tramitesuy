@@ -13,4 +13,6 @@
 //! Purity is enforced by `tests/no_forbidden_deps.rs`.
 
 pub mod constants;
+pub mod normalizer;
+pub mod tokenizer;
 pub mod types;
