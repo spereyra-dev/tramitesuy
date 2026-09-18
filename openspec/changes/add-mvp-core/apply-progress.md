@@ -1220,3 +1220,135 @@ task 45 only.
 - Remaining for PR 9 scope: none — B3 (tasks 51+) is a later unit.
 - Carried maintainer decisions (unchanged from A1–B1): review-budget
   overage PRs 2–8 and the chain strategy — not decided here.
+
+
+## Work unit B3 (PR 10, tasks 51–57) — 2026-09-17
+
+Executed by the delegated `sdd-apply` executor with strict TDD (`cargo test`).
+Allowed edit surfaces honored: `crates/ingestion/**` and the two openspec
+artifacts. No sqlx/reqwest dependency was added; DB integration stays B4.
+
+### B3.0 — RED batch (tasks 51–54, 56, 57, before any implementation)
+Authored first: `tests/{diff,soft_delete,idempotency,summary,org_mapping,
+boundary}.rs`, the two forward fixtures `tramites_pipeline_valor_changed.csv`
+(3001 `valor` 100→150) and `tramites_pipeline_reduced.csv` (3001 removed), and
+the `tests/support/mod.rs` re-export of the canonical repository.
+- RED evidence: `cargo test -p ingestion` → 7 test binaries fail to compile:
+  `unresolved import ingestion::in_memory` ×7, `no method named report found
+  for struct RunSummary` ×7, `no field unchanged on type RunSummary` ×6,
+  `no field deactivated on type RunSummary` ×6 (plus two test-authoring
+  inference errors fixed before GREEN). Full output retained in the session
+  transcript.
+
+### TDD Cycle Evidence (cargo test -p ingestion / --workspace)
+
+| Task | RED evidence (pre-implementation `cargo test`) | GREEN evidence |
+|---|---|---|
+| 51 diff (IN-6, DM-3) | `tests/diff` E0432 `could not find diff`/`in_memory` + E0609 fields | `tests/diff` 2/2 ok: changed `valor` → exactly one new version (hash of the edited payload, `valid_from`=run 2, open), prior version `valid_until`=run 2; unchanged 3002 keeps exactly one version |
+| 52 soft delete (IN-7) | `tests/soft_delete` failed to compile (E0432/E0609) | `tests/soft_delete` 2/2 ok: absent 3001 → inactive + `deactivated_at`=run 2, never deleted; present 3002 `last_seen`=run 2; `first_seen`=run 1 preserved both sides |
+| 53 idempotency (IN-9) | `tests/idempotency` failed to compile | `tests/idempotency` 2/2 ok: runs 2 and 3 create zero procedures/versions/organizations, no status change; only `last_seen_at` advances |
+| 54 summary (IN-10) | `tests/summary` 11 compile errors incl. missing `report()` | `tests/summary` 3/3 ok: row-derived counts sum to rows read; identical input → byte-identical `report()` |
+| 55 GREEN orchestration (D-5) | — (the GREEN task behind the RED rows above) | `src/diff.rs` + `pipeline.rs` orchestrate upsert → close → deactivate → touch through the port; canonical `InMemoryProcedureRepository` promoted into `src` |
+| 56 org mapping (IN-8, D-4) | `tests/org_mapping` failed to compile (E0432) | `tests/org_mapping` 1/1 ok: one org row per `institucion_oid`, name from `institucion_nombre`, no dup on re-run, parent-org fields only inside `raw_data` |
+| 57 boundary + permutation (SE-1, D-5) | `tests/boundary` failed to compile | `tests/boundary` 2/2 ok; falsifiability: a temporary `"reqwest"` probe in src failed the guard naming the file; reverted, green again |
+
+### B3.1 (task 55) — GREEN promotion + diff planner + orchestration
+- `src/in_memory.rs` (new): canonical `InMemoryProcedureRepository` —
+  procedures with `first_seen_at`/`last_seen_at`/`deactivated_at`, append-only
+  `VersionRecord`s (`valid_until` the only post-insert write, stamped only on
+  the prior open version), and `OrganizationRecord`s keyed by
+  `institucion_oid`. A version row opens only when the incoming hash differs
+  from the open one (idempotency at the repository layer too). `upsert`
+  re-activates a row present in the source (reactivation is otherwise
+  unspecced; recorded). Observation surface: `procedures()`, `versions()`,
+  `organizations()`, `upserts()`, `touched()`, `state_report()`.
+- `src/diff.rs` (new): `payload_json` (all 31 columns, sorted keys),
+  `content_hash = SHA-256(normalized_payload)`, and `plan()` producing
+  `upserts` / `closes` / `unchanged`, each sorted by external id (SE-1).
+- `src/ports.rs`: `upsert_procedures` now takes the run stamp — additive to
+  the design §3 sketch (which passed no timestamp), needed so version
+  `valid_from` is set at the run without the repository owning a clock; same
+  RunStamp-boundary rationale B2 recorded for `close_versions`.
+- `src/summary.rs`: `unchanged` + `deactivated` fields; `duplicates_resolved`
+  now counts eliminated source ROWS (the IN-10 row-accounting component) and
+  `record_duplicates(warnings, resolved_rows)` carries them; new
+  `canonicalize_warnings()`, `accounted_rows()`, `report()`.
+- `src/dedup.rs`: `DedupOutcome.resolved_rows` (still one winner per id).
+- `src/pipeline.rs`: full orchestration — upsert (new/changed) → close prior
+  open versions at the run stamp → deactivate_missing (absent → inactive,
+  never deleted) → touch_last_seen (BTreeSet order) → canonical warnings.
+
+### B3.2 — verification evidence (final workspace)
+- `cargo test -p ingestion` → 33 passed / 0 failed (csv_parse 3, dedup 6,
+  diff 3, idempotency 2, org_mapping 1, pipeline_offline 5, raw_row 3,
+  row_validation 4, soft_delete 2, summary 3, boundary 2).
+- `cargo test --workspace` → 130 passed / 0 failed (was 118 before B3).
+- Every committed tree was itself verified green (stash-verify per commit:
+  21 → 23 → 27 → 31 → 33 passing at 7d47ad6 → ed0705c → 5f3322a → 6f9419a →
+  a540630).
+- `cargo fmt --all -- --check` → exit 0; `cargo clippy --workspace
+  --all-targets -- -D warnings` → exit 0 (two findings fixed during REFACTOR:
+  `map_clone` in in_memory.rs, one unused import in tests).
+- Boundary: no sqlx/reqwest in `crates/ingestion` outside `ckan.rs` (which
+  does not exist yet — lands with task 65); the test's manifest scan plus
+  comment-stripped source scan pass, and the temporary probe failed it.
+
+### B3.3 (task 57) — permutation-invariance notes
+- The permutation test caught one real defect during authoring — in the test
+  helper itself (`reversed_bytes` emitted a column-name record per row
+  instead of one header), not in the pipeline; fixed before GREEN.
+- Invariance holds through: dedup's total sort key (B2), diff's per-id
+  BTreeMap ordering, sorted touches, and canonical warning order.
+
+### B3 review-budget accounting and split guard (fired, honored)
+- Authored diff: **5 commits, 1,230 insertions / 156 deletions total**
+  (B3a 324+/93−, B3b 315+/63−, B3c 220+, B3d 226+, B3e 145+) — far above the
+  400-line default budget, so the split guard was honored as in B2: one
+  cohesive work unit delivered as five ≤-400-line split commits (B3a…B3e),
+  each a green tree, each a Conventional Commit referencing B3 / PR 10, no
+  push. Nothing was compressed, restyled, or deleted to approach the number.
+- Hashes: B3a `7d47ad6` (promotion + port stamp), B3b `ed0705c` (diff
+  planner + versioning + summary accounting), B3c `5f3322a` (soft-delete +
+  idempotency contracts), B3d `6f9419a` (summary + org-mapping contracts),
+  B3e `a540630` (boundary + permutation). The openspec artifact updates
+  (this section + tasks 51–57 checkboxes) ship in the closing docs commit
+  (B3f) so all code-commit hashes could be recorded here.
+
+### Deviations recorded (this unit)
+1. Port signature: `upsert_procedures(rows, at: RunStamp)` — additive to the
+   design §3 sketch, for version `valid_from` stamping at the run boundary
+   (same rationale as B2's RunStamp deviation). B4's sqlx repo implements the
+   port as-is.
+2. `duplicates_resolved` counts eliminated source rows (not resolved ids) so
+   the IN-10 sum identity `rows_read == skipped + created + updated +
+   unchanged + duplicates_resolved` holds for any group size; the warning
+   list still names one entry per duplicate id.
+3. `deactivated` counts procedures absent from the source — a
+   procedure-domain count — and is documented as sitting outside the row sum.
+4. Upsert re-activates a present inactive row (status=active, stamp cleared);
+   an unchanged inactive row stays touched-but-inactive (no reactivation
+   without a change) — unspecced edges recorded here for B4's integration
+   tests.
+
+### Pending maintainer decisions (carried from A1–B2, still not decided here)
+1. **Review-budget overage:** PRs 2–9 and now PR 10 exceed the 400-line
+   budget (B3 total ≈ 1,230 inserted lines across five split commits).
+   `size:exception` acceptance vs a chaining decision remains **pending** —
+   required before any PR is opened.
+2. **Chain strategy: pending** — `stacked-to-main` vs `feature-branch-chain`
+   still unchosen while the change's total forecast is ~4,800–6,150 lines
+   (risk High, chained PRs recommended). This run continued the established
+   split-commit-on-master pattern (no push, no PR opened) per the parent
+   instruction.
+
+### Task state (cumulative)
+- Completed: 1–57 (S0, A1–A6, B1–B3). 37 unchecked remain (units B4…C3 +
+  baseline rebase).
+- Commits: B3a `7d47ad6` → B3b `ed0705c` → B3c `5f3322a` → B3d `6f9419a` →
+  B3e `a540630` (+ this B3f docs commit), each on `master`, no push.
+
+### Remaining after B3
+- Unit B4 (tasks 58–62): sqlx `ProcedureRepository` impl + DB-backed
+  ingestion integration tests against the compose Postgres; the scratch-DB
+  pattern from B1 is reusable, and the port surface implemented here is its
+  contract.

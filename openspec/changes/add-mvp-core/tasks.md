@@ -228,13 +228,13 @@ dependency diagram with the current PR marked `📍`.
 
 ### Unit `B3` (PR 10, tasks 51–57) — version diffing, soft delete, pipeline
 
-- [ ] 51. RED `crates/ingestion/tests/diff.rs`: a changed `valor` produces exactly one new version with a new `content_hash = SHA-256(normalized_payload)` and closes the prior version's `valid_until` at the run timestamp, while unchanged rows produce no version row (IN-6, DM-3).
-- [ ] 52. RED `crates/ingestion/tests/soft_delete.rs`: a row absent from the second fixture becomes `status = inactive` with `deactivated_at` set and is never deleted; present rows get `last_seen_at` advanced; `first_seen_at` from initial ingestion is preserved (IN-7).
-- [ ] 53. RED `crates/ingestion/tests/idempotency.rs`: a second identical run creates zero new procedures, zero new versions, zero duplicate organizations, and changes no statuses — only `last_seen_at` and the run record advance (IN-9).
-- [ ] 54. RED `crates/ingestion/tests/summary.rs`: rows read / skipped / created / updated / deactivated / duplicates-resolved counts sum to rows read and are byte-identical for identical input (IN-10).
-- [ ] 55. GREEN `crates/ingestion/src/{diff.rs,pipeline.rs,summary.rs}` orchestrating the pipeline through the `ProcedureRepository` port, with an `InMemoryProcedureRepository` for tests so the pipeline never knows storage details (D-5).
-- [ ] 56. RED organization-mapping test: ingestion upserts exactly one `organizations` row per source `institucion_oid` (name from `institucion_nombre`) and `institucion_padre_organizacional_*` appears only inside `procedures.raw_data` JSONB, with no parent-org columns or rows (IN-8, D-4).
-- [ ] 57. Verify the crate boundary from task 4 for `crates/ingestion` (no `sqlx`/`reqwest` outside `ckan.rs`) and assert pipeline output is invariant under fixture row-order permutations (SE-1, D-5).
+- [x] 51. RED `crates/ingestion/tests/diff.rs`: a changed `valor` produces exactly one new version with a new `content_hash = SHA-256(normalized_payload)` and closes the prior version's `valid_until` at the run timestamp, while unchanged rows produce no version row (IN-6, DM-3).
+- [x] 52. RED `crates/ingestion/tests/soft_delete.rs`: a row absent from the second fixture becomes `status = inactive` with `deactivated_at` set and is never deleted; present rows get `last_seen_at` advanced; `first_seen_at` from initial ingestion is preserved (IN-7).
+- [x] 53. RED `crates/ingestion/tests/idempotency.rs`: a second identical run creates zero new procedures, zero new versions, zero duplicate organizations, and changes no statuses — only `last_seen_at` and the run record advance (IN-9).
+- [x] 54. RED `crates/ingestion/tests/summary.rs`: rows read / skipped / created / updated / deactivated / duplicates-resolved counts sum to rows read and are byte-identical for identical input (IN-10).
+- [x] 55. GREEN `crates/ingestion/src/{diff.rs,pipeline.rs,summary.rs}` orchestrating the pipeline through the `ProcedureRepository` port, with an `InMemoryProcedureRepository` for tests so the pipeline never knows storage details (D-5).
+- [x] 56. RED organization-mapping test: ingestion upserts exactly one `organizations` row per source `institucion_oid` (name from `institucion_nombre`) and `institucion_padre_organizacional_*` appears only inside `procedures.raw_data` JSONB, with no parent-org columns or rows (IN-8, D-4).
+- [x] 57. Verify the crate boundary from task 4 for `crates/ingestion` (no `sqlx`/`reqwest` outside `ckan.rs`) and assert pipeline output is invariant under fixture row-order permutations (SE-1, D-5).
 
 ### Unit `B4` (PR 11, tasks 58–62) — sqlx repository and DB-backed ingestion
 
