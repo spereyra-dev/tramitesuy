@@ -162,7 +162,9 @@ fn fetcher_never_downloads_an_unresolved_resource() {
 fn in_memory_repo_counts_are_consistent() {
     let repo = InMemoryRepo::default();
     let empty: Vec<ingestion::summary::ProcedureUpsert> = Vec::new();
-    let counts: UpsertCounts = repo.upsert_procedures(&empty).expect("empty batch");
+    let counts: UpsertCounts = repo
+        .upsert_procedures(&empty, "now".to_string())
+        .expect("empty batch");
     assert_eq!(counts, UpsertCounts::default());
 
     let hashes: HashMap<String, String> = repo.latest_hashes().expect("repo");

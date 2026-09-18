@@ -68,7 +68,7 @@ pub fn run(
         }
     }
     // persist (storage-agnostic through the port; single tx per batch in B4)
-    let counts: UpsertCounts = repo.upsert_procedures(&upserts)?;
+    let counts: UpsertCounts = repo.upsert_procedures(&upserts, now.clone())?;
     summary.created += counts.inserted;
     summary.updated += counts.updated;
     // touch last_seen for every surviving row (IN-9 groundwork)

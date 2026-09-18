@@ -8,7 +8,13 @@
 pub mod dedup;
 pub mod error;
 pub mod format;
+pub mod in_memory;
 pub mod pipeline;
 pub mod ports;
 pub mod row;
 pub mod summary;
+
+pub use in_memory::{
+    InMemoryProcedureRepository, OrganizationRecord, ProcedureRecord, ProcedureStatus,
+    VersionRecord,
+};

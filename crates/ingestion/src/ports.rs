@@ -38,10 +38,13 @@ pub struct DatasetManifest {
 pub trait ProcedureRepository {
     /// external_id → latest open content_hash.
     fn latest_hashes(&self) -> Result<HashMap<String, String>, crate::error::RepoError>;
-    /// Inserts/updates procedure rows for one batch (single tx per batch).
+    /// Inserts/updates procedure rows for one batch (single tx per batch),
+    /// stamping `first_seen_at`/`last_seen_at`/version `valid_from` at `at`
+    /// and upserting one organization row per source `institucion_oid`.
     fn upsert_procedures(
         &self,
         rows: &[ProcedureUpsert],
+        at: crate::summary::RunStamp,
     ) -> Result<crate::summary::UpsertCounts, crate::error::RepoError>;
     /// Closes the currently open version of each (external_id, hash) pair at
     /// the given timestamp.
