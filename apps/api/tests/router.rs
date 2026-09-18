@@ -1,8 +1,8 @@
 //! Task 70 (API-1): the router exposes exactly the seven `/api/v1` routes
 //! from the api spec, unknown routes return 404, and `ApiError` responses
 //! map to 404/400/500 while leaking no internals. The read endpoints'
-//! behavioral contracts are tasks 71-73; the search/feedback slots are
-//! registered here and dial up in C2/C3.
+//! behavioral contracts are tasks 71-73; the search endpoints dialed up in
+//! C2 (tasks 79-82) and the feedback write path in C3 (task 86).
 //!
 //! Integration tests run against the compose Postgres through the shared
 //! scratch-database helper (`support`).
@@ -106,16 +106,16 @@ async fn error_responses_leak_no_internals() {
         "the 404 body must be the exact public error shape"
     );
 
-    // The not-yet-dialed feedback slot (C3) responds with the public 500
-    // shape; internal causes are logged on the server, never serialized.
-    // (The search slot was dialed up in C2 — task 79 — so it no longer
-    // serves this probe.)
-    let (status, body) = request(&app, "POST", "/api/v1/search/feedback").await;
-    assert_eq!(status, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    // The feedback slot was dialed up in C3 (task 86): a malformed body
+    // maps to the public 400 shape (no extractor echo); internal causes are
+    // logged on the server, never serialized. (The search slot was dialed
+    // up in C2 — task 79 — so it no longer serves a 500 probe.)
+    let (status, body) = request_raw(&app, "POST", "/api/v1/search/feedback", b"not json").await;
+    assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
     assert_eq!(
         body,
-        serde_json::json!({"error": "internal server error"}),
-        "the 500 body must be the exact public error shape"
+        serde_json::json!({"error": "bad request"}),
+        "the 400 body must be the exact public error shape"
     );
 
     common_drop(&db_name).await;

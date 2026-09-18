@@ -134,6 +134,49 @@ pub async fn request(app: &Router, method: &str, uri: &str) -> (StatusCode, Valu
     (status, body)
 }
 
+/// Sends one request carrying a JSON body (content-type application/json)
+/// and returns the status plus the parsed JSON body.
+pub async fn request_json(
+    app: &Router,
+    method: &str,
+    uri: &str,
+    json: &Value,
+) -> (StatusCode, Value) {
+    request_raw(app, method, uri, json.to_string().as_bytes()).await
+}
+
+/// Sends one request carrying a raw byte body (no content type) and returns
+/// the status plus the parsed JSON body (Null for unparsable bodies).
+pub async fn request_raw(
+    app: &Router,
+    method: &str,
+    uri: &str,
+    body_bytes: &[u8],
+) -> (StatusCode, Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(body_bytes.to_vec()))
+                .expect("well-formed request"),
+        )
+        .await
+        .expect("router responds");
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body readable");
+    let body = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+    };
+    (status, body)
+}
+
 /// Seeds the read-surface fixture: two categories (vehiculos first), two
 /// events, one organization, four procedures (populated cost, missing cost,
 /// deactivated, no raw data), and relations whose rows are inserted out of
