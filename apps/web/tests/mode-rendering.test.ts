@@ -87,3 +87,37 @@ describe('searchView: categories mode', () => {
     expect(view.categories.map((c) => c.href)).toEqual(['/categories/vehiculos']);
   });
 });
+
+describe('searchView: open branch triangulation (task 16)', () => {
+  it('renders cards in API order even when the array arrives shuffled', () => {
+    const shuffled: OpenResponse = {
+      ...open,
+      results: [
+        {
+          ...open.results[0],
+          // Same cards, different array positions than their order values.
+          procedures: [
+            open.results[0].procedures[2],
+            open.results[0].procedures[0],
+            open.results[0].procedures[1],
+          ],
+        },
+      ],
+    };
+    const view = searchView(shuffled);
+    if (view.kind !== 'open') throw new Error('expected open branch');
+    expect(view.procedures.map((card) => card.order)).toEqual([1, 2, 3]);
+    expect(view.procedures.map((card) => card.name)).toEqual([
+      'Solicitud de empadronamientos',
+      'Alta de vehículos ante la Dirección Nacional de Transporte (DNT)',
+      'Registro de Automotoras o Gestoría para Empadronamiento de Vehículos',
+    ]);
+  });
+
+  it('keeps the SearchResponse union narrowed: reading options on an open response is a compile error', () => {
+    if (open.mode === 'open') {
+      // @ts-expect-error options does not exist on the open arm
+      void open.options;
+    }
+  });
+});
