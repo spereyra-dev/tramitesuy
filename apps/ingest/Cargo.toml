@@ -12,3 +12,11 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+db = { path = "../../crates/db" }
+ingestion = { path = "../../crates/ingestion", features = ["live-ckan"] }
+sqlx.workspace = true
+taxonomy = { path = "../../crates/taxonomy" }
+tokio.workspace = true
+
+[lints]
+workspace = true

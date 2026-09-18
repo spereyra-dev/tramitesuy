@@ -1,7 +1,65 @@
-//! TrámitesUY ingestion CLI. Subcommands (`ingest`, `seed-taxonomy`,
-//! `export-ids`) are wired in slice (b); this stub keeps the workspace
-//! compiling from day one.
+//! TrámitesUY ingestion worker CLI (IN-1, D-5): thin clap wiring over the
+//! `ingestion` pipeline, the sqlx repository, and the taxonomy loader. All
+//! pipeline logic lives in `crates/ingestion` and `crates/db`; this binary
+//! only composes fetcher + repository + commands.
+
+use clap::{Parser, Subcommand};
+
+mod commands;
+mod support;
+
+#[derive(Parser)]
+#[command(
+    name = "ingest",
+    about = "TrámitesUY ingestion and maintenance worker",
+    arg_required_else_help = true
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Resolve the AGESIC dataset via package_show, download the CSV
+    /// resource, and run the diff/persist pipeline against the database.
+    Ingest,
+    /// Load the YAML taxonomy (data/) into the database tables.
+    SeedTaxonomy {
+        /// Data directory holding events/, categories/, synonyms/.
+        #[arg(long, default_value = "data")]
+        data_dir: String,
+        /// External-id snapshot the orphan check runs against (D-2).
+        #[arg(long, default_value = "data/external_ids.snapshot.txt")]
+        snapshot: String,
+        /// Postgres URL (defaults to the compose dev database).
+        #[arg(long)]
+        database_url: Option<String>,
+    },
+    /// Write every ingested external_id to the committed snapshot file
+    /// (D-2), sorted, LF line endings, trailing newline, byte-stable.
+    ExportIds {
+        /// Snapshot output path.
+        #[arg(long, default_value = "data/external_ids.snapshot.txt")]
+        output: String,
+        /// Postgres URL (defaults to the compose dev database).
+        #[arg(long)]
+        database_url: Option<String>,
+    },
+}
 
 fn main() {
-    println!("ingest scaffold: subcommands arrive in slice (b)");
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Ingest => commands::ingest::run(),
+        Command::SeedTaxonomy {
+            data_dir,
+            snapshot,
+            database_url,
+        } => commands::seed_taxonomy::run(&data_dir, &snapshot, database_url.as_deref()),
+        Command::ExportIds {
+            output,
+            database_url,
+        } => commands::export_ids::run(&output, database_url.as_deref()),
+    }
 }

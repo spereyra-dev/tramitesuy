@@ -945,6 +945,11 @@ name = "ingest"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "db",
+ "ingestion",
+ "sqlx",
+ "taxonomy",
+ "tokio",
 ]
 
 [[package]]
