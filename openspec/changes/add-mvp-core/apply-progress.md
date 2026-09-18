@@ -2337,3 +2337,79 @@ commit).
   (separate post-slice launch).
 - Implementation of the change is otherwise complete: all of tasks 1–92
   are checked.
+
+## Work unit post-(c) (PR 16 / baseline rebase, tasks 93–94) — 2026-09-18
+
+The final work unit of the change (design §9 post-slice rebase, D-7).
+Executed by the delegated `sdd-apply` executor. Allowed edit surfaces
+honored exactly: `tests/search/golden_dataset.yaml` (data, not code —
+strict TDD not applicable, no source change was needed or made), and the
+two openspec artifacts. `data/**` and `crates/**` were never touched
+(verified: `git diff` covers only the three files below).
+
+### Task 93 — measured baselines recorded (commit `e03ef2d`, its own tiny commit)
+- Harness re-run: `cargo test -p search --test golden -- --nocapture` →
+  5 passed / 0 failed. The harness is deterministic (SE-1) and the real
+  seed in `data/` is unchanged since A6 apart from the task-68 external-id
+  re-pointing, which does not affect query text — the measured rates are
+  the stable truth the gate now starts from.
+- Measured metrics table (real nine-event corpus, 50 cases, StubProvider):
+  `Top1 1.00 (47/47) · Top3 1.00 (6/6) · No-result 0.04 (2/50) ·
+  Ambiguous 0.22 (11/50)`.
+- `tests/search/golden_dataset.yaml` baselines updated:
+  `top1 0.90 → 1.00`, `top3 0.95 → 1.00`,
+  `max_no_result_rate 0.15 → 0.04`, `max_ambiguous_rate 0.40 → 0.22`,
+  with the file's baseline comments rewritten from "provisional" to the
+  measured-rebase contract. 12 insertions / 6 deletions.
+
+### Task 94 — measured-vs-recorded comparison and full-suite verification
+- **No baseline was lowered.** Comparison of every recorded value against
+  the measured truth (all four replacements make the gate STRICTER):
+  | Metric | Measured | Old (provisional) | Constraint | Direction |
+  |---|---|---|---|---|
+  | Top1 | 1.00 | 0.90 | `metric >= baseline` | raised (stricter) |
+  | Top3 | 1.00 | 0.95 | `metric >= baseline` | raised (stricter) |
+  | No-result | 0.04 | <= 0.15 | `rate <= max` | tightened (stricter) |
+  | Ambiguous | 0.22 | <= 0.40 | `rate <= max` | tightened (stricter) |
+  The gate's margin analysis (A6 falsifiability, 11 vs 8) is preserved
+  and hardened: any single flipped case now fails the suite, instead of
+  needing a ~4-case regression under the provisional numbers.
+- Gating CI checks re-run locally after the baseline commit (CI job
+  parity: lint, test, taxonomy-validate, golden-gate):
+  - `cargo test -p search --test golden` → 5 passed / 0 failed (golden
+    gate holds against the recorded 1.00 / 1.00 / 0.04 / 0.22).
+  - `cargo test --workspace` → **213 passed / 0 failed / 1 ignored**
+    (71 ok test binaries; the ignored one is the feature-gated live-CKAN
+    test, NOT run — unchanged from C3's final state).
+  - `cargo fmt --all -- --check` → exit 0.
+  - `cargo clippy --workspace --all-targets -- -D warnings` → exit 0
+    (one pre-existing transient incremental-compilation warning from the
+    `ingestion` lib build; not a lint finding, exit code 0).
+  - `cargo run -p taxonomy --bin taxonomy-validate -- data/
+    data/external_ids.snapshot.txt` → exit 0: `taxonomy OK: 9 event(s),
+    1 category(ies), 14 synonym(s), 3501 external id(s)`.
+- No failing case existed at any point: nothing was suppressed, no
+  threshold was relaxed, no evidence needed to be withheld.
+
+### Commits (master, no push)
+- `e03ef2d` test(search): record measured golden baselines from the real
+  seed (task 93, D-7) — the tiny baseline-data commit, 1 file,
+  +12/−6.
+- This docs commit — tasks 93–94 checkboxes in `tasks.md` + this
+  apply-progress section (per the established evidence pattern; the
+  checkboxes land after verification so the recorded evidence precedes
+  the completion claim).
+
+### Task state
+- Completed: 1–94 (S0, A1–A6, B1–B6, C1–C3, baseline rebase). The
+  change's implementation is COMPLETE: 94/94 tasks checked.
+- Pending maintainer decisions carried forward (unchanged, NOT decided
+  here): (1) review-budget overage — PRs 2–15 exceed the 400-line budget
+  at unit granularity; `size:exception` acceptance vs a chaining decision
+  remains pending before any PR is opened; (2) chain strategy
+  (stacked-to-main vs feature-branch-chain) still unchosen.
+
+### Remaining after post-(c)
+- Native next-recommended phase: archive (verify-report is optional; a
+  verification pass may be requested before archiving). No implementation
+  work remains in this change.

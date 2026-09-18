@@ -294,8 +294,8 @@ dependency diagram with the current PR marked `📍`.
 
 ## Post-slice (c) — golden baseline rebase
 
-- [ ] 93. Re-run the golden harness against the real nine-event taxonomy corpus and record the measured Top1/Top3/no-result/ambiguous baselines in `tests/search/golden_dataset.yaml`, replacing the provisional numbers, as its own tiny commit (design §9, D-7).
-- [ ] 94. Re-run CI and confirm the recorded baselines pass; no baseline may be lowered to make a failing case pass without a documented, review-visible explanation (SE-12, D-7).
+- [x] 93. Re-run the golden harness against the real nine-event taxonomy corpus and record the measured Top1/Top3/no-result/ambiguous baselines in `tests/search/golden_dataset.yaml`, replacing the provisional numbers, as its own tiny commit (design §9, D-7).
+- [x] 94. Re-run CI and confirm the recorded baselines pass; no baseline may be lowered to make a failing case pass without a documented, review-visible explanation (SE-12, D-7).
 
 ---
 
