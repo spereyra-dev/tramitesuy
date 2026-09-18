@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO procedure_versions (procedure_id, content_hash, payload, valid_from) VALUES ($1, $2, $3, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f2d7f4729f6c78d3c2233d8c1aaa40ce433aa739ae9b68c81cfc2b80d72c5f02"
+}

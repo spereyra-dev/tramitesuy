@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT ON (p.external_id) p.external_id, v.content_hash FROM procedure_versions v JOIN procedures p ON p.id = v.procedure_id WHERE v.valid_until IS NULL ORDER BY p.external_id, v.valid_from DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "external_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "procedures",
+            "name": "external_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "content_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "procedure_versions",
+            "name": "content_hash"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "eb97de089c52c9ea46e0f5ef1be641bd11a88ce8787dd6523f18d38a5edf781b"
+}

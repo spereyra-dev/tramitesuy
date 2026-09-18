@@ -6,5 +6,6 @@
 //! `sqlx::migrate!` (see [`pool::run_migrations`]).
 
 pub mod pool;
+pub mod repos;
 
 pub use pool::{connect, run_migrations};

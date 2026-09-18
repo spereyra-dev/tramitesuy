@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE procedures SET name = $2, description = $3, organization_id = $4, official_url = $5, status = 'active', raw_data = $6, last_seen_at = $7, deactivated_at = NULL, updated_at = $7 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "924060d9c4b53a2569b327918b189c56e678dba7e8858ab1383b4d69fe017a40"
+}

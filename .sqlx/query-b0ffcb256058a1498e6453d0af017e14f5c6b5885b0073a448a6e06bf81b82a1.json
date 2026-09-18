@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE procedures SET last_seen_at = $1 WHERE external_id = ANY($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b0ffcb256058a1498e6453d0af017e14f5c6b5885b0073a448a6e06bf81b82a1"
+}

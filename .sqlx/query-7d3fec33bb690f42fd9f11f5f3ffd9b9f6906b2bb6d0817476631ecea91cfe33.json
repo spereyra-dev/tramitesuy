@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE procedure_versions v SET valid_until = $1 FROM procedures p WHERE v.procedure_id = p.id AND p.external_id = $2 AND v.content_hash = $3 AND v.valid_until IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7d3fec33bb690f42fd9f11f5f3ffd9b9f6906b2bb6d0817476631ecea91cfe33"
+}

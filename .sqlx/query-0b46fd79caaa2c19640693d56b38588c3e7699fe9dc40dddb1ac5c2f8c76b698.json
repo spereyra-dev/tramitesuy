@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE procedures SET status = 'inactive', deactivated_at = $1 WHERE status = 'active' AND NOT (external_id = ANY($2))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0b46fd79caaa2c19640693d56b38588c3e7699fe9dc40dddb1ac5c2f8c76b698"
+}

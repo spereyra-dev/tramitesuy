@@ -7,10 +7,12 @@ rust-version.workspace = true
 description = "sqlx persistence: migrations, repositories, and the FTS/trigram CandidateProviders"
 
 [dependencies]
+ingestion = { path = "../ingestion" }
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
