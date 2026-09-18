@@ -1,0 +1,40 @@
+slug: perder-libreta
+name: Perder la libreta de conducir
+description: Trámite de reposición de la libreta de conducir extraviada o robada.
+category: vehiculos
+keywords:
+  - term: perder
+    type: ACTION
+    weight: 10
+  - term: licencia
+    type: ENTITY
+    weight: 8
+  - term: conducir
+    type: MODIFIER
+    weight: 3
+  - term: renovar
+    type: MODIFIER
+    weight: 4
+  - term: cambiar
+    type: ACTION
+    weight: 15
+    negative: true
+rules:
+  - action: perder
+    entity: licencia
+    bonus: 15
+relations:
+  - external_id: "100011"
+    order: 1
+    required: true
+  - external_id: "100012"
+    order: 2
+    required: false
+tests:
+  positive:
+    - perdi mi libreta de conducir
+    - perdi la licencia de conducir
+    - se me perdio la libreta para manejar
+  negative:
+    - cambiar la matricula de mi moto
+    - quiero cambiar la matricula del auto

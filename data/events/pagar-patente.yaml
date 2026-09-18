@@ -1,0 +1,46 @@
+slug: pagar-patente
+name: Pagar la patente
+description: Pago del impuesto anual de patente de vehículos (DGT).
+category: vehiculos
+keywords:
+  - term: pagar
+    type: ACTION
+    weight: 10
+  - term: patente
+    type: ENTITY
+    weight: 8
+  - term: vehiculo
+    type: ENTITY
+    weight: 8
+  - term: impuesto
+    type: MODIFIER
+    weight: 4
+  - term: consultar
+    type: ACTION
+    weight: 15
+    negative: true
+  - term: deuda
+    type: ENTITY
+    weight: 15
+    negative: true
+rules:
+  - action: pagar
+    entity: patente
+    bonus: 15
+relations:
+  - external_id: "100013"
+    order: 1
+    required: true
+  - external_id: "100014"
+    order: 2
+    required: false
+tests:
+  positive:
+    - pagar la patente de mi auto
+    - pagar la patente del vehiculo
+    - donde pago la patente
+    - pagar el impuesto de mi auto
+    - pagar las placas del coche
+  negative:
+    - consultar deudas de mi patente
+    - quiero ver la deuda de mi vehiculo

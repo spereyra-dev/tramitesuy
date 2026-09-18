@@ -1,0 +1,49 @@
+slug: comprar-vehiculo
+name: Comprar un vehículo
+description: Requisitos y trámites para comprar un vehículo nuevo o usado en Uruguay.
+category: vehiculos
+keywords:
+  - term: comprar
+    type: ACTION
+    weight: 10
+  - term: vehiculo
+    type: ENTITY
+    weight: 8
+  - term: usado
+    type: MODIFIER
+    weight: 3
+  - term: nuevo
+    type: MODIFIER
+    weight: 3
+  - term: vender
+    type: ACTION
+    weight: 15
+    negative: true
+  - term: alquilar
+    type: ACTION
+    weight: 15
+    negative: true
+rules:
+  - action: comprar
+    entity: vehiculo
+    bonus: 15
+relations:
+  - external_id: "100001"
+    order: 1
+    required: true
+  - external_id: "100002"
+    order: 2
+    required: true
+  - external_id: "100003"
+    order: 3
+    required: false
+tests:
+  positive:
+    - compre un auto usado
+    - quiero comprar un vehiculo nuevo
+    - comprar un coche
+    - precio de un automovil usado
+  negative:
+    - vendi mi auto
+    - quiero vender mi coche
+    - donde puedo vender mi automovil

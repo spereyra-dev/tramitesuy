@@ -1,0 +1,39 @@
+# Global synonym surfaces (SE-3, TX-5). These enumerate the noun and
+# Rioplatense surfaces the deterministic stem rule (A2) cannot reach:
+# the verb conjugations (compre, vendi, robaron) are covered by the
+# matcher's stem fallback, but noun forms like `venta`, `autos`,
+# `libreta`, and `placas` need an explicit mapping to the canonical term.
+synonyms:
+  # Vehicle entity surfaces → canonical `vehiculo`
+  - term: auto
+    canonical: vehiculo
+  - term: autos
+    canonical: vehiculo
+  - term: coche
+    canonical: vehiculo
+  - term: coches
+    canonical: vehiculo
+  - term: automovil
+    canonical: vehiculo
+  - term: automoviles
+    canonical: vehiculo
+  # Sale noun surfaces → canonical action `vender`
+  - term: venta
+    canonical: vender
+  - term: ventas
+    canonical: vender
+  # Ownership-transfer noun surfaces → canonical action `transferir`
+  - term: transferencia
+    canonical: transferir
+  - term: traspaso
+    canonical: transferir
+  - term: cesion
+    canonical: transferir
+  # Driver's-license surfaces → canonical `licencia`
+  - term: libreta
+    canonical: licencia
+  # License-plate surfaces → canonical `patente`
+  - term: placa
+    canonical: patente
+  - term: placas
+    canonical: patente

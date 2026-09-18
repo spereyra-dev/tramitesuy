@@ -637,3 +637,43 @@ All edits stayed inside the allowed surfaces: `crates/taxonomy/**`,
 - Unit A5 (tasks 27-33): Vehiculos seed — `data/` YAML files, per-event
   tests; the taxonomy crate built here validates that seed via the task-26
   CLI.
+## Work unit A5a (PR 6, tasks 27–33, split part 1) — 2026-09-17
+
+Task 33's split guard fired for unit A5: the authored diff exceeds 400
+lines, so delivery is split per the pre-declared action into **A5a**
+(this commit: category + synonyms + events 1–5 + snapshot) and **A5b**
+(next commit: events 6–9 + `tests/per_event.rs`). Full TDD evidence for
+the A5 cycle is recorded in the A5b section; A5a is pure data, gated by
+the task-26 CLI.
+
+### A5.0 — RED-0 (before any seed file)
+- `cargo run -p taxonomy --bin taxonomy-validate -- data/
+  data/external_ids.snapshot.txt` → exit 1,
+  `error: cannot read data/events: The system cannot find the path
+  specified` (seed absent). Captured before authoring.
+
+### A5.1 (task 27) — category + synonyms
+- `data/categories/vehiculos.yaml` (slug, name, icon, order_index 1).
+- `data/synonyms/synonyms.yaml`: 14 surfaces — the A2 recorded learning
+  (noun surfaces the stem rule cannot reach): `auto/autos/coche/coches/
+  automovil/automoviles → vehiculo`, `venta/ventas → vender`,
+  `transferencia/traspaso/cesion → transferir`, `libreta → licencia`,
+  `placa/placas → patente`.
+- No official cost/requirement/URL content — structure only.
+
+### A5.2 (task 28, first five events) — events 1–5
+- `comprar-vehiculo`, `vender-vehiculo`, `transferir-vehiculo`,
+  `perder-libreta`, `pagar-patente` under `data/events/`: typed
+  keywords, negative keywords for each near-duplicate's distinguishing
+  action, ACTION_ENTITY rules, relations with unique order + required,
+  positive/negative test lists.
+- Relations use provisional external ids `100001`–`100014` here
+  (blocker #1: real ids await the first authorized live ingestion run,
+  task 68); `data/external_ids.snapshot.txt` committed so the orphan
+  check runs, one id per line, sorted, LF.
+- GREEN check for A5a: the task-26 CLI validates this five-event state
+  (`taxonomy OK: 5 event(s), 1 category(ies), 14 synonym(s), 22
+  external id(s)`); the full nine-event run is the A5b GREEN.
+
+### Task state (cumulative, through A5a)
+- Completed: 1–26 plus task 27. A5b will complete tasks 28–33.
