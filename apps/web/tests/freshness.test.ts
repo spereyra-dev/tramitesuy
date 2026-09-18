@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { headers } from 'next/headers';
+import type { ReadonlyHeaders } from 'next/dist/server/web/spec-extension/adapters/headers';
 
 import { apiFetch, type FetchInit } from '@/lib/api';
 
@@ -23,9 +24,12 @@ function okResponse(): Response {
 
 beforeEach(() => {
   // Inside a request scope: the incoming request's own web origin.
-  mockedHeaders.mockImplementation(async () => ({
-    get: (name: string) => (name === 'host' ? 'localhost:3000' : null),
-  }));
+  mockedHeaders.mockImplementation(async () => {
+    const store = new Map<string, string>([['host', 'localhost:3000']]);
+    return {
+      get: (name: string) => (store.has(name) ? store.get(name)! : null),
+    } as unknown as ReadonlyHeaders;
+  });
 });
 
 afterEach(() => {
