@@ -10,7 +10,7 @@ jobs:
     name: fmt + clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.94.1
         with:
           components: rustfmt, clippy
@@ -41,7 +41,7 @@ jobs:
       # hit this Postgres through the admin URL the scratch-DB helpers use.
       TRAMITESUY_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.94.1
       - name: cargo test --workspace
         run: cargo test --workspace
@@ -53,7 +53,7 @@ jobs:
     name: taxonomy validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.94.1
       - name: taxonomy-validate against the committed snapshot
         # D-2: the DB-free orphan check — every relation external_id in the
@@ -64,7 +64,7 @@ jobs:
     name: golden dataset gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.94.1
       - name: cargo test -p search --test golden
         run: cargo test -p search --test golden
@@ -79,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.94.1
       - name: build the multi-stage image (api + ingest)
         run: docker compose build
