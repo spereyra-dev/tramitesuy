@@ -112,8 +112,8 @@ back, and `cargo test --workspace` re-run green (215 passed / 0 failed /
 
 **Status: implemented and verified locally; SLICE RULE TRIPPED — awaiting
 maintainer decision before push/PR.** The authored web diff vs `master`
-measures **572 insertions / 5 deletions (~577 authored lines, excluding
-lockfiles)** plus the openspec artifact updates (~55 more), well above the
+measures **639 insertions / 21 deletions (~660 authored lines, excluding
+lockfiles)** plus the openspec artifact updates, well above the
 400-line review budget and the 230–290 W2 forecast. Per the slice rule this
 run STOPPED before pushing/opening PR 2; `size:exception` was never inferred.
 The deviation driver: the task 10/15 render-decision and page logic plus both
@@ -180,3 +180,6 @@ unchanged, keeping the PR 1 relative-path pin. New test in
 4. `2880d2f` feat(web): home page three-mode rendering (15)
 5. `9ce76e4` test(web): triangulation + union narrowing (16)
 6. `b17752b` fix(web): server-side same-origin fetch resolution (RED-GREEN)
+7. `9da1bf4` test(web): mock headers typed as ReadonlyHeaders
+8. `0b3609a` fix(web): full cards through the open view + empty-state copy
+9. `93fca14` docs(openspec): tasks 10–16 checked off + PR 2 progress
