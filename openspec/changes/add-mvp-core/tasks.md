@@ -238,11 +238,11 @@ dependency diagram with the current PR marked `📍`.
 
 ### Unit `B4` (PR 11, tasks 58–62) — sqlx repository and DB-backed ingestion
 
-- [ ] 58. RED `crates/db/tests/procedure_repository.rs` against compose Postgres: `crates/db/src/repos/{procedures.rs,orgs.rs}` implements `ProcedureRepository` (`latest_hashes`, `upsert_procedures`, `close_versions`, `deactivate_missing`, `touch_last_seen`, `all_external_ids`) with compile-time-checked sqlx queries (DM-2, IN-6/IN-7/IN-9, D-5).
-- [ ] 59. RED `crates/db/tests/ingestion_integration.rs`: the same fixture ingested twice creates nothing the second time; a changed row yields exactly one new version with a closed predecessor; a removed row becomes inactive with `deactivated_at` (IN-6, IN-7, IN-9).
-- [ ] 60. RED transaction test: a failure induced mid-batch leaves no partial writes, proving the single-transaction-per-batch contract and repository atomicity (DM-2, D-5, design §4.1).
-- [ ] 61. Resolve the `search_ops` run-record divergence: design §4.1 mentions persisting a run record while the data-model spec closes at exactly ten tables — implement the run summary as deterministic stdout/CI artifact only and record the design/spec divergence plus a follow-up note in the PR (DM-1, IN-10).
-- [ ] 62. Add the live-CKAN integration test for `ckan.rs` marked `#[ignore]` (run manually / nightly with `--ignored`) performing one real `package_show` call, keeping every default test path network-free (IN-2, D-5).
+- [x] 58. RED `crates/db/tests/procedure_repository.rs` against compose Postgres: `crates/db/src/repos/{procedures.rs,orgs.rs}` implements `ProcedureRepository` (`latest_hashes`, `upsert_procedures`, `close_versions`, `deactivate_missing`, `touch_last_seen`, `all_external_ids`) with compile-time-checked sqlx queries (DM-2, IN-6/IN-7/IN-9, D-5).
+- [x] 59. RED `crates/db/tests/ingestion_integration.rs`: the same fixture ingested twice creates nothing the second time; a changed row yields exactly one new version with a closed predecessor; a removed row becomes inactive with `deactivated_at` (IN-6, IN-7, IN-9).
+- [x] 60. RED transaction test: a failure induced mid-batch leaves no partial writes, proving the single-transaction-per-batch contract and repository atomicity (DM-2, D-5, design §4.1).
+- [x] 61. Resolve the `search_ops` run-record divergence: design §4.1 mentions persisting a run record while the data-model spec closes at exactly ten tables — implement the run summary as deterministic stdout/CI artifact only and record the design/spec divergence plus a follow-up note in the PR (DM-1, IN-10).
+- [x] 62. Add the live-CKAN integration test for `ckan.rs` marked `#[ignore]` (run manually / nightly with `--ignored`) performing one real `package_show` call, keeping every default test path network-free (IN-2, D-5).
 
 ### Unit `B5` (PR 12, tasks 63–69) — ingestion worker CLI and external-id snapshot
 

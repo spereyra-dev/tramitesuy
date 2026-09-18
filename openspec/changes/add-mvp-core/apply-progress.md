@@ -1352,3 +1352,184 @@ the `tests/support/mod.rs` re-export of the canonical repository.
   ingestion integration tests against the compose Postgres; the scratch-DB
   pattern from B1 is reusable, and the port surface implemented here is its
   contract.
+
+## Work unit B4 (PR 11, tasks 58–62) — 2026-09-17
+
+Executed by the delegated `sdd-apply` executor with strict TDD (`cargo test`
+against the compose Postgres, service `db`, which was running and was left
+running after verification; scratch databases created per test and dropped
+with `DROP DATABASE ... WITH (FORCE)`). Allowed edit surfaces honored:
+`crates/db/**`, `crates/ingestion/**` (task 62 ckan exception + one doc note +
+boundary-guard amendment, justified below), and the two openspec artifacts.
+
+### B4.0 — RED batch (tasks 58–60, 62, before any implementation)
+Authored first: `crates/db/tests/{procedure_repository,ingestion_integration}.rs`
+(the transaction-atomicity contract of task 60 lives in the latter), and the
+feature-gated `crates/ingestion/tests/ckan_live.rs` (task 62).
+- RED evidence: `cargo test -p db` → 29 compile errors across both new test
+  binaries: `error[E0433]: could not find repos in db` (×2), `use of
+  unresolved module or unlinked crate ingestion` (×7), plus dependent
+  E0282/E0599 errors. Captured before any `crates/db/src/repos` module
+  existed and before the db crate depended on ingestion.
+- RED evidence (task 62): `cargo test -p ingestion --features live-ckan
+  --test ckan_live` → `error: the package 'ingestion' does not contain this
+  feature: live-ckan` (feature + module absent). Captured before `ckan.rs`
+  and the `live-ckan` feature existed.
+- One test-authoring bug caught before GREEN: the earliest draft's
+  `changed_content...` expectation `(2 versions, 1 open)` contradicted the
+  in-memory reference semantics — `upsert_procedures` opens the new version
+  WITHOUT closing the prior (closing is the pipeline's separate
+  `close_versions` step, IN-6/DM-3). The expectation was corrected to the
+  reference contract; the closed-predecessor assertion moved behind an
+  explicit `close_versions` call in that test, and the full pipeline path
+  (task 59) proves the end-to-end closed-predecessor behavior.
+
+### TDD Cycle Evidence (cargo test -p db / --workspace)
+
+| Task | RED evidence (pre-implementation) | GREEN evidence |
+|---|---|---|
+| 58 port impl (DM-2, IN-6/7/9, D-5) | `tests/procedure_repository` E0432/E0433 ×21 (missing `repos`, unresolved `ingestion`) | `procedure_repository` 7/7 ok: batch upsert (procedures+versions+orgs, raw_data preserved, org by oid, latest_hashes, all_external_ids sorted), unchanged upsert → no second version, changed content → one version + close stamps prior at run 2, close_versions closes only the matching open version, deactivate_missing → inactive + `deactivated_at` and never deletes (idempotent, count 0 on re-run), re-activation edge (B3 deviation), touch_last_seen advances only `last_seen` (first_seen preserved), malformed RunStamp → typed error |
+| 59 DB-backed pipeline (IN-6/7/9) | `tests/ingestion_integration` E0432/E0433 ×6 | `ingestion_integration` 5/5 ok: identical fixture twice → run 2 creates nothing (created 0, updated 0, unchanged 2), only `last_seen` advances; changed `valor` → updated 1, 3001 has exactly 2 versions with predecessor closed at run 2, 3002 untouched; removed row → inactive + `deactivated_at`, row never deleted; B3 re-activation edge through the full pipeline (changed re-presented row re-activates in place, stamp cleared); duplicates_resolved == 2 with the IN-10 row-accounting sum holding |
+| 60 atomicity (design §4.1) | same failing compile batch | `failure_mid_batch_leaves_no_partial_writes` ok: a DB trigger raises deterministically for one external id mid-batch; the error surfaces as `RepoError`; afterwards procedures/versions/organizations all count 0 — single transaction per batch, no partial writes |
+| 61 run-record divergence (DM-1, IN-10) | — (docs/decision task) | No run-record table implemented; run summary stays a deterministic stdout/CI artifact only (`RunSummary::report()`). Divergence recorded below and in the commit body. |
+| 62 live-CKAN ignored test (IN-2, D-5) | `the package 'ingestion' does not contain this feature: live-ckan` | Under `--features live-ckan`: binary compiles, test listed and `ignored` (`live_package_show_resolves_the_tramites_dataset ... ignored`); NOT run in this unit; without the feature the binary (and reqwest) are compiled out entirely |
+
+### B4.1 (task 58) — GREEN sqlx repository
+- `crates/db/src/repos/{mod.rs,procedures.rs,orgs.rs}`: `PostgresProcedureRepository { pool }`
+  implements the full `ingestion::ProcedureRepository` port (crates/db now
+  depends on crates/ingestion — the design-sanctioned `db → ingestion`
+  arrow for port implementations). All queries are `sqlx::query!`
+  compile-time-checked; offline `.sqlx` metadata generated with
+  `cargo sqlx prepare --workspace` against the compose Postgres and
+  committed (11 query files) so builds stay DB-free (verified:
+  `env -u DATABASE_URL cargo check -p db` and `cargo test -p db --no-run`
+  both succeed offline).
+- `orgs.rs::upsert_organization`: INSERT … ON CONFLICT (external_id) DO
+  UPDATE name/updated_at (created_at preserved) — one row per source
+  `institucion_oid` (IN-8, D-4).
+- `procedures.rs`: single transaction per batch (design §4.1) — per row:
+  org upsert → present-row check (`ORDER BY (status='active') DESC,
+  created_at DESC LIMIT 1`) → in-place UPDATE (re-activating: status active,
+  `deactivated_at` cleared) or INSERT (first/last_seen at the run) →
+  version opens only when the incoming hash differs from the open one
+  (in-memory parity, IN-9 at the repo layer). `close_versions` closes only
+  open versions matching (external_id, hash) at the run stamp; the upsert
+  itself never closes (reference-semantics parity, evidenced above).
+- RunStamp boundary conversion (recorded B2/B3 deviation consumed): the
+  RFC 3339 string parses into a bindable timestamptz here; malformed stamps
+  are `RepoError::Failed("invalid run stamp …")` (test-asserted).
+- Sync/async bridge (recorded deviation, minimal to crates/ingestion): the
+  ingestion port stays synchronous (design §3 sketch; pipeline and the
+  canonical in-memory repo untouched — zero ingestion src changes for the
+  port). The adapter bridges with `block_in_place` under a running
+  multi-thread tokio context (apps/ingest worker, B5) or a shared internal
+  runtime from synchronous contexts; current-thread runtimes cannot host
+  it (tokio forbids blocking) — db tests use
+  `#[tokio::test(flavor = "multi_thread")]`.
+- sqlx-cli 0.9.0 installed locally during this unit to generate the offline
+  `.sqlx` cache (no repo config change needed); the dev database
+  `tramitesuy` received migrations 0001–0011 via `sqlx migrate run`
+  (make-dev parity; compose db left running).
+
+### B4.2 (task 61) — run-record divergence resolution (RECORDED)
+Design §4.1 says the run summary goes to "stdout + search_ops run record";
+the data-model spec (DM-1, tested by task 41's allowlist) closes the schema
+at exactly ten application tables. Resolution implemented and recorded:
+- The run summary is a deterministic stdout/CI artifact ONLY:
+  `RunSummary::report()` (already byte-stable since B3) is printed by the
+  worker and may be collected by CI; nothing is persisted. No
+  `search_ops`/run-record table exists and none may be added without a
+  spec delta — the DM-1 allowlist test would fail.
+- Doc comment added on `ingestion::summary::RunSummary` noting the
+  stdout-only contract and this recorded divergence.
+- **Follow-up note (for the eventual spec delta / archive):** if durable
+  run records are ever wanted, that is a data-model spec amendment
+  (eleventh table) — out of MVP scope; the design §4.1 wording should be
+  read as superseded by the data-model spec until then.
+
+### B4.3 (task 62) — live-CKAN ignored test + sanctioned exception
+- `crates/ingestion/src/ckan.rs` (minimal, task 65 refinement stays B5):
+  `CkanFetcher` implements the `SourceFetcher` port with `resolve_dataset`
+  (one `package_show` call; CSV-format resource selected deterministically,
+  falling back to the first resource) and `download_resource` (file URL
+  resolved from `resource_show` at call time — never hardcoded, IN-2).
+  No URL literal exists in the module: base URL and package id arrive at
+  construction (the ignored test reads `CKAN_BASE_URL` from the
+  environment; apps/ingest wires real config in B5).
+- `crates/ingestion/Cargo.toml`: `reqwest` added ONLY as an optional dep
+  behind feature `live-ckan` (default off) — default builds compile no
+  HTTP code or dependency; `crates/ingestion/src/lib.rs` gates `pub mod
+  ckan` behind the feature.
+- `crates/ingestion/tests/ckan_live.rs`: `#[ignore]`d live test performing
+  ONE real `package_show` call, asserting the manifest records
+  resource_id and last_modified (IN-2). Compiled out entirely without the
+  feature; with the feature it is ignored by default and runs only with
+  `--ignored` (manual/nightly; task 90 wires the job). NOT run in this
+  unit per instruction.
+- Boundary guard amendment (justified deviation from B3's test as
+  authored): `tests/boundary.rs` now (a) still forbids `sqlx` outright,
+  (b) permits `reqwest` only as an OPTIONAL dependency line (the
+  feature-gated ckan exception), and (c) exempts only `ckan.rs` from the
+  source scan. The guard's spirit — default builds are network-free — is
+  unchanged and now enforced at the dependency level.
+- Falsifiability evidence: with a temporarily non-optional reqwest line,
+  the amended guard fails (`reqwest must stay an OPTIONAL dependency …`);
+  reverted, suite green again.
+
+### B4 verification evidence
+- `cargo test -p db` → 8 binaries, 22 tests passing (procedure_repository 7,
+  ingestion_integration 5, constraints 6, migrations 2, versions 1, pool 1).
+- `cargo test --workspace` → 142 passed / 0 failed (was 130 before B4).
+- `cargo test -p ingestion` → 33 passed / 0 failed, unchanged; the
+  `ckan_live` binary is absent from default runs (network-free paths).
+- `cargo test -p ingestion --features live-ckan --test ckan_live -- --list`
+  → 1 test, ignored (NOT run).
+- `cargo fmt --all -- --check` → exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
+- Offline compile check: `env -u DATABASE_URL cargo check -p db` and
+  `cargo test -p db --no-run` succeed against the committed `.sqlx` cache.
+- Compose `db` healthy and left running; migrations applied to the dev
+  `tramitesuy` database; all scratch test databases dropped with FORCE
+  (5 stale `b1_*` databases from an earlier interrupted run were also
+  FORCE-dropped during verification).
+
+### B4 review-budget accounting and split guard (fired, honored)
+- Authored diff for the code+test commits: see per-commit stats below; the
+  unit total exceeded the 400-line budget, so delivery followed the
+  B2/B3 precedent: cohesive ≤-400-line split commits, each a green tree,
+  each a Conventional Commit referencing B4 / PR 11, no push. Nothing was
+  compressed, restyled, or deleted to approach the number; no comments,
+  docs, or tests were dropped.
+
+### Pending maintainer decisions (carried from A1–B3, still not decided here)
+1. **Review-budget overage:** PRs 2–10 and now PR 11 exceed the 400-line
+   budget. `size:exception` acceptance vs a chaining decision remains
+   **pending** — required before any PR is opened.
+2. **Chain strategy: pending** — `stacked-to-main` vs
+   `feature-branch-chain` still unchosen while the change's total forecast
+   is ~4,800–6,150 lines (risk High, chained PRs recommended). This run
+   continued the established split-commit-on-master pattern (no push, no
+   PR opened) per the parent instruction.
+
+### Task state (cumulative)
+- Completed: 1–62 (S0, A1–A6, B1–B4). 32 unchecked remain (units B5…C3 +
+  baseline rebase).
+- Commits (each on `master`, no push, Conventional Commits referencing
+  B4 / PR 11; stash-verified green per split):
+  - B4a `95f786f` feat(db): sqlx `ProcedureRepository` port implementation
+    (task 58 part 1; repos + offline `.sqlx` metadata; authored ≈ 316
+    lines + generated artifacts: `.sqlx` 267, db manifest/lib 3).
+  - B4b `41a393d` test(db): port contract tests (task 58 part 2; 330 lines).
+  - B4c `19480e3` test(db): DB-backed pipeline + batch atomicity (tasks
+    59–60; 339 lines).
+  - B4d `0c3a56d` feat(ingestion): live-ckan gated fetcher + ignored live
+    test + stdout-only summary (tasks 61–62; authored ≈ 185 lines +
+    generated Cargo.lock ≈ 237 for the optional reqwest tree).
+- Unit authored total: ≈ 1,170 authored lines across four ≤-400-line split
+  commits (≈ 1,674 insertions / 6 deletions including generated artifacts),
+  plus this closing docs commit. Split-guard honored (B2/B3 precedent).
+
+### Remaining after B4
+- Unit B5 (tasks 63–69): `apps/ingest` subcommands, full `ckan.rs`
+  contract (task 65 refines stable-resource-id selection), no_hardcoded_url,
+  snapshot export, seed-taxonomy.
