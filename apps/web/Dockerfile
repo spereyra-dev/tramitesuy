@@ -2,13 +2,17 @@
 # Multi-stage build on node:22-alpine: npm ci + `next build` in the builder,
 # then a minimal non-root runner stage serving `next start` on port 3000.
 #
-# API_BASE_URL is a runtime value, not a build argument: next.config.ts reads
-# it when the server boots to evaluate the same-origin rewrite proxy (compose
-# sets http://api:8080; dev default http://localhost:8080). The image stays
-# env-agnostic.
+# API_BASE_URL must be present at BUILD time, not runtime: Next 15 resolves
+# rewrites() when `next build` runs and bakes the destination into
+# .next/routes-manifest.json, so a runtime-only env var is ignored (found by
+# the compose e2e gate: the container proxied the baked dev default).
+# compose passes it as a build arg (http://api:8080); the local default
+# matches next.config.ts's dev default. The runner stage stays env-agnostic.
 
 FROM node:22-alpine AS build
 WORKDIR /app
+ARG API_BASE_URL=http://localhost:8080
+ENV API_BASE_URL=$API_BASE_URL
 
 # Manifests first for layer caching of the dependency install.
 COPY package.json package-lock.json ./

@@ -57,7 +57,12 @@ services:
     # 03:00 UTC every day. No web service, no cron orchestration (design §10).
 
   web:
-    build: ./apps/web
+    build:
+      context: ./apps/web
+      # Baked at build time (see apps/web/Dockerfile): Next 15 resolves
+      # rewrites() during `next build`.
+      args:
+        API_BASE_URL: http://api:8080
     depends_on:
       api:
         condition: service_healthy
