@@ -72,14 +72,17 @@ database tables are projections (FTS/trigram providers), never the reverse.
 docker compose up --build
 ```
 
-Boots three services — `db` (Postgres 16 + `pg_trgm`/`unaccent`), `api`
-(the HTTP service on port 8080, migrations applied at boot), and `ingest`
-(the daily ingestion worker). There is deliberately **no `web` service**: the
-Next.js UI is a separate follow-up change.
-
-Then:
+Boots four services — `db` (Postgres 16 + `pg_trgm`/`unaccent`), `api`
+(the HTTP service on port 8080, migrations applied at boot), `ingest`
+(the daily ingestion worker), and `web` (the Next.js citizen UI on port
+3000). The web service starts once `api` is healthy and serves the full
+read surface through the containerized stack:
 
 ```bash
+curl -fsS "http://localhost:3000/?q=compre%20un%20auto"
+# → the home page server-rendering the open-mode search result (ordered
+#   procedure cards, confidence, attribution blocks) via the same-origin proxy
+
 curl "http://localhost:8080/api/v1/search?q=compre%20un%20auto"
 # → {"mode":"open", ...} with the event, its ordered procedures, and the
 #   odc-uy attribution block
@@ -104,6 +107,63 @@ export CKAN_BASE_URL=https://catalogodatos.gub.uy
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/tramitesuy
 make ingest
 ```
+
+## Web UI (`apps/web`)
+
+The citizen web UI is a standalone Next.js 15 App Router application
+(TypeScript strict, React 19, minimal plain CSS — no framework) under
+`apps/web/`, a pure consumer of the frozen `/api/v1` surface:
+
+```text
+apps/web/
+├── app/            # routes: /, /events/[slug], /categories, /categories/[slug]
+│                   #   <html lang="es">, shared not-found state, plain CSS
+├── components/     # SearchForm (the only client component), ProcedureCard, Attribution
+├── lib/            # api.ts (typed client + same-origin proxy fetch), display.ts
+└── tests/          # vitest suites + fixtures recorded from the shipped handlers
+```
+
+Local development (the web app needs the API running with its database):
+
+```bash
+make dev                 # dev database + migrations + taxonomy seed
+cd apps/web
+npm ci
+npm run dev              # serves http://localhost:3000; expects the API on :8080
+npm test                 # hermetic vitest suite (fixtures, no live API/DB)
+```
+
+### `API_BASE_URL` contract
+
+All API access is same-origin: the browser only ever requests relative
+`/api/v1/...` paths on the web origin, and the `rewrites()` proxy in
+`next.config.ts` forwards them to `API_BASE_URL` (default
+`http://localhost:8080` in dev; the compose stack sets `http://api:8080`).
+No CORS dependency exists anywhere. Note that Next 15 resolves rewrites
+during `next build`, so the compose web service passes `API_BASE_URL` as a
+build arg — see `apps/web/Dockerfile` for the details.
+
+### Routes and display contract
+
+| Route | Renders |
+|-------|---------|
+| `/?q=` | search response in one of three modes inline: direct answer (ordered cards + confidence), `¿Te referías a...?` options, or category fallback links |
+| `/events/[slug]` | event page with ordered procedure cards and the `required` flag; unknown slug → 404 |
+| `/categories` | category list in API `order_index` order |
+| `/categories/[slug]` | the category's events linked to their event pages; unknown slug → 404 |
+
+Every procedure card carries the per-card attribution block: the
+official-source marker, a link to `source.official_url` (or an explicit
+"source link unavailable" state when it is `null` — never a broken or
+fabricated link), the source name, `source.last_synced_at` (rendered as
+`Actualizado: …`), and `cost_display` verbatim (`Sin costo informado` when
+the source reports no cost). Server components fetch with
+`cache: 'no-store'` / `revalidate: 0`, so attribution data is never served
+stale.
+
+Deliberately not built (MVP scope): a `/debug` page, a feedback UI, and a
+per-procedure detail page — cards link straight to the official source —
+and no CSS framework, i18n machinery, or client-side data fetching.
 
 ## Missing-cost wording
 
