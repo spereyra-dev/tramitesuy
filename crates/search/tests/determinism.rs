@@ -99,3 +99,47 @@ fn full_pipeline_outcome_is_identical_across_runs() {
         "the full pipeline (scores, ordering, confidence, selection, explanations) must be byte-identical"
     );
 }
+
+#[test]
+fn score_outcome_is_identical_across_runs_and_provider_orders() {
+    // S4a task 9: the new explicit-candidate boundary keeps the SE-1
+    // determinism clause — `score()` with explicitly collected candidates is
+    // byte-identical to `search()` with the same stub providers, and the
+    // canonical ordering before scoring makes provider-list order
+    // irrelevant.
+    let fixture = support::vehiculos_fixture();
+    let engine = search::engine::SearchEngine::new(
+        fixture.events.iter().map(support::event_lexicon).collect(),
+        fixture.synonyms.clone(),
+    );
+    let fts = support::StubProvider {
+        name: "FTS_TEXT",
+        contributions: vec![("comprar-vehiculo", 5), ("vender-vehiculo", 1)],
+    };
+    let trigram = support::StubProvider {
+        name: "TRIGRAM",
+        contributions: vec![("vender-vehiculo", 2), ("comprar-vehiculo", 3)],
+    };
+
+    let run = |providers: &[&dyn search::engine::CandidateProvider]| {
+        let normalized = search::tokenizer::tokenize("compre un auto usado", &fixture.synonyms);
+        let candidates: Vec<search::types::Candidate> = providers
+            .iter()
+            .flat_map(|provider| {
+                provider
+                    .candidates(&normalized)
+                    .expect("stub providers must not fail")
+            })
+            .collect();
+        engine.score(&normalized, candidates)
+    };
+
+    let forward = run(&[&fts, &trigram]);
+    let reversed = run(&[&trigram, &fts]);
+
+    assert_eq!(forward, run(&[&fts, &trigram]));
+    assert_eq!(
+        forward, reversed,
+        "provider-list order must never reach the scoring stage"
+    );
+}

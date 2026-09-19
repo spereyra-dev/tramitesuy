@@ -59,7 +59,8 @@ impl SearchEngine {
 
     /// Runs the full deterministic pipeline over `query` (SE-7, task 18).
     /// Provider-list order is irrelevant to the output: candidates are
-    /// sorted into a canonical order before ranking.
+    /// sorted into a canonical order before ranking (S4a task 9 keeps this
+    /// sort exactly as it was, now inside `score`).
     pub fn search(
         &self,
         query: &str,
@@ -67,12 +68,27 @@ impl SearchEngine {
     ) -> Result<SearchOutcome, EngineError> {
         let normalized = tokenize(query, &self.synonyms);
 
+        let mut candidates = Vec::new();
+        for provider in providers {
+            candidates.extend(provider.candidates(&normalized)?);
+        }
+        Ok(self.score(&normalized, candidates))
+    }
+
+    /// Scores an already-normalized query against explicitly provided
+    /// candidates (S4a task 9, OPT-08): the pure ranking boundary that the
+    /// async orchestration layer (design §4.2) will call after fetching
+    /// candidates. Composes the existing match + rules + canonical
+    /// candidate ordering + rank + confidence + selection steps with no
+    /// provider, database, HTTP, or runtime dependency; identical inputs
+    /// produce identical outcomes regardless of candidate input order.
+    pub fn score(&self, normalized: &NormalizedQuery, candidates: Vec<Candidate>) -> SearchOutcome {
         let event_scores: Vec<EventScore> = self
             .events
             .iter()
             .map(|lexicon| {
-                let mut entries = match_keywords(&normalized, &lexicon.keywords);
-                entries.extend(action_entity_entries(&normalized, &lexicon.rules));
+                let mut entries = match_keywords(normalized, &lexicon.keywords);
+                entries.extend(action_entity_entries(normalized, &lexicon.rules));
                 EventScore {
                     slug: lexicon.slug.clone(),
                     entries,
@@ -80,26 +96,23 @@ impl SearchEngine {
             })
             .collect();
 
-        let mut candidates = Vec::new();
-        for provider in providers {
-            candidates.extend(provider.candidates(&normalized)?);
-        }
+        let mut candidates = candidates;
         candidates.sort_by(|a, b| {
             (&a.event_slug, &a.rule_name, a.value).cmp(&(&b.event_slug, &b.rule_name, b.value))
         });
 
-        let results = rank(&normalized, &event_scores, &candidates);
+        let results = rank(normalized, &event_scores, &candidates);
         let scores: Vec<i64> = results.iter().map(|result| result.score).collect();
         let confidence = confidence(&scores);
         let categories = self.categories();
         let selection = select(confidence, &results, &categories);
 
-        Ok(SearchOutcome {
-            query: normalized,
+        SearchOutcome {
+            query: normalized.clone(),
             results,
             confidence,
             selection,
-        })
+        }
     }
 
     /// The available category slugs, sorted and deduplicated, derived from

@@ -17,6 +17,104 @@ fn fixture_engine() -> SearchEngine {
     )
 }
 
+/// Collects the stub providers' candidates for a query — the explicit
+/// candidate input `score()` consumes (S4a task 9).
+fn stub_candidates(
+    providers: &[&dyn CandidateProvider],
+    normalized: &NormalizedQuery,
+) -> Vec<Candidate> {
+    providers
+        .iter()
+        .flat_map(|provider| {
+            provider
+                .candidates(normalized)
+                .expect("stub providers must not fail")
+        })
+        .collect()
+}
+
+/// The S4a equivalence clause: for every selection band (open,
+/// disambiguation, categories), calling `score()` with the explicitly
+/// collected candidates must produce a byte-identical outcome to the full
+/// `search()` pipeline with the same stub providers.
+#[test]
+fn score_matches_search_for_open_disambiguation_and_categories() {
+    let fixture = vehiculos_fixture();
+    let engine = SearchEngine::new(
+        fixture.events.iter().map(support::event_lexicon).collect(),
+        fixture.synonyms.clone(),
+    );
+
+    // Open: a dominant winner whose confidence clears the open band.
+    let query = "compre un auto usado";
+    let fts = StubProvider {
+        name: "FTS_TEXT",
+        contributions: vec![("comprar-vehiculo", 5)],
+    };
+    let trigram = StubProvider {
+        name: "TRIGRAM",
+        contributions: vec![("vender-vehiculo", 2)],
+    };
+    let normalized = search::tokenizer::tokenize(query, &fixture.synonyms);
+    let candidates = stub_candidates(&[&fts, &trigram], &normalized);
+
+    let via_search = engine
+        .search(query, &[&fts, &trigram])
+        .expect("search must succeed");
+    let via_score = engine.score(&normalized, candidates);
+
+    assert_eq!(
+        via_search, via_score,
+        "score() must reproduce search() byte for byte in the open band"
+    );
+    assert_eq!(via_score.selection.mode, search::types::SelectionMode::Open);
+
+    // Disambiguation: both events tie, so confidence lands between the
+    // disambiguation and open thresholds.
+    let query = "vehiculo";
+    let fts = StubProvider {
+        name: "FTS_TEXT",
+        contributions: vec![("comprar-vehiculo", 2)],
+    };
+    let trigram = StubProvider {
+        name: "TRIGRAM",
+        contributions: vec![("vender-vehiculo", 2)],
+    };
+    let normalized = search::tokenizer::tokenize(query, &fixture.synonyms);
+    let candidates = stub_candidates(&[&fts, &trigram], &normalized);
+
+    let via_search = engine
+        .search(query, &[&fts, &trigram])
+        .expect("search must succeed");
+    let via_score = engine.score(&normalized, candidates);
+
+    assert_eq!(
+        via_search, via_score,
+        "score() must reproduce search() byte for byte in the disambiguation band"
+    );
+    assert_eq!(
+        via_score.selection.mode,
+        search::types::SelectionMode::Disambiguation
+    );
+
+    // Categories: a zero-match query takes the no-result path.
+    let query = "xyzzy qwertyjf";
+    let normalized = search::tokenizer::tokenize(query, &fixture.synonyms);
+    let candidates = stub_candidates(&[], &normalized);
+
+    let via_search = engine.search(query, &[]).expect("search must succeed");
+    let via_score = engine.score(&normalized, candidates);
+
+    assert_eq!(
+        via_search, via_score,
+        "score() must reproduce search() byte for byte in the categories band"
+    );
+    assert_eq!(
+        via_score.selection.mode,
+        search::types::SelectionMode::Categories
+    );
+}
+
 #[test]
 fn search_opens_a_dominant_winner_end_to_end() {
     let engine = fixture_engine();
@@ -176,6 +274,53 @@ impl CandidateProvider for FailingProvider {
             message: "boom".to_string(),
         })
     }
+}
+
+/// S4a regression: the canonical candidate ordering lives before scoring,
+/// so the outcome is invariant under the order the candidates arrive in.
+#[test]
+fn score_is_invariant_under_candidate_input_order() {
+    let fixture = vehiculos_fixture();
+    let engine = SearchEngine::new(
+        fixture.events.iter().map(support::event_lexicon).collect(),
+        fixture.synonyms.clone(),
+    );
+    let normalized = search::tokenizer::tokenize("compre un auto usado", &fixture.synonyms);
+
+    // The same candidate multiset in shuffled and canonically sorted form.
+    let shuffled = vec![
+        Candidate {
+            event_slug: "vender-vehiculo".to_string(),
+            rule_name: "TRIGRAM".to_string(),
+            value: 2,
+        },
+        Candidate {
+            event_slug: "comprar-vehiculo".to_string(),
+            rule_name: "FTS_TEXT".to_string(),
+            value: 5,
+        },
+        Candidate {
+            event_slug: "comprar-vehiculo".to_string(),
+            rule_name: "TRIGRAM".to_string(),
+            value: 3,
+        },
+        Candidate {
+            event_slug: "vender-vehiculo".to_string(),
+            rule_name: "FTS_TEXT".to_string(),
+            value: 1,
+        },
+    ];
+    let mut canonical = shuffled.clone();
+    canonical.sort_by(|a, b| {
+        (&a.event_slug, &a.rule_name, a.value).cmp(&(&b.event_slug, &b.rule_name, b.value))
+    });
+    assert_ne!(shuffled, canonical, "fixture must start unordered");
+
+    assert_eq!(
+        engine.score(&normalized, shuffled),
+        engine.score(&normalized, canonical),
+        "candidate ordering must be canonicalized before scoring"
+    );
 }
 
 #[test]
