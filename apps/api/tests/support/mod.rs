@@ -379,23 +379,29 @@ pub async fn last_seen_of(pool: &PgPool, external_id: &str) -> String {
     row.0.to_rfc3339()
 }
 
-pub use db::test_support::sql_counter::SqlCounter;
+pub use db::test_support::sql_counter::{SqlCounter, SqlSection};
 
-/// Fresh migrated scratch database plus a statement-counting pool over it
-/// (task 2 instrument reused from `crates/db`'s test-support feature).
-pub async fn fresh_migrated_counting_db() -> (PgPool, SqlCounter) {
+/// Fresh migrated scratch database plus a statement-counting pool, with
+/// the measurement section already held across setup: the test calls
+/// `section.reset()` before the measured work and reads `section.count()`
+/// after (task 2 instrument, reused from `crates/db`'s test-support).
+pub async fn fresh_counting_db_section() -> (PgPool, SqlSection) {
+    let counter = SqlCounter::new();
+    // The section spans setup too: parallel tests in this binary cannot
+    // leak statements into the recorded counts.
+    let section = counter.section().await;
+
     let (pool, name) = fresh_migrated_db().await;
     let base = std::env::var("TRAMITESUY_TEST_DB_URL")
         .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/postgres".to_string());
     let url = format!("{}/{}", base.trim_end_matches("/postgres"), name);
     drop(pool);
 
-    let counter = SqlCounter::new();
     let pool = counter
         .counting_pool(&url)
         .await
         .expect("counting pool over the migrated scratch database");
-    (pool, counter)
+    (pool, section)
 }
 /// Seeds the projection rows for the open-mode contract: one category, one
 /// event (name/description deliberately disjoint from the fixture query's

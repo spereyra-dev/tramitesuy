@@ -78,11 +78,11 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: re-generating with the same seed produces byte-identical content.
   - Satisfies: spec §7 load plan prerequisite, OPT-01 fixture surface.
 
-- [ ] 4. [S1] Record current-behavior baseline in `tests/load/BASELINE.md`: exact commands, commit, hardware, and the measured current numbers (SQL ops per mode, p50/p95 on the dev fixture, cache absent). No behavior change in this task.
+- [x] 4. [S1] Record current-behavior baseline in `tests/load/BASELINE.md`: exact commands, commit, hardware, and the measured current numbers (SQL ops per mode, p50/p95 on the dev fixture, cache absent). No behavior change in this task.
   - Verify: re-running the documented commands reproduces the documented numbers within the stated tolerance; `cargo test --workspace` unchanged.
   - Satisfies: OPT-06/OPT-10 baseline evidence, stage 1 exit criteria.
 
-- [ ] 5. [S1] Add `make baseline` and `make load` targets to `Makefile` and a non-gating CI job in `.github/workflows/ci.yml` so the fixture and load harness are reproducible outside a developer shell.
+- [x] 5. [S1] Add `make baseline` and `make load` targets to `Makefile` and a non-gating CI job in `.github/workflows/ci.yml` so the fixture and load harness are reproducible outside a developer shell.
   - Verify: `make -n baseline` and `make -n load` resolve; `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` stay green; the new job does not gate `make test` parity.
   - Satisfies: stage 1 exit criteria, OPT-11 (reproducible measurement).
 

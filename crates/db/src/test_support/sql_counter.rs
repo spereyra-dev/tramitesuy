@@ -99,4 +99,35 @@ impl SqlCounter {
         let output = fut.await;
         (output, self.count.load(Ordering::Relaxed))
     }
+
+    /// Opens a serialized measurement section spanning the WHOLE test
+    /// (setup included): no other counting test in this process may run
+    /// statements while the section is alive. The test then calls
+    /// [`SqlSection::reset`] right before the measured work and reads
+    /// [`SqlSection::count`] after — the only way to exclude setup and
+    /// parallel-test noise from the recorded numbers.
+    pub async fn section(&self) -> SqlSection {
+        SqlSection {
+            _guard: MEASUREMENT.lock().await,
+            counter: self.count.clone(),
+        }
+    }
+}
+
+/// A live serialized measurement section (see [`SqlCounter::section`]).
+pub struct SqlSection {
+    _guard: tokio::sync::MutexGuard<'static, ()>,
+    counter: Arc<AtomicU64>,
+}
+
+impl SqlSection {
+    /// Zeros the statement count (call right before the measured work).
+    pub fn reset(&self) {
+        self.counter.store(0, Ordering::Relaxed);
+    }
+
+    /// Statements executed since the last [`SqlSection::reset`].
+    pub fn count(&self) -> u64 {
+        self.counter.load(Ordering::Relaxed)
+    }
 }

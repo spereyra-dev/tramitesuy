@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: dev test lint fmt migrate ingest seed-taxonomy search validate-data db-down
+.PHONY: dev test lint fmt migrate ingest seed-taxonomy search validate-data db-down baseline load
 
 ## dev: start the dev database, apply migrations, and seed the taxonomy.
 ## The full compose stack (api + ingest daemon) is `docker compose up --build`.
@@ -51,3 +51,16 @@ seed-taxonomy:
 ## db-down: stop the dev database.
 db-down:
 	docker compose down
+
+## baseline: reproduce the recorded current-behavior baseline (task 4/5,
+## tests/load/BASELINE.md): SQL-ops per mode + latency loop on the dev
+## fixture, cache absent. Measurement infrastructure, non-gating.
+baseline:
+	bash tests/load/baseline.sh
+
+## load: exercise the load surface available so far — the synthetic PII-free
+## catalog fixture and the SQL-statement counter instrument (task 3/2).
+## The arrival-rate harness itself lands in stage 6 (task 47).
+load:
+	cargo test -p db --test fixture_catalog
+	cargo test -p db --test sql_counter
