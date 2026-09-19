@@ -119,3 +119,6 @@ No S1 task remains unchecked (49 total, 5 complete).
 3. `aed5ce3` feat(db): SQL-statement counter instrument + 7-statement baseline (S1 task 2)
 4. `aa770d5` feat(db): synthetic PII-free catalog fixture generator + scenario doc (S1 task 3)
 5. `c366abe` feat(load): recorded baseline + reproducible make targets + non-gating CI (S1 tasks 4–5)
+
+## Delivery decision (parent-recorded)
+- 2026-09-18 — Maintainer accepted `size:exception` for slice S1 / PR 1 (~1,708 authored lines, five-task honest scope cannot fit 400). Chained-PR delivery confirmed earlier: stacked-to-main. Chain continues with S2.
