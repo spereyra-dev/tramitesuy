@@ -4,6 +4,7 @@
 pub mod dto;
 pub mod error;
 pub mod handlers;
+pub mod metrics;
 pub mod redaction;
 pub mod router;
 pub mod state;

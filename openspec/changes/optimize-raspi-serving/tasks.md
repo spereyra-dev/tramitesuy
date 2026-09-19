@@ -62,7 +62,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
 
 ## Stage 1 — Baseline
 
-- [ ] 1. [S1] Add minimal, privacy-safe instrumentation in `apps/api/src/metrics.rs` and wire it in `apps/api/src/router.rs` + `apps/api/src/main.rs`: per-route/status latency, SQL operations per request, cache counters, generation state. No query text, normalized text, or cache-key fingerprint may be a label.
+- [x] 1. [S1] Add minimal, privacy-safe instrumentation in `apps/api/src/metrics.rs` and wire it in `apps/api/src/router.rs` + `apps/api/src/main.rs`: per-route/status latency, SQL operations per request, cache counters, generation state. No query text, normalized text, or cache-key fingerprint may be a label.
   - RED: `apps/api/tests/metrics.rs` asserts a `/api/v1/search` request increments the search-latency and SQL-op counters and that no emitted label contains the submitted `q` value. `cargo test -p api --test metrics`.
   - GREEN: counters behind a small trait seam so tests can read them without an exporter.
   - TRIANGULATE: assert the same for `/api/v1/events/{slug}` (catalog route) and a failing search.

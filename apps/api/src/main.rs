@@ -25,6 +25,11 @@ async fn main() {
     let data_dir = std::env::var("TRAMITESUY_DATA_DIR").unwrap_or_else(|_| "data".to_string());
     let state = api::state::AppState::build(pool, Path::new(&data_dir))
         .unwrap_or_else(|error| panic!("boot: {error}"));
+    // Task 1 wiring: the serving-generation gauge boots at `NotLoaded`
+    // (stage 3 swaps it to `Active` with the first loaded generation).
+    state
+        .metrics
+        .observe_generation_state(api::metrics::GenerationState::NotLoaded);
 
     // `TRAMITESUY_BIND` overrides the dev default (the compose service
     // binds 0.0.0.0 to be reachable from the host).

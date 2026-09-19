@@ -58,6 +58,7 @@ pub async fn create(
             }
             _ => ApiError::InternalServerError(format!("feedback persistence failed: {error}")),
         })?;
+    state.metrics.observe_sql_ops("/api/v1/search/feedback", 1);
 
     Ok((
         StatusCode::CREATED,

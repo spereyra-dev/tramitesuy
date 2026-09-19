@@ -108,6 +108,17 @@ pub fn spawn_app(pool: PgPool) -> Router {
     api::build_router(state)
 }
 
+/// Boots the router with an injected metrics sink (task 1 seam): same boot
+/// path as `spawn_app`, but the counters surface becomes test-readable.
+pub fn spawn_app_with_metrics(
+    pool: PgPool,
+    metrics: std::sync::Arc<dyn api::metrics::Metrics>,
+) -> Router {
+    let state = api::state::AppState::build_with_metrics(pool, &repo_root().join("data"), metrics)
+        .expect("boot AppState from the real data seed");
+    api::build_router(state)
+}
+
 /// Sends one request to the in-process router and returns the status plus
 /// the parsed JSON body (Null for empty bodies).
 pub async fn request(app: &Router, method: &str, uri: &str) -> (StatusCode, Value) {

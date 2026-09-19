@@ -29,8 +29,11 @@ pub async fn search(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let query = query_parameter(&params)?;
     let outcome = run_pipeline(&state, &query)?;
+    // Task 1: the two provider statements are consumed by the pipeline.
+    state.metrics.observe_sql_ops(ROUTE, 2);
 
-    persist_log(&state, &query, &outcome).await?;
+    let log_ops = persist_log(&state, &query, &outcome).await?;
+    state.metrics.observe_sql_ops(ROUTE, log_ops);
 
     let payload = match outcome.selection.mode {
         SelectionMode::Open => open_payload(&state, &outcome).await?,
@@ -40,14 +43,20 @@ pub async fn search(
     Ok(Json(payload))
 }
 
+/// This route's low-cardinality metrics label (task 1): the route pattern,
+/// never the query text (R14).
+const ROUTE: &str = "/api/v1/search";
+
 pub async fn debug(
     State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let query = query_parameter(&params)?;
     let outcome = run_pipeline(&state, &query)?;
+    state.metrics.observe_sql_ops(ROUTE, 2);
 
-    persist_log(&state, &query, &outcome).await?;
+    let log_ops = persist_log(&state, &query, &outcome).await?;
+    state.metrics.observe_sql_ops(ROUTE, log_ops);
 
     Ok(Json(debug_payload(&state, &outcome)))
 }
@@ -80,7 +89,7 @@ async fn persist_log(
     state: &AppState,
     query: &str,
     outcome: &SearchOutcome,
-) -> Result<(), ApiError> {
+) -> Result<u64, ApiError> {
     let redacted = redact(query);
     let normalized = normalize(&redacted).normalized;
     let selected_event_slug = match outcome.selection.mode {
@@ -89,6 +98,10 @@ async fn persist_log(
     };
     let top_event_slug = outcome.results.first().map(|event| event.slug.clone());
     let top_score = outcome.results.first().map(|event| event.score);
+    // Task 1: today's insert is 1 statement plus one slug resolution per
+    // present slug (consolidated into one statement in slice S2).
+    let sql_ops =
+        1 + u64::from(selected_event_slug.is_some()) + u64::from(top_event_slug.is_some());
     search_log::insert(
         &state.pool,
         &NewSearchLog {
@@ -103,7 +116,8 @@ async fn persist_log(
     .map(|_| ())
     .map_err(|error| {
         ApiError::InternalServerError(format!("search log persistence failed: {error}"))
-    })
+    })?;
+    Ok(sql_ops)
 }
 
 /// Open mode (API-2): `results` carries exactly the selected event — slug,
@@ -125,7 +139,11 @@ async fn open_payload(
         .expect("open selection implies a top result");
 
     let procedures = match db::repos::procedures::by_event(&state.pool, &slug).await {
-        Ok(Some(projection)) => dto::procedure_cards(projection.procedures),
+        Ok(Some(projection)) => {
+            // Task 1: by_event issues 2 statements (metadata + rows).
+            state.metrics.observe_sql_ops(ROUTE, 2);
+            dto::procedure_cards(projection.procedures)
+        }
         Ok(None) => Vec::new(),
         Err(error) => {
             return Err(ApiError::InternalServerError(format!(

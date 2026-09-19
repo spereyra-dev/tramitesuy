@@ -18,7 +18,10 @@ pub async fn get(
         .await
         .map_err(|e| ApiError::InternalServerError(format!("procedure query failed: {e}")))?;
     match detail {
-        Some(detail) => Ok(Json(dto::procedure_detail_page(detail))),
+        Some(detail) => {
+            state.metrics.observe_sql_ops("/api/v1/procedures/{id}", 1);
+            Ok(Json(dto::procedure_detail_page(detail)))
+        }
         None => Err(ApiError::NotFound),
     }
 }
