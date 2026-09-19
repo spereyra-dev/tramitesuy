@@ -121,3 +121,8 @@ a {
 .option-list {
   padding-left: 1.25rem;
 }
+
+.event-category {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
