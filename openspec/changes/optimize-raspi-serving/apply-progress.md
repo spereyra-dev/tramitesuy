@@ -229,3 +229,4 @@ Tasks 1–7 complete (49 total, 7 checked).
   change, `search_logs` data untouched; `by_event` remains intact as the
   rollback card path; open mode falls back to the 5-op path.
 
+- 2026-09-18 — Maintainer accepted blanket per-slice `size:exception`: any slice whose honest scope exceeds 400 lines proceeds without a further pause; real counts reported per PR (S2 recorded at 728).
