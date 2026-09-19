@@ -98,10 +98,9 @@ async fn persist_log(
     };
     let top_event_slug = outcome.results.first().map(|event| event.slug.clone());
     let top_score = outcome.results.first().map(|event| event.score);
-    // Task 1: today's insert is 1 statement plus one slug resolution per
-    // present slug (consolidated into one statement in slice S2).
-    let sql_ops =
-        1 + u64::from(selected_event_slug.is_some()) + u64::from(top_event_slug.is_some());
+    // Task 6: the consolidated insert resolves both slugs inline — the log
+    // path is exactly one statement.
+    let sql_ops = 1;
     search_log::insert(
         &state.pool,
         &NewSearchLog {
