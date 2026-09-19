@@ -32,7 +32,15 @@ struct CountingLayer {
 
 impl<S: Subscriber> Layer<S> for CountingLayer {
     fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
-        if event.metadata().target() == "sqlx::query" {
+        // Only counting pools log statements at TRACE (`counting_pool` sets
+        // `log_statements(Trace)`); every other pool in the process emits
+        // the same `sqlx::query` target at DEBUG. Counting TRACE events
+        // exclusively keeps parallel non-counting tests from leaking
+        // statements into a live measurement window (the documented flake
+        // in `cards_by_event_issues_exactly_one_statement`).
+        if event.metadata().target() == "sqlx::query"
+            && event.metadata().level() == &tracing::Level::TRACE
+        {
             self.count.fetch_add(1, Ordering::Relaxed);
         }
     }
