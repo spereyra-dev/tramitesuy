@@ -291,3 +291,114 @@ exception recorded here and in the PR description. The mass is test code:
 the three new suites (362 lines) assert the rendered HTML of every event-page
 and category spec scenario; coverage could not be compressed without deleting
 coverage, which the budget rule forbids.
+
+## PR slice 4 (W7 + W8 + full-change acceptance gates, tasks 24–35) — 2026-09-18
+
+**Status: implemented, verified locally, pushed as PR 4 (branch
+`web/04-compose-readme`, off master 35e6bb0). Authored diff vs master
+(excluding lockfiles): 143 insertions / 8 deletions ≈ 151 lines — UNDER the
+400-line review budget, matching the ~70–110 W7+W8 forecast within the
+build-arg fix margin. No size:exception needed for this slice. The final
+PR 1–4 chain totals ≈ 2,040 authored lines across four slices (752 / ~660 /
+490 / 151), each with its documented exception where applicable.**
+
+### TDD / verification evidence (strict TDD)
+
+No new behavioral web code was authored in this slice (Dockerfile, compose,
+docs only), so no new RED/GREEN cycle applies; the slice is gated by the
+compose e2e transcript (task 25) and the eight full-change acceptance gates.
+The e2e gate did surface one real integration defect, fixed RED→GREEN-style
+below.
+
+### Per-task evidence
+
+- **Task 24 (W7)** — commit `2898e55`: `apps/web/Dockerfile` (multi-stage
+  `node:22-alpine`: `npm ci` + `next build` in the builder; runner stage ships
+  `.next`/`node_modules`/`package.json`/`next.config.ts`, non-root `nextjs`
+  user, `CMD next start` on port 3000) + `apps/web/.dockerignore` (keeps host
+  node_modules/.next out of the context) + the `web` compose service
+  (`depends_on: api: service_healthy`, `ports 3000:3000`, `API_BASE_URL=http://api:8080`).
+  The compose header comment no longer claims there is no `web` service. Two
+  small additive notes: (a) an api healthcheck was added to compose (bash
+  `/dev/tcp` port probe — the slim runtime image has bash, no curl) so the
+  `service_healthy` dependency is real; (b) no `.env` file was committed.
+- **Task 25 (W7 acceptance gate)** — `docker compose up --build` builds all
+  four images and boots `db + api + ingest + web`; api starts, becomes
+  `healthy`, and only then does web start. Transcript:
+  - `GET /` → 200
+  - `GET /?q=compre%20un%20auto` → 200, open mode: `Comprar un vehículo`,
+    link `/events/comprar-vehiculo`, `Coincidencia: 77%`, cards in API order
+    (empadronamientos → alta DNT → automotoras) each with the required flag,
+    `Sin costo informado` verbatim ×6, `Fuente oficial` attribution ×8 with
+    `Actualizado: 19/09/2026`
+  - `GET /events/comprar-vehiculo` → 200 (name, `Obligatorio`/`Opcional`,
+    verbatim cost, attribution)
+  - `GET /api/v1/categories` → `{"categories":[{"slug":"vehiculos",
+    "name":"Vehículos","order_index":1}]}` through the same-origin proxy
+- **Integration defect found by the task 25 gate (fixed)** — the first boot
+  500'd every data route: Next 15 resolves `rewrites()` during `next build`
+  and bakes the destination into `.next/routes-manifest.json`, so the
+  runtime-only `API_BASE_URL` env var was ignored and the container proxied
+  the baked dev default `http://localhost:8080` (design §7's "runtime value"
+  assumption was wrong — exactly the §10 "env resolution surprises" risk).
+  RED evidence: web logs `Failed to proxy http://localhost:8080/... [ECONNREFUSED]`,
+  `/events/comprar-vehiculo` → 500. GREEN (commit `0f6fb2c`): the Dockerfile
+  build stage takes `API_BASE_URL` as a build ARG (default
+  `http://localhost:8080` = the dev default) and compose passes
+  `API_BASE_URL: http://api:8080` as a build arg (runtime env kept for
+  clarity). Post-fix transcript above: all routes 200.
+- **Task 26 (W8)** — commit `aec2e96`: README "Full stack (docker compose)"
+  paragraph now boots four services with the `:3000` e2e examples, and a new
+  "## Web UI (`apps/web`)" runbook section documents the file layout, the
+  `make dev` + `npm ci` + `npm run dev` flow, the `API_BASE_URL` contract
+  (including the build-time rewrites nuance), the four-route inventory,
+  the per-card attribution/`last_synced_at`/verbatim-cost display contract,
+  and the explicit not-built list (`/debug`, feedback UI, procedure detail
+  page; no CSS framework, no i18n, no client-side fetching). English.
+  Evidence: `grep -n "no \`web\` service" README.md` → no matches (exit 1).
+- **Task 27 (W8)** — `openspec/config.yaml` reconciled by inspection, not by
+  edit: the W0 registration (`runner: npm test --prefix apps/web`) matches
+  exactly what W6's CI job runs (`npm test` with `working-directory:
+  apps/web`; standalone app, not an npm workspace), and the strict-TDD and
+  hermetic-fixture web rules already state the shipped truth, so no wording
+  change was needed. Evidence: `git diff master -- openspec/config.yaml` on
+  this branch is empty; `cargo test`, the golden gate, and the existing Rust
+  testing rules untouched.
+
+### Full-change acceptance gates (tasks 28–35)
+
+| Gate | Command / check | Result |
+|---|---|---|
+| 28 — vitest suite green | `cd apps/web && npm test` (vitest run) | 49 passed / 0 failed; 7 suites (api-client 11, freshness 3, mode-rendering 8, display 8, categories 6, event-page 10, no-api-origin 3) |
+| 29 — lint clean | `npm run lint` | exit 0, no suppressions or disabled rules anywhere in `apps/web` |
+| 30 — next build | `npm run build` | exit 0; `/` and `/_not-found` + ƒ `/`, `/categories`, `/categories/[slug]`, `/events/[slug]`; TypeScript strict; no `ignoreBuildErrors`/`ignoreDuringBuilds` in `next.config.ts` |
+| 31 — hermetic suite | `docker compose down` → `npm test` → stack up again | 49/49 green with zero containers (db removed, network removed); no socket, no DB, no live API; stack brought back UP afterwards |
+| 32 — compose web boots & serves | `docker compose up --build` (task 25 transcript) | four services up (web after api healthy); `/?q=compre%20un%20auto` 200 with a real API result; `/api/v1/categories` 200 through the proxy |
+| 33 — README truthful | `grep "no \`web\` service"` | no matches; no `/debug`, feedback, procedure-detail, or CSS-framework claims |
+| 34 — canonical specs untouched | `git diff --stat master -- openspec/specs/` | empty — no delta to any canonical spec |
+| 35 — Rust surface unchanged | `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`; `cargo test --workspace`; `cargo test -p search --test golden`; `cargo run -p taxonomy --bin taxonomy-validate` | fmt clean; clippy clean; **215 passed / 0 failed / 1 ignored** (unchanged); golden gate 5/0/0; taxonomy OK (9 events, 1 category, 14 synonyms, 3501 external ids); `apps/web` absent from `Cargo.toml` members; `git diff master -- apps/api data` empty |
+
+Operational notes: dev/Docker engines kept alive throughout (the PR 1
+incident not repeated); no node.exe-wide kill used at all; the compose demo
+stack is left UP (db healthy, api healthy, ingest, web on :3000).
+
+### Task state
+
+- Completed this slice: 24, 25, 26, 27 + acceptance gates 28–35 (checkboxes
+  flipped in `tasks.md` in this branch's docs commit).
+- **All 35 tasks of the change are now complete.**
+
+### Work-unit commits (branch `web/04-compose-readme`, off master 35e6bb0)
+
+1. `2898e55` feat(web): multi-stage Dockerfile + compose web service (task 24)
+2. `0f6fb2c` fix(web): bake API_BASE_URL at build time — Next 15 resolves
+   rewrites during next build (task 25 e2e fix)
+3. `aec2e96` docs(readme): web runbook — four-service compose stack,
+   API_BASE_URL contract, route/attribution notes (tasks 26–27)
+4. `docs(openspec)` (this commit): tasks 24–35 checked off + PR 4 progress
+
+### Size accounting (slice rule)
+
+Authored diff vs master (excluding lockfiles): **151 lines** (143+ / 8−) —
+under the 400-line budget and above the ~70–110 forecast only by the 16-line
+build-arg fix. No exception consumed; PR 4 is within budget.

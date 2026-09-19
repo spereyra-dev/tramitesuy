@@ -208,8 +208,8 @@ discrepancy only; this map follows the spec file, which is authoritative).
 
 ### Unit W7 (PR 4, tasks 24–25)
 
-- [ ] 24. Add `apps/web/Dockerfile` (multi-stage, `node:22-alpine`: a build stage running `npm ci` + `npm run build`, and a runner stage carrying `.next`/`node_modules`/`package.json` with `CMD next start` on port 3000) and the `web` service in `docker-compose.yml` (`build: ./apps/web`, `depends_on: api`, `ports: "3000:3000"`, `environment: API_BASE_URL=http://api:8080`). Update the compose header comment that currently states there is no `web` service (design §7, proposal P4). Evidence: `docker compose up --build` boots `db + api + ingest + web`; no `.env` file is committed.
-- [ ] 25. **W7 acceptance gate (design §7, §8; proposal R9).** With the four-service stack up: `curl -fsS "http://localhost:3000/?q=compre%20un%20auto"` serves the home page rendering the open-mode result fetched through the same-origin proxy, and `curl -fsS "http://localhost:3000/api/v1/categories"` returns the API payload. Record the transcript. Confirm W7 is independently revertible (removing the service and Dockerfile leaves `npm run dev` working) and that the non-gating `integration` job's `docker compose build` now builds the web image.
+- [x] 24. Add `apps/web/Dockerfile` (multi-stage, `node:22-alpine`: a build stage running `npm ci` + `npm run build`, and a runner stage carrying `.next`/`node_modules`/`package.json` with `CMD next start` on port 3000) and the `web` service in `docker-compose.yml` (`build: ./apps/web`, `depends_on: api`, `ports: "3000:3000"`, `environment: API_BASE_URL=http://api:8080`). Update the compose header comment that currently states there is no `web` service (design §7, proposal P4). Evidence: `docker compose up --build` boots `db + api + ingest + web`; no `.env` file is committed.
+- [x] 25. **W7 acceptance gate (design §7, §8; proposal R9).** With the four-service stack up: `curl -fsS "http://localhost:3000/?q=compre%20un%20auto"` serves the home page rendering the open-mode result fetched through the same-origin proxy, and `curl -fsS "http://localhost:3000/api/v1/categories"` returns the API payload. Record the transcript. Confirm W7 is independently revertible (removing the service and Dockerfile leaves `npm run dev` working) and that the non-gating `integration` job's `docker compose build` now builds the web image.
 
 ---
 
@@ -217,21 +217,21 @@ discrepancy only; this map follows the spec file, which is authoritative).
 
 ### Unit W8 (PR 4, tasks 26–27)
 
-- [ ] 26. Replace the README paragraph that documents "no `web` service" with the web runbook section: `apps/web` layout and the `npm ci` / `npm run dev` flow with the API on `:8080`, `docker compose up --build` for the four-service stack, `API_BASE_URL` semantics (default `http://localhost:8080`, compose value `http://api:8080`), and an explicit statement that `/debug`, the feedback UI, and the procedure detail page are not built (design §7, proposal P2/P4/R7). Evidence: `grep -n "no \`web\` service" README.md` returns nothing; the section renders correctly.
-- [ ] 27. Reconcile `openspec/config.yaml` with what actually shipped: confirm the W0 vitest registration matches the command W6's CI job runs, tighten the web rules wording only if needed, and state that strict TDD binds to web units without altering `cargo test`, the golden-gate rules, or the existing Rust testing rules (design §8 W8). Evidence: `git diff openspec/config.yaml` shows only the W0 web block, unchanged or clarified, and nothing else.
+- [x] 26. Replace the README paragraph that documents "no `web` service" with the web runbook section: `apps/web` layout and the `npm ci` / `npm run dev` flow with the API on `:8080`, `docker compose up --build` for the four-service stack, `API_BASE_URL` semantics (default `http://localhost:8080`, compose value `http://api:8080`), and an explicit statement that `/debug`, the feedback UI, and the procedure detail page are not built (design §7, proposal P2/P4/R7). Evidence: `grep -n "no \`web\` service" README.md` returns nothing; the section renders correctly.
+- [x] 27. Reconcile `openspec/config.yaml` with what actually shipped: confirm the W0 vitest registration matches the command W6's CI job runs, tighten the web rules wording only if needed, and state that strict TDD binds to web units without altering `cargo test`, the golden-gate rules, or the existing Rust testing rules (design §8 W8). Evidence: `git diff openspec/config.yaml` shows only the W0 web block, unchanged or clarified, and nothing else.
 
 ---
 
 ## Full-change acceptance gates
 
-- [ ] 28. **Gate — vitest suite green.** `cd apps/web && npm test` (`vitest run`) exits 0 with the contract, freshness, mode-rendering, display, event-page, categories, and no-api-origin suites all green.
-- [ ] 29. **Gate — lint clean.** `cd apps/web && npm run lint` exits 0 with no ESLint suppressions added and no rules disabled.
-- [ ] 30. **Gate — `next build` succeeds.** `cd apps/web && npm run build` exits 0 with TypeScript strict and no `ignoreBuildErrors` / `ignoreDuringBuilds` in `next.config.ts`.
-- [ ] 31. **Gate — contract tests hermetic (no API, no DB).** `npm test` is green with no API and no Postgres running (task 21/23 evidence); no test opens a socket or depends on a live service.
-- [ ] 32. **Gate — compose `web` service boots and serves the home page.** Task 25 transcript: `docker compose up --build` brings up `db + api + ingest + web` and the web service serves `/?q=` with a real API result.
-- [ ] 33. **Gate — README updated.** Task 26 landed: the "no `web` service" claim is gone and no documentation claims a `/debug` page, a feedback control, a procedure detail page, or a CSS framework (proposal success criterion 9).
-- [ ] 34. **Gate — canonical api spec untouched.** `git diff --stat -- openspec/specs/` is empty for this change: no delta to `openspec/specs/api/spec.md` or any other canonical spec; the new `web` domain stays inside the change folder until archive.
-- [ ] 35. **Gate — Rust surface unchanged.** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` (including the golden gate) behave exactly as before; `apps/web` is absent from the root `Cargo.toml` members; no file under `apps/api/` or `data/` is modified.
+- [x] 28. **Gate — vitest suite green.** `cd apps/web && npm test` (`vitest run`) exits 0 with the contract, freshness, mode-rendering, display, event-page, categories, and no-api-origin suites all green.
+- [x] 29. **Gate — lint clean.** `cd apps/web && npm run lint` exits 0 with no ESLint suppressions added and no rules disabled.
+- [x] 30. **Gate — `next build` succeeds.** `cd apps/web && npm run build` exits 0 with TypeScript strict and no `ignoreBuildErrors` / `ignoreDuringBuilds` in `next.config.ts`.
+- [x] 31. **Gate — contract tests hermetic (no API, no DB).** `npm test` is green with no API and no Postgres running (task 21/23 evidence); no test opens a socket or depends on a live service.
+- [x] 32. **Gate — compose `web` service boots and serves the home page.** Task 25 transcript: `docker compose up --build` brings up `db + api + ingest + web` and the web service serves `/?q=` with a real API result.
+- [x] 33. **Gate — README updated.** Task 26 landed: the "no `web` service" claim is gone and no documentation claims a `/debug` page, a feedback control, a procedure detail page, or a CSS framework (proposal success criterion 9).
+- [x] 34. **Gate — canonical api spec untouched.** `git diff --stat -- openspec/specs/` is empty for this change: no delta to `openspec/specs/api/spec.md` or any other canonical spec; the new `web` domain stays inside the change folder until archive.
+- [x] 35. **Gate — Rust surface unchanged.** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` (including the golden gate) behave exactly as before; `apps/web` is absent from the root `Cargo.toml` members; no file under `apps/api/` or `data/` is modified.
 
 ---
 
