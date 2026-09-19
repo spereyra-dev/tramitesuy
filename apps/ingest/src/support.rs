@@ -17,9 +17,23 @@ pub fn database_url(explicit: Option<&str>) -> String {
 
 /// Blocking sync path onto the sqlx pool: the repository bridges async sqlx
 /// with the synchronous ingestion port internally (B4 adapter), so the
-/// worker just needs a connected pool.
+/// worker just needs a connected pool. Explicit previous-behavior pool
+/// limits until the ingestion configuration layer lands (design §7.1).
 pub fn connect_pool(url: &str) -> sqlx::PgPool {
-    block_on(async { db::connect(url).await.expect("database pool connects") })
+    block_on(async {
+        db::connect(
+            url,
+            db::pool::DEFAULT_MAX_CONNECTIONS,
+            std::time::Duration::from_secs(30),
+        )
+        .await
+        // Panic justification: composition helper for the CLI/daemon entry
+        // points; every caller treats an unusable database as a fatal
+        // environment failure at boot, so fail-fast is the documented
+        // contract here rather than a typed error threaded through callers
+        // that would abort anyway.
+        .expect("database pool connects")
+    })
 }
 
 /// Runs a future to completion on the shared worker runtime (or via
@@ -43,6 +57,10 @@ fn shared_runtime() -> &'static tokio::runtime::Runtime {
             .worker_threads(1)
             .enable_all()
             .build()
+            // Panic justification: the runtime has fixed, dependency-free
+            // options; construction failure means the process environment
+            // itself is unusable (no threads/IO driver), so there is no
+            // meaningful typed-error caller to propagate to.
             .expect("worker runtime")
     })
 }
@@ -53,5 +71,9 @@ pub fn repository_for(explicit_url: Option<&str>) -> PostgresProcedureRepository
 }
 
 /// Marker use so the port trait stays referenced in this module's docs.
+/// Suppression justification: this marker exists only to keep the
+/// `ProcedureRepository` port type referenced for documentation; runtime
+/// code deliberately depends on the concrete adapter, never the trait, so
+/// the marker is intentionally never called.
 #[allow(dead_code)]
 fn _port_in_scope(_repo: &dyn ProcedureRepository) {}

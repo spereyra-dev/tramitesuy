@@ -15,11 +15,21 @@ use ingest::daily_loop;
 /// until the next 03:00 UTC.
 pub fn run() {
     let pool = support::block_on(async {
-        db::connect(&support::database_url(None))
-            .await
-            .expect("connect to Postgres")
+        db::connect(
+            &support::database_url(None),
+            db::pool::DEFAULT_MAX_CONNECTIONS,
+            std::time::Duration::from_secs(30),
+        )
+        .await
+        // Panic justification: boot composition root of the daemon; a
+        // usable database is part of the daemon's environment contract and
+        // a failed boot aborts the process (compose restarts it) rather
+        // than looping forever on a broken pool.
+        .expect("connect to Postgres")
     });
     support::block_on(async {
+        // Panic justification: same boot contract as above — migrations
+        // must apply before the daemon can do any work.
         pool::run_migrations(&pool)
             .await
             .expect("embedded migrations apply cleanly");
