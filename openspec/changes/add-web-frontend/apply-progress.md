@@ -192,3 +192,102 @@ surface mirrored in full test coverage), the size:exception for PR 2
 (~660 authored lines vs the 400-line budget) is accepted on that standing
 authorization and documented in the PR description. PR 3 re-measures on its
 own.
+
+## PR slice 3 (W3 + W4 + W5 residual, tasks 17–23) — 2026-09-18
+
+**Status: implemented, verified locally, pushed as PR 3 (branch
+`web/03-events-categories`, stacked on master 7103c93). Authored web diff vs
+master: 487 insertions / 3 deletions (490 lines, lockfile-free) — above the
+400-line budget, accepted under the maintainer's standing session
+size:exception authorization (PR 1: 752 lines, PR 2: ~660 precedents; the
+driver is again full spec coverage in the tests: 362 of the 490 lines are the
+three new suites, which assert rendered HTML for every scenario of the event
+page and both category pages). Well under the 800-line hard stop.**
+
+### TDD cycle evidence (strict TDD)
+
+| Cycle | RED | GREEN | Proof |
+|---|---|---|---|
+| Task 17 (event page) | commit `fa45e74`: `event-page.test.ts` fails `Cannot find module '@/app/events/[slug]/page'`; 30 pre-existing tests still pass | commit `95ab5a5`: 9 new tests green, 40/40 | commit-ordered RED→GREEN |
+| Task 18 (GREEN) | — | `/events/[slug]` page: ordered cards, required flag, verbatim `cost_display`, pinned empty copy, null-URL state, `notFound()` on null; slug passes through untouched (TX-4 pinned by test) | `npx tsc --noEmit` clean; build shows `ƒ /events/[slug]` |
+| Task 19 (categories) | commit `7903300`: `categories.test.ts` fails `Cannot find module '@/app/categories/page'` | — | 46 pre-existing tests still green |
+| Task 20 (GREEN) | — | commit `70d10fb`: `/categories` (order_index ascending, vehiculos first — triangulated with a shuffled array) + `/categories/[slug]` (event links, `notFound()` on null) | 46/46; tsc/lint/build green |
+| Task 22 (no-api-origin) | RED: scan fails on the dead `API_BASE_URL_DEFAULT = 'http://localhost:8080'` literal in `lib/api.ts` (a real API-origin literal in scanned source) | commit `7a85666`: dead constant removed; scan green. Falsifiability: temporarily replaced the call site with `fetch('http://api:8080' + path)` — both scan assertions failed; reverted | captured outputs above |
+| vitest config | n/a (test infrastructure) | `esbuild: { jsx: 'automatic' }` added to `vitest.config.ts` so test files can render the .tsx server components with `react-dom/server` (no testing-library, no new dependency) | 49/49 green |
+
+### Test infrastructure notes (deviations)
+
+1. `vitest.config.ts` gained `esbuild: { jsx: 'automatic' }` so the suites
+   can import and statically render the page components. Rendering uses
+   `react-dom/server`'s `renderToStaticMarkup` (react-dom is already a
+   production dependency — no testing-library/Playwright added; task 23's
+   `git diff -- apps/web/package.json` vs master is empty).
+2. `next/link` is stubbed with a plain-anchor renderer inside the categories
+   test (the real Link is fine, the stub keeps the static render dependency-
+   free); the event page uses no internal links, so no stub there.
+3. `/categories` needed `export const dynamic = 'force-dynamic'`: with no
+   dynamic segment, Next 15 tried to prerender it at build time; the uncached
+   fetch then ran outside a request scope and the build failed. force-dynamic
+   is the request-time-rendering guarantee the design's freshness contract
+   already requires (design §4: "request-time rendering everywhere"); it is
+   not a caching mechanism and does not weaken the no-store/revalidate pin.
+   `/events/[slug]` and `/categories/[slug]` are dynamic by default (ƒ).
+4. Dead code removal (task 22 RED): `lib/api.ts`'s unused
+   `API_BASE_URL_DEFAULT` (the only API-origin literal in scanned source) was
+   removed; `next.config.ts` owns the dev default, unchanged.
+
+### Live checks (compose db + api up; `next dev` on :3000; stopped by PID 28200)
+
+- `GET /events/comprar-vehiculo` → HTTP 200; renders `Comprar un vehículo`,
+  description, `Categoría: vehiculos`, the three cards in API order
+  (empadronamientos → alta DNT → automotoras), `Obligatorio`/`Opcional`
+  flags, `Sin costo informado` verbatim, `Fuente oficial` attribution ×4.
+- `GET /events/no-existe` → HTTP 404, shared not-found state.
+- `GET /categories` → HTTP 200; lists `Vehículos` → `/categories/vehiculos`.
+- `GET /categories/vehiculos` → HTTP 200; all 9 events linked
+  (`/events/accidente-de-transito` … `/events/vender-vehiculo`).
+- `GET /categories/no-existe` → HTTP 404.
+
+### Slice gates
+
+- `npm run lint` exit 0; `npm test` 49 passed / 0 failed (7 suites: api-client,
+  freshness, mode-rendering, display, event-page, categories, no-api-origin);
+  `npm run build` exit 0 (`/`, `/_not-found`, `/categories`,
+  `/categories/[slug]`, `/events/[slug]`).
+- **Hermeticity (task 21):** `docker compose down` (db container removed,
+  zero containers) → `npm test` still 49 passed / 0 failed. The suite opens no
+  socket and needs no API/DB. Compose db + api brought back afterwards for the
+  live checks.
+- Rust workspace unchanged: `cargo test --workspace` **215 passed / 0 failed /
+  1 ignored**; `cargo fmt --all -- --check` clean; `cargo clippy --workspace
+  --all-targets -- -D warnings` clean. No file under `apps/api/`, `data/`,
+  or canonical `openspec/specs/` modified.
+- Dev server stopped by specific PID (`taskkill //PID 28200 //F`); Docker
+  engine unharmed (no global node kill — the PR 1 incident not repeated).
+
+### Task state
+
+- Completed this slice: 17, 18, 19, 20, 21, 22, 23 (checkboxes flipped in
+  `tasks.md` in this branch's docs commit).
+- Remaining: 24–27 (PR 4: W7 compose/Dockerfile + W8 README/config notes) and
+  full-change acceptance gates 28–35 (28–31 are functionally satisfied by this
+  slice's evidence but left unchecked pending PR 4 and the final gate run).
+
+### Work-unit commits (branch `web/03-events-categories`, off master 7103c93)
+
+1. `fa45e74` test(web): RED first — event-page suite over recorded fixtures (task 17)
+2. `95ab5a5` feat(web): event page /events/[slug] — ordered cards, pinned empty state, 404 (task 18 GREEN)
+3. `7903300` test(web): RED first — categories suites over recorded fixtures (task 19)
+4. `70d10fb` feat(web): categories list + per-category event pages with 404 (task 20 GREEN)
+5. `7a85666` test(web): no-API-origin source scan (task 22 RED+GREEN, dead API-origin literal removed)
+
+### Size accounting (slice rule)
+
+Authored diff vs master (excluding lockfiles): **490 lines** (487+ / 3−) —
+above the 400-line budget, below the 800-line hard stop. Per the maintainer's
+standing session authorization (continuous progress, size exceptions
+documented, precedents PR 1 = 752, PR 2 ≈ 660), the slice was pushed with this
+exception recorded here and in the PR description. The mass is test code:
+the three new suites (362 lines) assert the rendered HTML of every event-page
+and category spec scenario; coverage could not be compressed without deleting
+coverage, which the budget rule forbids.
