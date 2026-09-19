@@ -108,7 +108,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: a call acquiring beyond `pool_max` fails within `acquire_timeout` instead of waiting 30 s.
   - Satisfies: OPT-10, operations delta ("Pool and timeouts respond to configuration").
 
-- [ ] 9. [S4a] Decompose the engine: expose `SearchEngine::score(&self, normalized: &NormalizedQuery, candidates: Vec<Candidate>) -> SearchOutcome` in `crates/search/src/engine.rs`, composing the existing match + rules + rank + confidence + selection steps, and keep `search()` as a thin synchronous composition over the same steps.
+- [x] 9. [S4a] Decompose the engine: expose `SearchEngine::score(&self, normalized: &NormalizedQuery, candidates: Vec<Candidate>) -> SearchOutcome` in `crates/search/src/engine.rs`, composing the existing match + rules + rank + confidence + selection steps, and keep `search()` as a thin synchronous composition over the same steps.
   - RED: `cargo test -p search --test engine --test determinism` — `score()` with explicitly ordered candidates produces a byte-identical outcome (scores, selection, confidence, explanations, ordering) to `search()` with stub providers for `open`, `disambiguation` and `categories` modes.
   - GREEN: pure refactor, no scoring/weight/threshold change.
   - TRIANGULATE: explicit regression test that candidate ordering is canonical before scoring (same result for shuffled provider output) and `cargo test -p search --test no_forbidden_deps` stays green.

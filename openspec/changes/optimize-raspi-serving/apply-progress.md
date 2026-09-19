@@ -326,3 +326,100 @@ Tasks 1–8 complete (49 total, 8 checked).
 - Rollback boundary: revert the three commits — no migrations, no `.sqlx`
   change, no schema/data change; `pool.rs` regains the hardcoded 5/30 s
   pool, API/ingest boot lose env-driven limits (config module removal only).
+
+## Slice S4a — Stage 2 SQL and async (task 9) — branch `opt/s4a-engine-score`
+
+Status: **complete**. Delivery: auto-chain, stacked-to-main (maintainer
+resolved; S4a is PR 4, stacked on PR 3 / `opt/s3-pool-limits`). Structured
+status consumed before work: `gentle-ai.sdd-status` v2, change
+`optimize-raspi-serving`, `applyState: ready`, `nextRecommended: apply`,
+`mode: repo-local` with the whole workspace as the allowed edit root; no
+native blockers; the future-edit-roots note (`/`) does not affect this
+slice. Skill paths injected by the parent (chained-pr, work-unit-commits);
+both SKILL.md files read before work (`skill_resolution: paths-injected`).
+Blanket per-slice `size:exception` pre-approved (recorded 2026-09-18),
+unused: the slice landed inside the 400-line budget.
+
+### Completed tasks and proof
+
+| Task | Proof (exact commands, results) |
+|---|---|
+| 9 engine decomposition | RED: `cargo test -p search --test engine --test determinism` → compile failure E0599 `no method named score found for struct SearchEngine` (5 error sites in `engine.rs`, 1 in `determinism.rs`). GREEN: `SearchEngine::score(&self, normalized: &NormalizedQuery, candidates: Vec<Candidate>) -> SearchOutcome` composing match + rules + canonical candidate ordering + rank + confidence + selection (pure, no provider/DB/HTTP/runtime path); `search()` refactored to normalize → collect provider candidates → `score()`. `cargo test -p search --test engine` → 8 passed (6 new assertions across two tests); `--test determinism` → 5 passed. TRIANGULATE: `score_is_invariant_under_candidate_input_order` proves the canonical `(event_slug, rule_name, value)` sort lives before scoring (shuffled vs pre-sorted identical, `assert_ne!` on the inputs proves the fixture starts unordered); provider-list permutation covered in `determinism.rs::score_outcome_is_identical_across_runs_and_provider_orders`. Verify: `cargo test -p search --test golden` → 5 passed (Top1/Top3/no-result/ambiguous baselines unchanged); `--test no_forbidden_deps` → 4 passed (purity guard); `cargo test -p search` → all 16 suites green. Three consecutive full `make test` runs → 77 suites ok, 0 FAILED (two of them after the flake fix, see deviation 2) |
+
+### TDD Cycle Evidence (strict TDD, runner `cargo test`)
+
+| Task | RED (failing test first) | GREEN (minimal implementation) | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| 9 | `--test engine` E0599 `score` missing ×5; `--test determinism` E0599 ×1 | `score()` extracted verbatim from `search()`'s pipeline body (same steps, same sort comparator); `search()` keeps signature + provider error propagation | open/disambiguation/categories bands asserted byte-identical search-vs-score; shuffled candidate order and reversed provider order produce identical outcomes | `cargo fmt` applied; clippy clean; no scoring/weight/threshold/comment removed (diff is decomposition only) |
+
+### Files changed (S4a)
+
+- `crates/search/src/engine.rs` (`score()` + `search()` thin composition)
+- `crates/search/tests/engine.rs` (`score_matches_search_for_open_disambiguation_and_categories`, `score_is_invariant_under_candidate_input_order`, `stub_candidates` helper)
+- `crates/search/tests/determinism.rs` (`score_outcome_is_identical_across_runs_and_provider_orders`)
+- `crates/db/src/test_support/sql_counter.rs` (supporting flake fix — see deviation 2)
+- No query changes ⇒ committed `.sqlx` cache untouched (verified by diff).
+
+### Deviations from design/tasks (recorded)
+
+1. **Canonical sort moved into `score()`, not left in `search()`:** the
+   codebase-fact note says the canonical `(event_slug, rule_name, value)`
+   sort is preserved exactly — it is, byte for byte, but it now lives inside
+   `score()` (the scoring boundary) instead of `search()`. Rationale: task 9
+   makes `score()` the composition of match+rules+rank+confidence+selection
+   and the TRIANGULATE line demands "candidate ordering is canonical before
+   scoring (same result for shuffled provider output)" — keeping the sort in
+   `score()` guarantees order-independence for every caller, including the
+   S4b orchestrator (design §4.2 step 3/4). The sort itself is unchanged.
+2. **Supporting flake fix (out-of-crate, test-support only):** the
+   pre-existing `cards_by_event_issues_exactly_one_statement` parallel flake
+   went from occasional to twice-in-a-row blocking `make test`. Root cause
+   found in the task-2 instrument: `CountingLayer` matched every
+   `sqlx::query`-target event in the process, while only counting pools log
+   at TRACE — plain pools in the same binary log the same target at DEBUG,
+   leaking concurrent tests' statements into a live measured window. Fix:
+   count TRACE-level `sqlx::query` events exclusively (commit `5287a1a`).
+   Test-support only; no production or query behavior touched. Three
+   consecutive green full `make test` runs (77 suites) after the fix.
+3. **gga/AGENTS.md quirks (recurring, known from S1/S2):** the first commit
+   attempt failed twice with the upstream provider error
+   (`json: unknown field "__managed_by"`) — retried, review PASSED, no
+   bypass. The hook also corrupted the index (missing blob
+   `0cd8cde…` for `sql_counter.rs` and a re-staged AGENTS.md); recovered
+   with `rm .git/index && git read-tree HEAD`, `git hash-object -w`, and
+   selective re-staging. The second commit initially captured a hook-staged
+   `AGENTS.md`; repaired via `git commit-tree` plumbing (same reviewed
+   content, AGENTS.md removed — identity `2a61983` → `5287a1a`; the hook had
+   already PASSED the identical staged diff before the rewrite). No commit
+   bypassed a review verdict.
+
+### Test commands run (final state)
+
+- `cargo test -p search --test engine` → 8 passed; `--test determinism` → 5 passed
+- `cargo test -p search --test golden` → 5 passed; `--test no_forbidden_deps` → 4 passed
+- `cargo test -p search` → all 16 suites `test result: ok`
+- `make test` (`cargo test --workspace`) → 77 suites ok, 0 FAILED, three consecutive runs
+- `make lint` → `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` green
+- SQLX offline parity: no query changed; committed `.sqlx` untouched
+
+### Remaining tasks (unchecked at the tasks locator)
+
+Tasks 10–49 remain, starting with:
+
+- `- [ ] 10. [S4b] Change the CandidateProvider contract in crates/search/src/engine.rs ...`
+
+Tasks 1–9 complete (49 total, 9 checked).
+
+### Workload / PR boundary
+
+- Slice S4a = PR 4 of the 15-PR stacked chain (branch
+  `opt/s4a-engine-score`, stacked on `opt/s3-pool-limits`). Not pushed; no
+  PR opened (parent instruction). Commits: `491a3cb` (task 9 engine
+  decomposition), `5287a1a` (supporting flake fix).
+- Authored changed lines (additions+deletions): **234** (222 additions,
+  12 deletions) — **within the 400-line budget** (forecast ~250/Low).
+- Rollback boundary: revert the two commits — `search()` regains its
+  monolithic body (no public-signature change existed to keep), the new
+  tests disappear with them, and `sql_counter.rs` returns to counting all
+  `sqlx::query` events (flake returns, no behavioral change). No migrations,
+  no `.sqlx` change, no schema/data change.
