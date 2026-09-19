@@ -8,11 +8,8 @@
  * No network, no DB: fetch is stubbed and the request stays relative
  * /api/v1/... (same-origin proxy requirement).
  */
-import { readFileSync } from 'node:fs';
-
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { createElement } from 'react';
 
 import EventPage from '@/app/events/[slug]/page';
 import {
@@ -30,10 +27,6 @@ vi.mock('next/headers', () => ({
   }),
 }));
 
-beforeEach(() => {
-  vi.spyOn(console, 'error').mockImplementation(() => {});
-});
-
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -46,18 +39,22 @@ function fixtureResponse(body: unknown, status = 200): Response {
   });
 }
 
-function renderEvent(slug: string, body: unknown): string {
+/**
+ * Await the async server component outside React's render, then hand the
+ * finished element to renderToStaticMarkup (static rendering does not
+ * support async components directly).
+ */
+async function renderEvent(slug: string, body: unknown): Promise<string> {
   vi.stubGlobal('fetch', vi.fn(async () => fixtureResponse(body)));
-  const element = EventPage({
+  const element = await EventPage({
     params: Promise.resolve({ slug }),
-  }) as Promise<React.ReactElement>;
+  });
   return renderToStaticMarkup(element);
 }
 
 describe('event page: full payload (event-page.json)', () => {
-  const html = renderEvent('comprar-vehiculo', eventPage);
-
-  it('renders the event name, description, and category', () => {
+  it('renders the event name, description, and category', async () => {
+    const html = await renderEvent('comprar-vehiculo', eventPage);
     expect(html).toContain('Comprar un vehículo');
     expect(html).toContain(
       'Requisitos y trámites para comprar un vehículo nuevo o usado en Uruguay.',
@@ -65,7 +62,7 @@ describe('event page: full payload (event-page.json)', () => {
     expect(html).toContain('vehiculos');
   });
 
-  it('renders the procedure cards in API order, not array order', () => {
+  it('renders the procedure cards in API order, not array order', async () => {
     const shuffled = {
       ...eventPage,
       procedures: [
@@ -74,21 +71,27 @@ describe('event page: full payload (event-page.json)', () => {
         eventPage.procedures[1],
       ],
     };
-    const reordered = renderEvent('comprar-vehiculo', shuffled);
+    const reordered = await renderEvent('comprar-vehiculo', shuffled);
     const first = reordered.indexOf('Solicitud de empadronamientos');
-    const second = reordered.indexOf('Alta de vehículos ante la Dirección Nacional de Transporte (DNT)');
-    const third = reordered.indexOf('Registro de Automotoras o Gestoría para Empadronamiento de Vehículos');
+    const second = reordered.indexOf(
+      'Alta de vehículos ante la Dirección Nacional de Transporte (DNT)',
+    );
+    const third = reordered.indexOf(
+      'Registro de Automotoras o Gestoría para Empadronamiento de Vehículos',
+    );
     expect(first).toBeGreaterThanOrEqual(0);
     expect(second).toBeGreaterThan(first);
     expect(third).toBeGreaterThan(second);
   });
 
-  it('shows the required flag on every card', () => {
+  it('shows the required flag on every card', async () => {
+    const html = await renderEvent('comprar-vehiculo', eventPage);
     expect(html).toContain('Obligatorio');
     expect(html).toContain('Opcional');
   });
 
-  it('keeps the per-card attribution block and verbatim cost_display', () => {
+  it('keeps the per-card attribution block and verbatim cost_display', async () => {
+    const html = await renderEvent('comprar-vehiculo', eventPage);
     expect(html).toContain('Sin costo informado');
     expect(html).toContain('Fuente oficial');
     expect(html).toContain('Actualizado:');
@@ -96,27 +99,30 @@ describe('event page: full payload (event-page.json)', () => {
 });
 
 describe('event page: pinned empty state (event-page-empty.json)', () => {
-  it('renders exactly the pinned copy instead of an empty card list', () => {
-    const html = renderEvent('fixture-sin-tramites', eventPageEmpty);
+  it('renders exactly the pinned copy instead of an empty card list', async () => {
+    const html = await renderEvent('fixture-sin-tramites', eventPageEmpty);
     expect(html).toContain(EMPTY_PROCEDURES_COPY);
     expect(html).not.toContain('procedure-card');
   });
 });
 
 describe('event page: null official_url (event-page-null-url.json)', () => {
-  const html = renderEvent('fixture-sin-url', eventPageNullUrl);
-
-  it('renders no link element at all', () => {
+  it('renders no link element at all', async () => {
+    const html = await renderEvent('fixture-sin-url', eventPageNullUrl);
     expect(html).not.toContain('<a ');
   });
 
-  it('shows the explicit source-link-unavailable state', () => {
+  it('shows the explicit source-link-unavailable state', async () => {
+    const html = await renderEvent('fixture-sin-url', eventPageNullUrl);
     expect(html).toContain(SOURCE_LINK_UNAVAILABLE_COPY);
   });
 
-  it('keeps the attribution block intact', () => {
+  it('keeps the attribution block intact', async () => {
+    const html = await renderEvent('fixture-sin-url', eventPageNullUrl);
     expect(html).toContain('Fuente oficial');
-    expect(html).toContain('Catálogo de trámites y servicios del Estado — AGESIC');
+    expect(html).toContain(
+      'Catálogo de trámites y servicios del Estado — AGESIC',
+    );
     expect(html).toContain('Actualizado:');
   });
 });

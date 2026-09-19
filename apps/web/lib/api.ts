@@ -103,9 +103,6 @@ export type ApiError =
   | { kind: 'server'; message: string }
   | { kind: 'network'; message: string };
 
-/** The upstream the dev proxy forwards /api/v1 requests to. */
-export const API_BASE_URL_DEFAULT = 'http://localhost:8080';
-
 /** RequestInit extended with Next's fetch `revalidate` option. */
 export type FetchInit = RequestInit & { revalidate?: number };
 

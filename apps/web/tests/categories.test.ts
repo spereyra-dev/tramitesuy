@@ -10,7 +10,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { createElement, type ReactElement } from 'react';
+import { createElement, type ReactElement, type ReactNode } from 'react';
 
 import CategoriesPage from '@/app/categories/page';
 import CategoryEventsPage from '@/app/categories/[slug]/page';
@@ -19,7 +19,7 @@ import categories from './fixtures/categories.json';
 import categoryEvents from './fixtures/category-events.json';
 
 vi.mock('next/link', () => ({
-  default: function FakeLink(props: { href: string; children: unknown }) {
+  default: function FakeLink(props: { href: string; children: ReactNode }) {
     return createElement('a', { href: props.href }, props.children);
   },
 }));
@@ -44,7 +44,7 @@ function fixtureResponse(body: unknown, status = 200): Response {
 
 async function renderCategoriesPage(body: unknown): Promise<string> {
   vi.stubGlobal('fetch', vi.fn(async () => fixtureResponse(body)));
-  const element = (await CategoriesPage({})) as ReactElement;
+  const element = (await CategoriesPage()) as ReactElement;
   return renderToStaticMarkup(element);
 }
 
