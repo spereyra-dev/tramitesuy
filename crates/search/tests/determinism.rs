@@ -88,8 +88,7 @@ fn full_pipeline_outcome_is_identical_across_runs() {
     );
 
     let run = || {
-        engine
-            .search("¡¿Compré un AUTO usado?!", &[])
+        support::block_on(engine.search(support::STUB_GENERATION, "¡¿Compré un AUTO usado?!", &[]))
             .expect("search must succeed")
     };
 
@@ -126,8 +125,7 @@ fn score_outcome_is_identical_across_runs_and_provider_orders() {
         let candidates: Vec<search::types::Candidate> = providers
             .iter()
             .flat_map(|provider| {
-                provider
-                    .candidates(&normalized)
+                support::block_on(provider.candidates(support::STUB_GENERATION, &normalized))
                     .expect("stub providers must not fail")
             })
             .collect();

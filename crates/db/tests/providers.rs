@@ -19,6 +19,11 @@ use c2support::*;
 use search::engine::CandidateProvider;
 use search::normalizer::normalize;
 use search::types::NormalizedQuery;
+use uuid::Uuid;
+
+/// The generation placeholder the provider tests hand through the async
+/// seam (S4b task 10): legacy tables are not generation-scoped yet.
+const GENERATION: Uuid = Uuid::nil();
 
 /// Seeds two events: `alta-vehiculo` (name/description lexemes that match the
 /// `alta vehiculo` tsquery, one positive keyword, one negative keyword) and
@@ -92,7 +97,8 @@ async fn fts_provider_matches_the_generated_tsvector() {
 
     let fts = db::providers::fts::FtsProvider::new(pool.clone());
     let candidates = fts
-        .candidates(&query_of("alta vehiculo"))
+        .candidates(GENERATION, &query_of("alta vehiculo"))
+        .await
         .expect("fts provider query succeeds");
 
     assert_eq!(
@@ -123,7 +129,8 @@ async fn fts_provider_matches_the_generated_tsvector() {
     // stays absent (data-model scenario "Weights and GIN index are preserved").
     for probe in ["alta vehiculos", "registro vehiculo"] {
         let weighted = fts
-            .candidates(&query_of(probe))
+            .candidates(GENERATION, &query_of(probe))
+            .await
             .expect("weighted probe query succeeds");
         assert_eq!(
             weighted
@@ -190,10 +197,12 @@ async fn fts_provider_is_deterministic_across_calls() {
 
     let fts = db::providers::fts::FtsProvider::new(pool.clone());
     let first = fts
-        .candidates(&query_of("alta vehiculo"))
+        .candidates(GENERATION, &query_of("alta vehiculo"))
+        .await
         .expect("first call succeeds");
     let second = fts
-        .candidates(&query_of("alta vehiculo"))
+        .candidates(GENERATION, &query_of("alta vehiculo"))
+        .await
         .expect("second call succeeds");
     assert_eq!(
         first, second,
@@ -222,7 +231,8 @@ async fn trigram_provider_scores_similarity_over_name_and_keywords() {
 
     let trigram = db::providers::trigram::TrigramProvider::new(pool.clone());
     let candidates = trigram
-        .candidates(&query_of("registro vehiculo"))
+        .candidates(GENERATION, &query_of("registro vehiculo"))
+        .await
         .expect("trigram provider query succeeds");
 
     let candidate = candidates
@@ -249,7 +259,8 @@ async fn trigram_provider_excludes_negative_keywords_from_its_surface() {
 
     let trigram = db::providers::trigram::TrigramProvider::new(pool.clone());
     let candidates = trigram
-        .candidates(&query_of("vender"))
+        .candidates(GENERATION, &query_of("vender"))
+        .await
         .expect("trigram provider query succeeds");
 
     // `otro-tramite` declares `vender` ONLY as a negative keyword; its name
@@ -277,11 +288,18 @@ async fn providers_return_no_candidates_for_a_stop_word_only_query() {
         "the fixture query must normalize to zero tokens"
     );
     assert!(
-        fts.candidates(&empty).expect("fts ok").is_empty(),
+        fts.candidates(GENERATION, &empty)
+            .await
+            .expect("fts ok")
+            .is_empty(),
         "no FTS_TEXT candidates for a stop-word-only query"
     );
     assert!(
-        trigram.candidates(&empty).expect("trigram ok").is_empty(),
+        trigram
+            .candidates(GENERATION, &empty)
+            .await
+            .expect("trigram ok")
+            .is_empty(),
         "no TRIGRAM candidates for a stop-word-only query"
     );
 

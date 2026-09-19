@@ -28,7 +28,7 @@ pub async fn search(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let query = query_parameter(&params)?;
-    let outcome = run_pipeline(&state, &query)?;
+    let outcome = run_pipeline(&state, &query).await?;
     // Task 1: the two provider statements are consumed by the pipeline.
     state.metrics.observe_sql_ops(ROUTE, 2);
 
@@ -52,7 +52,7 @@ pub async fn debug(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let query = query_parameter(&params)?;
-    let outcome = run_pipeline(&state, &query)?;
+    let outcome = run_pipeline(&state, &query).await?;
     state.metrics.observe_sql_ops(ROUTE, 2);
 
     let log_ops = persist_log(&state, &query, &outcome).await?;
@@ -71,13 +71,19 @@ fn query_parameter(params: &HashMap<String, String>) -> Result<String, ApiError>
 }
 
 /// Runs the deterministic pipeline: the YAML-fed engine plus the two
-/// DB-backed candidate providers.
-fn run_pipeline(state: &AppState, query: &str) -> Result<SearchOutcome, ApiError> {
+/// DB-backed candidate providers, awaited directly on the async handler
+/// (S4b task 11: no synchronous bridging on the HTTP search path).
+async fn run_pipeline(state: &AppState, query: &str) -> Result<SearchOutcome, ApiError> {
     let fts = FtsProvider::new(state.pool.clone());
     let trigram = TrigramProvider::new(state.pool.clone());
     state
         .engine
-        .search(query, &[&fts, &trigram])
+        .search(
+            db::providers::LEGACY_GENERATION_ID,
+            query,
+            &[&fts, &trigram],
+        )
+        .await
         .map_err(|error| ApiError::InternalServerError(format!("search pipeline failed: {error}")))
 }
 

@@ -11,13 +11,49 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::Path;
+use std::pin::pin;
+use std::sync::Arc;
+use std::task::{Context, Poll, Wake, Waker};
 
-use search::engine::{CandidateProvider, EngineError};
+use search::engine::CandidateProvider;
 use search::types::KeywordKind as EngineKeywordKind;
 use search::types::{
     Candidate, CombinationRule, EventLexicon, EventScore, Keyword, NormalizedQuery,
 };
+use uuid::Uuid;
+
+/// The generation id the engine tests hand to the async provider seam:
+/// the pure harness runs no generations, so the nil placeholder documents
+/// "whatever id the caller captured" (S4b task 10).
+pub const STUB_GENERATION: Uuid = Uuid::nil();
+
+struct ThreadWaker(std::thread::Thread);
+
+impl Wake for ThreadWaker {
+    fn wake(self: Arc<Self>) {
+        self.0.unpark();
+    }
+}
+
+/// Drives one future to completion without any async-runtime dependency:
+/// the search crate must stay runtime-free (no_forbidden_deps), so the test
+/// harness parks the current thread on the future's waker instead of
+/// pulling in tokio or futures. Valid for the stub providers' instantly
+/// ready futures; a genuinely pending future would only be re-polled after
+/// an unpark, and no test future ever pends beyond readiness.
+pub fn block_on<F: Future>(fut: F) -> F::Output {
+    let mut fut = pin!(fut);
+    let waker = Waker::from(Arc::new(ThreadWaker(std::thread::current())));
+    let mut cx = Context::from_waker(&waker);
+    loop {
+        match fut.as_mut().poll(&mut cx) {
+            Poll::Ready(output) => return output,
+            Poll::Pending => std::thread::park(),
+        }
+    }
+}
 
 /// Keyword type in the seed schema (TX-2 allowed set).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,16 +218,22 @@ impl CandidateProvider for StubProvider {
         self.name
     }
 
-    fn candidates(&self, _query: &NormalizedQuery) -> Result<Vec<Candidate>, EngineError> {
-        Ok(self
-            .contributions
-            .iter()
-            .map(|(slug, value)| Candidate {
-                event_slug: slug.to_string(),
-                rule_name: self.name.to_string(),
-                value: *value,
-            })
-            .collect())
+    fn candidates<'a>(
+        &'a self,
+        _generation_id: Uuid,
+        _query: &'a NormalizedQuery,
+    ) -> search::engine::ProviderFuture<'a> {
+        Box::pin(async move {
+            Ok(self
+                .contributions
+                .iter()
+                .map(|(slug, value)| Candidate {
+                    event_slug: slug.to_string(),
+                    rule_name: self.name.to_string(),
+                    value: *value,
+                })
+                .collect())
+        })
     }
 }
 

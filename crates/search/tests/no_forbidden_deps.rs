@@ -8,8 +8,10 @@
 use std::path::{Path, PathBuf};
 
 /// The complete dependency allowlist for `crates/search` (design D-5).
-/// Anything else in `[dependencies]` fails the build.
-const ALLOWED_DEPENDENCIES: [&str; 3] = ["serde", "thiserror", "serde_yaml"];
+/// Anything else in `[dependencies]` fails the build. `uuid` (S4b task 10):
+/// a plain identifier data type carried by the generation-scoped provider
+/// contract — not a database, HTTP, or async-runtime dependency.
+const ALLOWED_DEPENDENCIES: [&str; 4] = ["serde", "thiserror", "serde_yaml", "uuid"];
 
 /// Symbols that must never appear in `crates/search/src`.
 const FORBIDDEN_SRC_SYMBOLS: [&str; 4] = ["sqlx", "reqwest", "tokio", "std::fs"];

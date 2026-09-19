@@ -15,12 +15,19 @@
 //! contribution is `(rank * 100).round()` so a real FTS hit lands in the
 //! same order as a keyword weight while never dominating an ACTION+ENTITY
 //! match on its own.
+//!
+//! S4b (task 11): the provider is an async implementation awaited directly
+//! from the orchestration layer — no synchronous bridging. The legacy
+//! tables are not yet generation-scoped, so the received generation id is
+//! carried by the contract but not applied to the query until the stage-3
+//! projections land (S5–S7).
 
-use search::engine::{CandidateProvider, EngineError};
+use search::engine::{CandidateProvider, ProviderFuture};
 use search::types::{Candidate, NormalizedQuery};
 use sqlx::PgPool;
+use uuid::Uuid;
 
-use super::{bridge_block_on, canonical_query_text, provider_failed};
+use super::{canonical_query_text, provider_failed};
 
 pub struct FtsProvider {
     pool: PgPool,
@@ -37,15 +44,18 @@ impl CandidateProvider for FtsProvider {
         "FTS_TEXT"
     }
 
-    fn candidates(&self, query: &NormalizedQuery) -> Result<Vec<Candidate>, EngineError> {
-        let text = canonical_query_text(query);
-        if text.trim().is_empty() {
-            return Ok(Vec::new());
-        }
-        let rule_name = self.rule_name();
-        let pool = self.pool.clone();
-        let rows = bridge_block_on(async move {
-            sqlx::query!(
+    fn candidates<'a>(
+        &'a self,
+        _generation_id: Uuid,
+        query: &'a NormalizedQuery,
+    ) -> ProviderFuture<'a> {
+        Box::pin(async move {
+            let text = canonical_query_text(query);
+            if text.trim().is_empty() {
+                return Ok(Vec::new());
+            }
+            let rule_name = self.rule_name();
+            let rows = sqlx::query!(
                 r#"WITH q AS (SELECT plainto_tsquery('simple', $1) AS tsq)
                    SELECT e.slug AS "slug!", ts_rank(e.generated_tsvector, q.tsq) AS "rank!"
                    FROM life_events e, q
@@ -53,21 +63,21 @@ impl CandidateProvider for FtsProvider {
                      AND e.generated_tsvector @@ q.tsq"#,
                 text,
             )
-            .fetch_all(&pool)
+            .fetch_all(&self.pool)
             .await
-        })
-        .map_err(|err| provider_failed(rule_name, err))?;
+            .map_err(|err| provider_failed(rule_name, err))?;
 
-        Ok(rows
-            .into_iter()
-            .filter_map(|row| {
-                let value = (f64::from(row.rank) * 100.0).round() as i64;
-                (value > 0).then(|| Candidate {
-                    event_slug: row.slug,
-                    rule_name: rule_name.to_string(),
-                    value,
+            Ok(rows
+                .into_iter()
+                .filter_map(|row| {
+                    let value = (f64::from(row.rank) * 100.0).round() as i64;
+                    (value > 0).then(|| Candidate {
+                        event_slug: row.slug,
+                        rule_name: rule_name.to_string(),
+                        value,
+                    })
                 })
-            })
-            .collect())
+                .collect())
+        })
     }
 }

@@ -102,7 +102,7 @@ fn golden_gate_passes_over_the_real_seed() {
         contributions: Vec::new(),
     };
 
-    match gate(&engine, &[&stub], &dataset) {
+    match support::block_on(gate(&engine, support::STUB_GENERATION, &[&stub], &dataset)) {
         Ok(metrics) => println!("{}", metrics.metrics_table()),
         Err(report) => panic!("golden gate failed over the real seed:\n{report}"),
     }
@@ -132,12 +132,12 @@ fn degrading_a_keyword_weight_fails_the_gate_naming_the_query() {
 
     let healthy = harness_fixture(8);
     assert!(
-        gate(&healthy, &[], &dataset).is_ok(),
+        support::block_on(gate(&healthy, support::STUB_GENERATION, &[], &dataset)).is_ok(),
         "the healthy harness fixture must pass its own gate"
     );
 
     let degraded = harness_fixture(4);
-    let report = gate(&degraded, &[], &dataset)
+    let report = support::block_on(gate(&degraded, support::STUB_GENERATION, &[], &dataset))
         .expect_err("degrading one keyword weight must regress the case");
     assert!(
         report.contains("auto usado"),
@@ -188,7 +188,12 @@ fn zero_match_and_ambiguous_cases_are_visible_in_the_metrics_table() {
         contributions: Vec::new(),
     };
 
-    let outcomes = run_cases(&engine, &[&stub], &dataset);
+    let outcomes = support::block_on(run_cases(
+        &engine,
+        support::STUB_GENERATION,
+        &[&stub],
+        &dataset,
+    ));
     assert_eq!(outcomes.len(), 3, "every dataset case produces one outcome");
     assert_eq!(
         outcomes[1].mode,
@@ -233,7 +238,7 @@ fn zero_match_and_ambiguous_cases_are_visible_in_the_metrics_table() {
 
     // The harness reports the table on every run, including gate runs.
     assert!(
-        gate(&engine, &[&stub], &dataset).is_ok(),
+        support::block_on(gate(&engine, support::STUB_GENERATION, &[&stub], &dataset)).is_ok(),
         "the accounting fixture satisfies its own baselines"
     );
 }

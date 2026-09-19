@@ -16,6 +16,8 @@ use search::types::{EventLexicon, SearchOutcome};
 use taxonomy::model::{Event, Taxonomy};
 use taxonomy::validator::validate_dir_against_snapshot;
 
+mod support;
+
 /// Repo root: the per-event tests run against the real committed seed.
 fn repo_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -87,7 +89,8 @@ fn synonym_map(taxonomy: &Taxonomy) -> SynonymMap {
 /// Runs the full engine over one query with no providers (the seed's own
 /// keyword/rules layer must decide; provider entries come later, in slice c).
 fn run_query(engine: &SearchEngine, query: &str) -> SearchOutcome {
-    engine.search(query, &[]).expect("engine search succeeds")
+    support::block_on(engine.search(support::STUB_GENERATION, query, &[]))
+        .expect("engine search succeeds")
 }
 
 /// SE-13: every `tests.positive` query ranks its own event TOP1.

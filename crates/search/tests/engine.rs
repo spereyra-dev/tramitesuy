@@ -18,7 +18,8 @@ fn fixture_engine() -> SearchEngine {
 }
 
 /// Collects the stub providers' candidates for a query — the explicit
-/// candidate input `score()` consumes (S4a task 9).
+/// candidate input `score()` consumes (S4a task 9), awaited through the
+/// async provider contract (S4b task 10).
 fn stub_candidates(
     providers: &[&dyn CandidateProvider],
     normalized: &NormalizedQuery,
@@ -26,8 +27,7 @@ fn stub_candidates(
     providers
         .iter()
         .flat_map(|provider| {
-            provider
-                .candidates(normalized)
+            support::block_on(provider.candidates(support::STUB_GENERATION, normalized))
                 .expect("stub providers must not fail")
         })
         .collect()
@@ -58,9 +58,9 @@ fn score_matches_search_for_open_disambiguation_and_categories() {
     let normalized = search::tokenizer::tokenize(query, &fixture.synonyms);
     let candidates = stub_candidates(&[&fts, &trigram], &normalized);
 
-    let via_search = engine
-        .search(query, &[&fts, &trigram])
-        .expect("search must succeed");
+    let via_search =
+        support::block_on(engine.search(support::STUB_GENERATION, query, &[&fts, &trigram]))
+            .expect("search must succeed");
     let via_score = engine.score(&normalized, candidates);
 
     assert_eq!(
@@ -83,9 +83,9 @@ fn score_matches_search_for_open_disambiguation_and_categories() {
     let normalized = search::tokenizer::tokenize(query, &fixture.synonyms);
     let candidates = stub_candidates(&[&fts, &trigram], &normalized);
 
-    let via_search = engine
-        .search(query, &[&fts, &trigram])
-        .expect("search must succeed");
+    let via_search =
+        support::block_on(engine.search(support::STUB_GENERATION, query, &[&fts, &trigram]))
+            .expect("search must succeed");
     let via_score = engine.score(&normalized, candidates);
 
     assert_eq!(
@@ -102,7 +102,8 @@ fn score_matches_search_for_open_disambiguation_and_categories() {
     let normalized = search::tokenizer::tokenize(query, &fixture.synonyms);
     let candidates = stub_candidates(&[], &normalized);
 
-    let via_search = engine.search(query, &[]).expect("search must succeed");
+    let via_search = support::block_on(engine.search(support::STUB_GENERATION, query, &[]))
+        .expect("search must succeed");
     let via_score = engine.score(&normalized, candidates);
 
     assert_eq!(
@@ -118,9 +119,9 @@ fn score_matches_search_for_open_disambiguation_and_categories() {
 #[test]
 fn search_opens_a_dominant_winner_end_to_end() {
     let engine = fixture_engine();
-    let outcome = engine
-        .search("compre un auto usado", &[])
-        .expect("search must succeed");
+    let outcome =
+        support::block_on(engine.search(support::STUB_GENERATION, "compre un auto usado", &[]))
+            .expect("search must succeed");
 
     assert_eq!(
         outcome.results.len(),
@@ -163,9 +164,12 @@ fn provider_contributions_merge_under_their_own_rule_name() {
         contributions: vec![("vender-vehiculo", 2)],
     };
 
-    let outcome = engine
-        .search("compre un auto usado", &[&fts, &trigram])
-        .expect("search must succeed");
+    let outcome = support::block_on(engine.search(
+        support::STUB_GENERATION,
+        "compre un auto usado",
+        &[&fts, &trigram],
+    ))
+    .expect("search must succeed");
 
     assert_eq!(outcome.results[0].slug, "comprar-vehiculo");
     assert_eq!(outcome.results[0].score, 41, "36 taxonomy + 5 FTS_TEXT");
@@ -197,12 +201,18 @@ fn permuting_the_provider_list_does_not_change_the_outcome() {
         contributions: vec![("vender-vehiculo", 2), ("comprar-vehiculo", 3)],
     };
 
-    let forward = engine
-        .search("compre un auto usado", &[&fts, &trigram])
-        .expect("search must succeed");
-    let reversed = engine
-        .search("compre un auto usado", &[&trigram, &fts])
-        .expect("search must succeed");
+    let forward = support::block_on(engine.search(
+        support::STUB_GENERATION,
+        "compre un auto usado",
+        &[&fts, &trigram],
+    ))
+    .expect("search must succeed");
+    let reversed = support::block_on(engine.search(
+        support::STUB_GENERATION,
+        "compre un auto usado",
+        &[&trigram, &fts],
+    ))
+    .expect("search must succeed");
 
     assert_eq!(
         forward, reversed,
@@ -213,8 +223,7 @@ fn permuting_the_provider_list_does_not_change_the_outcome() {
 #[test]
 fn a_zero_match_query_takes_the_categories_path() {
     let engine = fixture_engine();
-    let outcome = engine
-        .search("xyzzy qwertyjf", &[])
+    let outcome = support::block_on(engine.search(support::STUB_GENERATION, "xyzzy qwertyjf", &[]))
         .expect("search must succeed");
 
     assert!(outcome.results.is_empty());
@@ -234,16 +243,14 @@ fn a_zero_match_query_takes_the_categories_path() {
 fn near_duplicate_actions_are_separable_through_the_facade() {
     let engine = fixture_engine();
 
-    let comprar = engine
-        .search("compre un auto", &[])
+    let comprar = support::block_on(engine.search(support::STUB_GENERATION, "compre un auto", &[]))
         .expect("search must succeed");
     assert_eq!(
         comprar.selection.event_slug.as_deref(),
         Some("comprar-vehiculo")
     );
 
-    let vender = engine
-        .search("vendi mi auto", &[])
+    let vender = support::block_on(engine.search(support::STUB_GENERATION, "vendi mi auto", &[]))
         .expect("search must succeed");
     assert_eq!(vender.results[0].slug, "vender-vehiculo");
     assert_eq!(vender.results[0].score, 33, "10 + 8 + ACTION_ENTITY 15");
@@ -268,10 +275,16 @@ impl CandidateProvider for FailingProvider {
         "FTS_TEXT"
     }
 
-    fn candidates(&self, _query: &NormalizedQuery) -> Result<Vec<Candidate>, EngineError> {
-        Err(EngineError::ProviderFailed {
-            rule_name: "FTS_TEXT",
-            message: "boom".to_string(),
+    fn candidates<'a>(
+        &'a self,
+        _generation_id: uuid::Uuid,
+        _query: &'a NormalizedQuery,
+    ) -> search::engine::ProviderFuture<'a> {
+        Box::pin(async {
+            Err(EngineError::ProviderFailed {
+                rule_name: "FTS_TEXT",
+                message: "boom".to_string(),
+            })
         })
     }
 }
@@ -326,9 +339,150 @@ fn score_is_invariant_under_candidate_input_order() {
 #[test]
 fn a_provider_failure_is_a_hard_error() {
     let engine = fixture_engine();
-    let result = engine.search("compre un auto usado", &[&FailingProvider]);
+    let result = support::block_on(engine.search(
+        support::STUB_GENERATION,
+        "compre un auto usado",
+        &[&FailingProvider],
+    ));
     assert!(
         result.is_err(),
         "a structural provider failure must propagate, not be swallowed"
     );
+}
+
+/// A provider whose captured generation id is recorded: the async seam
+/// carries the request's generation scope (S4b task 10).
+#[derive(Debug)]
+struct GenerationRecordingProvider {
+    name: &'static str,
+    contributions: Vec<(&'static str, i64)>,
+    received: std::sync::Arc<std::sync::Mutex<Vec<uuid::Uuid>>>,
+}
+
+impl CandidateProvider for GenerationRecordingProvider {
+    fn rule_name(&self) -> &'static str {
+        self.name
+    }
+
+    fn candidates<'a>(
+        &'a self,
+        generation_id: uuid::Uuid,
+        _query: &'a NormalizedQuery,
+    ) -> search::engine::ProviderFuture<'a> {
+        Box::pin(async move {
+            self.received.lock().unwrap().push(generation_id);
+            Ok(self
+                .contributions
+                .iter()
+                .map(|(slug, value)| Candidate {
+                    event_slug: slug.to_string(),
+                    rule_name: self.name.to_string(),
+                    value: *value,
+                })
+                .collect())
+        })
+    }
+}
+
+/// S4b task 10 RED: the async provider seam must carry the request's
+/// captured `generation_id` to every provider invocation.
+#[test]
+fn async_providers_receive_the_request_generation_id() {
+    let engine = fixture_engine();
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let fts = GenerationRecordingProvider {
+        name: "FTS_TEXT",
+        contributions: vec![("comprar-vehiculo", 5)],
+        received: captured.clone(),
+    };
+    let trigram = GenerationRecordingProvider {
+        name: "TRIGRAM",
+        contributions: vec![("vender-vehiculo", 2)],
+        received: captured.clone(),
+    };
+    // A fixed non-nil id: proves the engine forwards the caller's captured
+    // value (any distinct UUID would do; nil is the stub placeholder).
+    let generation = uuid::Uuid::from_u128(0xA1B2_C3D4_E5F6_0718_293A_4B5C_6D7E_8F90);
+
+    let outcome =
+        support::block_on(engine.search(generation, "compre un auto usado", &[&fts, &trigram]))
+            .expect("search must succeed");
+
+    assert_eq!(
+        *captured.lock().unwrap(),
+        vec![generation, generation],
+        "every provider must receive exactly the generation id the caller captured"
+    );
+    assert_eq!(outcome.results[0].slug, "comprar-vehiculo");
+}
+
+/// S4b task 10 RED: async stub providers returning generation-scoped
+/// candidates still yield both `FTS_TEXT` and `TRIGRAM` explanation entries
+/// whose values sum exactly to the final score (the MODIFIED provider-trait
+/// contract preserves the identified contributions verbatim).
+#[test]
+fn async_stub_providers_keep_both_named_contributions_summing_to_the_score() {
+    let engine = fixture_engine();
+    let fts = GenerationRecordingProvider {
+        name: "FTS_TEXT",
+        contributions: vec![("comprar-vehiculo", 5)],
+        received: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+    };
+    let trigram = GenerationRecordingProvider {
+        name: "TRIGRAM",
+        contributions: vec![("vender-vehiculo", 2)],
+        received: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+    };
+
+    let outcome = support::block_on(engine.search(
+        support::STUB_GENERATION,
+        "compre un auto usado",
+        &[&fts, &trigram],
+    ))
+    .expect("search must succeed");
+
+    let top = &outcome.results[0];
+    assert_eq!(top.slug, "comprar-vehiculo");
+    assert_eq!(top.score, 41, "36 taxonomy + 5 FTS_TEXT");
+    let fts_entries: Vec<i64> = top
+        .explanation
+        .entries
+        .iter()
+        .filter(|entry| entry.rule_name == "FTS_TEXT")
+        .map(|entry| entry.value)
+        .collect();
+    assert_eq!(
+        fts_entries,
+        vec![5],
+        "the FTS_TEXT contribution must appear verbatim under its own rule name"
+    );
+    let trigram_top = &outcome.results[1];
+    assert_eq!(trigram_top.slug, "vender-vehiculo");
+    assert_eq!(trigram_top.score, 10, "8 taxonomy + 2 TRIGRAM");
+    let trigram_entries: Vec<i64> = trigram_top
+        .explanation
+        .entries
+        .iter()
+        .filter(|entry| entry.rule_name == "TRIGRAM")
+        .map(|entry| entry.value)
+        .collect();
+    assert_eq!(
+        trigram_entries,
+        vec![2],
+        "the TRIGRAM contribution must appear verbatim under its own rule name"
+    );
+    // Every result's explanation reconstructs its score exactly.
+    for result in &outcome.results {
+        let sum: i64 = result
+            .explanation
+            .entries
+            .iter()
+            .map(|entry| entry.value)
+            .sum();
+        assert_eq!(
+            sum, result.score,
+            "explanation entries must sum to the final score for {}",
+            result.slug
+        );
+    }
 }
