@@ -10,6 +10,19 @@ use sqlx::PgPool;
 
 pub use db::test_support::sql_counter::SqlCounter;
 
+/// The repository's `data/` directory (crates/db → repo root), where the
+/// real YAML taxonomy lives — the fixture seeds real event slugs so the
+/// real engine matches them.
+pub fn repo_data_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("repo root")
+        .join("data")
+}
+
+pub mod catalog_fixture;
+
 /// Fresh scratch database (extensions + migrations applied) plus a pool
 /// whose connections log every executed statement to the counter.
 pub async fn fresh_migrated_counting_db() -> (PgPool, SqlCounter) {

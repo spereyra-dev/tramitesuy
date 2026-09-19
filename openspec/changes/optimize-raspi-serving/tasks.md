@@ -73,7 +73,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: a test that documents today's baseline `open` search path cost (7 statements: FTS, trigram, selected event, top event, log, event metadata, event procedures) as a recorded number, not an assertion of correctness.
   - Satisfies: OPT-06 (measurement instrument), spec §7 test 10.
 
-- [ ] 3. [S1] Build the representative synthetic PII-free catalog fixture: generator in `crates/db/tests/support/catalog_fixture.rs` plus committed scenario description in `tests/load/README.md` (≈20 events, ≥3,500 procedures, inactive procedures, missing-cost rows, accented queries, redaction-requiring inputs).
+- [x] 3. [S1] Build the representative synthetic PII-free catalog fixture: generator in `crates/db/tests/support/catalog_fixture.rs` plus committed scenario description in `tests/load/README.md` (≈20 events, ≥3,500 procedures, inactive procedures, missing-cost rows, accented queries, redaction-requiring inputs).
   - RED: `cargo test -p db --test fixture_catalog` asserts the generated fixture has the expected event/procedure counts, at least one inactive procedure, at least one row with `Sin costo informado`, and no data that could be real personal data.
   - TRIANGULATE: re-generating with the same seed produces byte-identical content.
   - Satisfies: spec §7 load plan prerequisite, OPT-01 fixture surface.
