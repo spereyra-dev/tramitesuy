@@ -59,17 +59,28 @@ async fn domain_check_constraints_are_enforced() {
 #[tokio::test]
 async fn migrations_are_idempotent_when_rerun() {
     let (pool, name) = common::fresh_migrated_db().await;
-    // A second full application must be a no-op (sqlx tracks versions).
-    common::apply_migrations(&pool).await;
-    let tables: i64 = sqlx::query_scalar(
+    let tables_before_rerun: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tablename != '_sqlx_migrations'",
     )
     .fetch_one(&pool)
     .await
-    .expect("count application tables");
+    .expect("count application tables before rerun");
     assert_eq!(
-        tables, 10,
-        "re-running migrations must not duplicate anything"
+        tables_before_rerun, 11,
+        "the embedded migration set must create all expected application tables"
+    );
+
+    // A second full application must be a no-op (sqlx tracks versions).
+    common::apply_migrations(&pool).await;
+    let tables_after_rerun: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tablename != '_sqlx_migrations'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("count application tables after rerun");
+    assert_eq!(
+        tables_after_rerun, tables_before_rerun,
+        "re-running migrations must not change the application table inventory"
     );
     common::drop_test_db(&name).await;
 }
