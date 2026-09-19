@@ -137,11 +137,12 @@ async fn open_payload(
         .first()
         .expect("open selection implies a top result");
 
-    let procedures = match db::repos::procedures::by_event(&state.pool, &slug).await {
-        Ok(Some(projection)) => {
-            // Task 1: by_event issues 2 statements (metadata + rows).
-            state.metrics.observe_sql_ops(ROUTE, 2);
-            dto::procedure_cards(projection.procedures)
+    let procedures = match db::repos::procedures::cards_by_event(&state.pool, &slug).await {
+        Ok(Some(cards)) => {
+            // Task 7: the transition cards query issues exactly 1 statement
+            // (no event metadata, no raw_data transport).
+            state.metrics.observe_sql_ops(ROUTE, 1);
+            dto::procedure_cards_from_event_cards(cards)
         }
         Ok(None) => Vec::new(),
         Err(error) => {

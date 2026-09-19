@@ -110,6 +110,31 @@ pub async fn fresh_migrated_db() -> (PgPool, String) {
     (pool, name)
 }
 
+/// Scratch database plus a pool whose connections log every executed
+/// statement to the shared SQL counter (task 7): the same `b1_` scratch
+/// lifecycle, reconnected through `SqlCounter::counting_pool` after the
+/// migrations. The measurement section spans the counting-pool setup (same
+/// discipline as `apps/api/tests/support::fresh_counting_db_section`), so
+/// connection-establishment statements land inside the held section and the
+/// test's `reset()` clears them before the measured work.
+pub async fn fresh_migrated_counting_db() -> (
+    PgPool,
+    String,
+    db::test_support::sql_counter::SqlCounter,
+    db::test_support::sql_counter::SqlSection,
+) {
+    let (pool, name) = fresh_migrated_db().await;
+    pool.close().await;
+    let counter = db::test_support::sql_counter::SqlCounter::new();
+    let section = counter.section().await;
+    let url = format!("{}/{}", admin_url().trim_end_matches("/postgres"), name);
+    let counting = counter
+        .counting_pool(&url)
+        .await
+        .expect("counting pool connects to the same scratch database");
+    (counting, name, counter, section)
+}
+
 /// Best-effort cleanup; called explicitly at the end of each test.
 pub async fn drop_test_db(name: &str) {
     let admin = admin_pool().await;

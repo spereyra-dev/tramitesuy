@@ -4,9 +4,11 @@
 //! ≤4); each slice pins its budget here.
 //!
 //! After S2 task 6 (consolidated log insert — one statement resolving both
-//! slugs), the recorded paths are:
-//! Open search path (5 statements): FTS, trigram, log insert (with
-//! integrated slug resolution), event metadata, event procedures.
+//! slugs) and task 7 (transition cards query replacing `by_event` per
+//! search), the recorded paths are:
+//! Open search path (4 statements): FTS, trigram, log insert (with
+//! integrated slug resolution), dedicated cards query — the OPT-06
+//! intermediate-phase ≤4 budget, held until the snapshot route lands.
 //! Disambiguation / categories paths (3 / 3): FTS, trigram, consolidated
 //! log insert.
 
@@ -16,7 +18,7 @@ use axum::http::StatusCode;
 use support::*;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn open_search_path_costs_five_statements() {
+async fn open_search_path_costs_four_statements() {
     let (pool, section) = fresh_counting_db_section().await;
     seed_search_fixture(&pool).await;
     let app = spawn_app(pool);
@@ -28,9 +30,10 @@ async fn open_search_path_costs_five_statements() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["mode"], "open", "the recorded path is the open one");
     assert_eq!(
-        count, 5,
-        "recorded budget after the consolidated log insert: FTS + trigram + \
-         log insert + event metadata + event procedures (observed {count})"
+        count, 4,
+        "recorded budget after the transition cards query: FTS + trigram + \
+         log insert + cards_by_event — the intermediate-phase ≤4 budget \
+         (observed {count})"
     );
 }
 

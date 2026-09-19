@@ -1,0 +1,131 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.order_index, r.importance, r.required, p.external_id AS \"slug\", p.name, p.status, p.official_url, p.last_seen_at, o.short_name AS \"organization_short_name\", CASE WHEN jsonb_typeof(p.raw_data -> 'tiene_costo') = 'string' AND btrim(p.raw_data ->> 'tiene_costo') <> '' AND jsonb_typeof(p.raw_data -> 'valor') = 'string' AND btrim(p.raw_data ->> 'valor') <> '' THEN p.raw_data ->> 'valor' END AS \"cost\" FROM life_event_procedures r JOIN procedures p ON p.id = r.procedure_id JOIN life_events e ON e.id = r.life_event_id LEFT JOIN organizations o ON o.id = p.organization_id WHERE e.slug = $1 ORDER BY r.order_index, p.external_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "order_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "life_event_procedures",
+            "name": "order_index"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "importance",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "life_event_procedures",
+            "name": "importance"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "required",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "life_event_procedures",
+            "name": "required"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "procedures",
+            "name": "external_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "procedures",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "procedures",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "official_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "procedures",
+            "name": "official_url"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "procedures",
+            "name": "last_seen_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "organization_short_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "organizations",
+            "name": "short_name"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "cost",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "afad8101dd1c6e5ab437811ba6b1edadfedf080755504fe5ef851cf9d1a7bee2"
+}

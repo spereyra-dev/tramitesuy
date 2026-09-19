@@ -137,7 +137,7 @@ fn walk_slugs(value: &Value, offenders: &mut Vec<String>) {
 // functions consume the `crates/db` read records.
 // ---------------------------------------------------------------------------
 
-use db::repos::procedures::{EventProcedures, ProcedureDetail};
+use db::repos::procedures::{EventCard, EventProcedures, ProcedureDetail};
 use db::repos::taxonomy_seed::{CategorySummaryRow, EventSummaryRow};
 
 /// One procedure card on an event page (API-6): name, order, required,
@@ -183,6 +183,33 @@ pub fn procedure_cards(
                 cost,
                 cost_display,
                 source: source_attribution(p.official_url, Some(p.last_seen_at.to_rfc3339())),
+            }
+        })
+        .collect()
+}
+
+/// Assembles the procedure cards from the transition cards projection
+/// (task 7, OPT-06): identical composition to `procedure_cards` — one code
+/// path for attribution + cost (API-3/API-4) — but the missing-cost rule and
+/// status arrive already projected from `cards_by_event` (no `raw_data`
+/// transport; the reported-cost text is evaluated once in SQL).
+pub fn procedure_cards_from_event_cards(cards: Vec<EventCard>) -> Vec<ProcedureCard> {
+    cards
+        .into_iter()
+        .map(|card| {
+            let (cost, cost_display) = match card.cost {
+                Some(value) => (Some(value.clone()), value),
+                None => (None, SIN_COSTO_INFORMADO.to_string()),
+            };
+            ProcedureCard {
+                external_id: card.slug,
+                name: card.name,
+                order: card.order_index,
+                required: card.required,
+                official_url: card.official_url.clone(),
+                cost,
+                cost_display,
+                source: source_attribution(card.official_url, Some(card.last_seen_at.to_rfc3339())),
             }
         })
         .collect()
