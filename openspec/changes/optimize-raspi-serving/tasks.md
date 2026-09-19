@@ -88,14 +88,14 @@ being merged; no slice weakens a guarantee published by an earlier slice
 
 ## Stage 2 — SQL and async
 
-- [ ] 6. [S2] Consolidate both slug resolutions and the `search_logs` insert into one statement in `crates/db/src/repos/search_log.rs` (single `INSERT … SELECT` with two scalar subqueries), preserving absent-slug → NULL.
+- [x] 6. [S2] Consolidate both slug resolutions and the `search_logs` insert into one statement in `crates/db/src/repos/search_log.rs` (single `INSERT … SELECT` with two scalar subqueries), preserving absent-slug → NULL.
   - RED: `cargo test -p db --test search_log` — new case `insert_resolves_ids_in_one_statement` covering all four combinations (both slugs, selected only, top only, neither) asserting NULLs where today's code leaves NULLs, plus a SQL-counter assertion of exactly 1 statement.
   - GREEN: replace the existing `insert` body; keep `NewSearchLog` fields and the redaction-before-persistence boundary in `apps/api/src/handlers/search.rs::persist_log` untouched.
   - TRIANGULATE: the same test set against a slug that exists but belongs to a different category; and a duplicate-slug-free negative control.
   - Verify: `cargo sqlx prepare --workspace` regenerates `.sqlx/` in the same commit (offline builds must compile with `SQLX_OFFLINE=true`).
   - Satisfies: OPT-06, OPT-09, operations delta ("Cache hit costs exactly one statement").
 
-- [ ] 7. [S2] Add the transition cards query `cards_by_event(pool, slug)` in `crates/db/src/repos/procedures.rs`, returning only the card fields the search payload uses (`EventCard`: slug, name, order, importance, required, organization short name, cost text, status) and leaving `by_event` intact for rollback.
+- [x] 7. [S2] Add the transition cards query `cards_by_event(pool, slug)` in `crates/db/src/repos/procedures.rs`, returning only the card fields the search payload uses (`EventCard`: slug, name, order, importance, required, organization short name, cost text, status) and leaving `by_event` intact for rollback.
   - RED: `cargo test -p db --test procedure_repository` asserts `cards_by_event` returns the same card set and ordering as today's `by_event` (minus unused metadata) for an event with mixed required/optional relations, issues exactly 1 statement, and returns no rows for an empty event.
   - GREEN: single query joining `life_event_procedures` + `procedures` + `organizations`, no `raw_data` transport.
   - TRIANGULATE: an event whose procedure is inactive still returns the card with the current contract's status.

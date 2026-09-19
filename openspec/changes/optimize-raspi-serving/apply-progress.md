@@ -122,3 +122,110 @@ No S1 task remains unchecked (49 total, 5 complete).
 
 ## Delivery decision (parent-recorded)
 - 2026-09-18 — Maintainer accepted `size:exception` for slice S1 / PR 1 (~1,708 authored lines, five-task honest scope cannot fit 400). Chained-PR delivery confirmed earlier: stacked-to-main. Chain continues with S2.
+
+## Slice S2 — Stage 2 SQL and async (tasks 6–7) — branch `opt/s2-sql-async`
+
+Status: **complete**. Delivery: auto-chain, stacked-to-main (maintainer
+resolved; S2 is PR 2, stacked on PR 1 / `opt/s1-baseline`). Structured status
+consumed before work: `gentle-ai.sdd-status` v2, change
+`optimize-raspi-serving`, `applyState: ready`, `nextRecommended: apply`,
+`mode: repo-local` with the whole workspace as the allowed edit root; no
+native blockers; the future-edit-roots note (`/`) does not affect this
+slice. Skill paths injected by the parent (chained-pr, work-unit-commits);
+both SKILL.md files read before work (`skill_resolution: paths-injected`).
+
+### Completed tasks and proof
+
+| Task | Proof (exact commands, results) |
+|---|---|
+| 6 consolidated log insert | RED: `cargo test -p db --test search_log` → `insert_resolves_ids_in_one_statement` failed (observed 3, expected 1); `cargo test -p api --test sql_ops_baseline` → open (7≠5) and disambiguation (4≠3) failed. GREEN: single `INSERT … SELECT` with two scalar subqueries; `cargo test -p db --test search_log` → 5 passed; `cargo test -p api --test sql_ops_baseline` → 3 passed (open 5, disambiguation 3, categories 3). TRIANGULATE: four-combination NULL matrix + cross-category distinct-slug control green. Verify: `cargo sqlx prepare --workspace` (sqlx-cli 0.9.0) regenerated `.sqlx` (2 removed/renamed, 1 added); `SQLX_OFFLINE=true cargo check` green |
+| 7 transition cards query | RED: `cargo test -p db --test procedure_repository` → compile failure (`cards_by_event` unresolved); `cargo test -p api --test sql_ops_baseline` → open 5≠4 failed. GREEN: `cards_by_event` + `EventCard` in `crates/db/src/repos/procedures.rs`; open payload switched to it (`dto::procedure_cards_from_event_cards`); `cargo test -p db --test procedure_repository` → 11 passed; `cargo test -p api --test sql_ops_baseline` → 3 passed (open 4). TRIANGULATE: inactive procedure keeps its card with `status: "inactive"`; payload-equivalence via `search_modes` (cost display "Sin costo informado", cost "55.70", ordering) green. Verify: `.sqlx` regenerated; golden gate `cargo test -p search --test golden` → 5 passed |
+
+### TDD Cycle Evidence (strict TDD, runner `cargo test`)
+
+| Task | RED (failing test first) | GREEN (minimal implementation) | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| 6 | counter test observed 3 (SELECT+SELECT+INSERT) vs expected 1; api budgets 7/4 vs 5/3 | single-statement insert; `persist_log` metric → 1; `.sqlx` regenerated | four-combination NULL matrix + cross-category slug control; unknown-slug NULL behavior retained (existing tests) | fmt/clippy clean (unused var fixed) |
+| 7 | `cards_by_event` compile failure; open budget 5 vs 4 | single-statement cards query + dto composition + open_payload switch; `.sqlx` regenerated | by_event-equivalence (set/order/attribution), 1-statement assertion, empty event/unknown slug, inactive-status card | fmt/clippy (`is_none_or`) fixed |
+
+### Files changed (S2)
+
+- `crates/db/src/repos/search_log.rs` (single-statement insert; `event_id` helper removed)
+- `crates/db/src/repos/procedures.rs` (`EventCard` + `cards_by_event`, `by_event` intact)
+- `apps/api/src/handlers/search.rs` (open payload serves `cards_by_event`; `persist_log` reports 1 op)
+- `apps/api/src/dto.rs` (`procedure_cards_from_event_cards` — payload-identical composition)
+- `apps/api/tests/sql_ops_baseline.rs` (budgets updated: open 7→5→4, disambiguation 4→3, categories 3)
+- `crates/db/tests/{search_log.rs,procedure_repository.rs}`, `crates/db/tests/{c2support/mod.rs,common/mod.rs}` (counting-pool helpers)
+- `.sqlx/` regenerated in both commits (offline builds verified)
+- `openspec/changes/optimize-raspi-serving/tasks.md` (checkboxes)
+
+### Test commands run (final state)
+
+- `make test` (`cargo test --workspace`) → 75 suites `test result: ok`, 0 FAILED
+- `make lint` → `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` green
+- `cargo test -p db --test search_log` → 5 passed; `-p db --test procedure_repository` → 11 passed; `-p db --test sql_counter` → 1 passed
+- `cargo test -p api --test sql_ops_baseline` → 3 passed; `--test metrics` 4 passed; `--test search_modes` 5 passed; `--test redaction` 4 passed; `--test search_debug` 2 passed
+- `cargo test -p search --test golden` → 5 passed (non-regression evidence; no ranking change in S2)
+- `SQLX_OFFLINE=true cargo check --workspace` → green (offline cache parity)
+
+### Deviations from design/tasks (recorded)
+
+1. **Task 6 RED instrumentation**: the db-side counting helper
+   (`fresh_migrated_counting_db` in `c2support/mod.rs`) holds the
+   measurement section across the counting-pool setup — mirroring the
+   API-side harness — after the first RED run observed connection-setup
+   statements (10) leaking into the counted window.
+2. **Task 7 EventCard carries attribution fields**: the task's field list
+   (slug, name, order, importance, required, organization short name, cost
+   text, status) omits the fields the *current* open payload requires
+   (official_url, last_seen_at for the attribution block, API-4). Payload
+   equivalence is a hard constraint, so the record carries them; the
+   missing-cost rule (which reads `raw_data.tiene_costo`/`valor` with exact
+   string-type + trim semantics) is evaluated once in SQL instead of
+   transporting `raw_data`.
+3. **Empty-event semantics**: `cards_by_event` returns `None` for an unknown
+   slug AND for an existing event with no relations (documented in the
+   repo doc comment). Rationale: distinguishing them would require a second
+   statement or a nullable-marker row; the search payload serves an empty
+   procedures summary for both (identical to today's `by_event` mapping in
+   `open_payload`). Relations are FK-guaranteed, so a returned row always
+   has full card data.
+4. **Ordering tiebreaker**: `ORDER BY r.order_index, p.external_id` (vs
+   `by_event`'s order_index alone) — deterministic tie order per design §4;
+   equivalence tests seed distinct order indexes, payload unchanged.
+5. **sqlx-cli**: not previously installed; `cargo install sqlx-cli
+   --version 0.9.0 --no-default-features --features rustls,postgres` run to
+   execute `cargo sqlx prepare --workspace` (task 6/7 cache regeneration).
+6. **gga hook quirks** (known from S1, recurring): the hook twice failed
+   with an upstream provider error (`json: unknown field "__managed_by"`,
+   gga v2.10.1 / Console Go) — retried and the review PASSED (no bypass);
+   on the second commit the hook re-staged AGENTS.md and produced a missing
+   blob for tasks.md; recovered with `git hash-object -w` + index rebuild
+   per S1's report. No commit bypassed a review verdict.
+
+### Remaining tasks (unchecked at the tasks locator)
+
+Tasks 8–49 remain, starting with:
+
+- `- [ ] 8. [S3] Make pool and timeout limits configurable: ...`
+
+Tasks 1–7 complete (49 total, 7 checked).
+
+### Workload / PR boundary
+
+- Slice S2 = PR 2 of the 15-PR stacked chain (branch `opt/s2-sql-async`,
+  stacked on `opt/s1-baseline`). Not pushed; no PR opened (parent
+  instruction). Commits: `54295df` (task 6), `f2c6ab4` (task 7).
+- Authored changed lines (additions+deletions, excluding generated `.sqlx`
+  cache files): **728** (674 additions, 54 deletions) — above the 400-line
+  budget (the tasks forecast estimated ~300/Low; the honest scope grew with
+  the counter + four-combination + cross-category RED suite for task 6, the
+  equivalence/triangulate cards suite for task 7, and the transition wiring
+  the forecast did not count: dto composition + open_payload switch +
+  `.sqlx`). **Recommend `size:exception` for the maintainer** — per the
+  delivery contract the overage is reported, not compressed; no comments,
+  blank lines, docs, or tests were shrunk to reach a number.
+- Rollback boundary: revert the two commits — no migrations, no schema
+  change, `search_logs` data untouched; `by_event` remains intact as the
+  rollback card path; open mode falls back to the 5-op path.
+
