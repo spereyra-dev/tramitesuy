@@ -9,4 +9,7 @@ pub mod pool;
 pub mod providers;
 pub mod repos;
 
+#[cfg(feature = "test-support")]
+pub mod test_support;
+
 pub use pool::{connect, run_migrations};

@@ -10,14 +10,26 @@ description = "sqlx persistence: migrations, repositories, and the FTS/trigram C
 ingestion = { path = "../ingestion" }
 search = { path = "../search" }
 taxonomy = { path = "../taxonomy" }
+log = { version = "0.4", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"], optional = true }
 
 [dev-dependencies]
+# Self-dependency (Cargo's feature-enabling trick for tests): db's own test
+# binaries compile the lib with `test-support` so the counter instrument is
+# available; production builds never enable it.
+db = { path = ".", features = ["test-support"] }
 tokio.workspace = true
+
+[features]
+# Test-support instruments (task 2): the SQL-statement counter. Only test
+# targets enable this feature; production builds never compile it.
+test-support = ["dep:log", "dep:tracing", "dep:tracing-subscriber"]
 
 [lints]
 workspace = true

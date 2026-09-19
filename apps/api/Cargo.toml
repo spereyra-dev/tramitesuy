@@ -26,6 +26,7 @@ taxonomy = { path = "../../crates/taxonomy" }
 tokio.workspace = true
 
 [dev-dependencies]
+db = { path = "../../crates/db", features = ["test-support"] }
 tower = { version = "0.5", features = ["util"] }
 
 [lints]

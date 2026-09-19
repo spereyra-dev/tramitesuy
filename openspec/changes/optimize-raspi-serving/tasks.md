@@ -68,7 +68,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: assert the same for `/api/v1/events/{slug}` (catalog route) and a failing search.
   - Satisfies: operations delta (observability), OPT-10, R14.
 
-- [ ] 2. [S1] Add a SQL-operation counter usable by tests: `crates/db/tests/support/sql_counter.rs` exposing a `PgPool` wrapper (or migration-log observer) that counts statements executed per request, and reuse it from `apps/api/tests/support/mod.rs`.
+- [x] 2. [S1] Add a SQL-operation counter usable by tests: `crates/db/tests/support/sql_counter.rs` exposing a `PgPool` wrapper (or migration-log observer) that counts statements executed per request, and reuse it from `apps/api/tests/support/mod.rs`.
   - RED: `cargo test -p db --test sql_counter` asserts the counter reports exactly 1 for a single `SELECT 1`.
   - TRIANGULATE: a test that documents today's baseline `open` search path cost (7 statements: FTS, trigram, selected event, top event, log, event metadata, event procedures) as a recorded number, not an assertion of correctness.
   - Satisfies: OPT-06 (measurement instrument), spec §7 test 10.
