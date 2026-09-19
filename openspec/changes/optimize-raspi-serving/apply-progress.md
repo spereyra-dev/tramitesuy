@@ -491,7 +491,7 @@ SQLx's compile-time embedded `sqlx::migrate!` migration set after adding files.
 - Work-unit commits:
   - T12: `683a207 feat(db): add catalog generation manifest migration`
   - T13: `0b68e88 feat(db): add ingestion run migration`
-  - T14/tracking: `7b36a0d feat(db): add generation projection migrations`
+  - T14/tracking: `aa94eb3 feat(db): add generation projection migrations`
 - gga pre-commit hook: explicitly waived with `--no-verify` because the Codex
   CLI is unavailable locally; gga was not reported as successfully run.
 - Native review: **pending** on the resulting work-unit candidates.
