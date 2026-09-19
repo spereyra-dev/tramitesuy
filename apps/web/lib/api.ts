@@ -110,6 +110,26 @@ export const API_BASE_URL_DEFAULT = 'http://localhost:8080';
 export type FetchInit = RequestInit & { revalidate?: number };
 
 /**
+ * Node's fetch cannot parse a relative URL, so on the server the wrapper
+ * resolves the relative /api/v1/... path against the incoming request's own
+ * WEB origin — never the API origin (the Next rewrite still forwards to
+ * API_BASE_URL, keeping the same-origin proxy path). Outside a request
+ * scope (unit tests with a stubbed fetch) the relative path passes through
+ * unchanged, preserving the relative-call-site contract.
+ */
+async function resolveSameOriginUrl(path: string): Promise<string> {
+  if (typeof window !== 'undefined') return path; // browser: relative same-origin
+  try {
+    const { headers } = await import('next/headers');
+    const host = (await headers()).get('host');
+    if (!host) return path;
+    return `http://${host}${path}`;
+  } catch {
+    return path;
+  }
+}
+
+/**
  * The one fetch wrapper every API request in the app uses. Always a
  * relative /api/v1/... path (never an API origin — the proxy requirement)
  * and always uncached (the freshness requirement).
@@ -133,7 +153,7 @@ export async function apiFetch<T>(
     revalidate: 0,
   };
   try {
-    response = await fetch(path, init);
+    response = await fetch(await resolveSameOriginUrl(path), init);
   } catch (error) {
     return {
       ok: false,
