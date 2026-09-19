@@ -5,22 +5,28 @@
 //! business logic).
 
 use std::path::Path;
-use std::time::Duration;
 
 #[tokio::main]
 async fn main() {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/tramitesuy".to_string());
-    // Explicit previous-behavior values until the configuration layer lands:
-    // 5 connections, 30 s acquire timeout (design §7.1 wires env-driven
-    // limits in the next unit).
-    let pool = db::connect(
-        &database_url,
-        db::pool::DEFAULT_MAX_CONNECTIONS,
-        Duration::from_secs(30),
-    )
-    .await
-    .expect("connect to the Postgres pool");
+    // Serving limits from the environment (design §7.1): pool size and the
+    // connection acquire timeout drive the pool; the remaining fields
+    // (deadline, admission, q limits) are consumed by their later slices.
+    let limits = api::config::ApiLimits::from_env().unwrap_or_else(|error| {
+        // Panic justification: boot composition root of the binary; an
+        // invalid environment is a fatal boot failure, and the operator
+        // must fix the configuration rather than have the API silently
+        // run on defaults it did not ask for.
+        panic!("api limits: {error}")
+    });
+    let pool_max = u32::try_from(limits.pool_max)
+        // Justified conversion guard: `pool_max` is validated positive at
+        // parse time; only an absurd > u32::MAX value could fail here.
+        .expect("pool_max fits u32");
+    let pool = db::connect(&database_url, pool_max, limits.acquire_timeout)
+        .await
+        .expect("connect to the Postgres pool");
     // Idempotent at boot (sqlx tracks applied migrations): the compose
     // `api` service self-bootstraps on a fresh database (task 88, D-6).
     db::run_migrations(&pool)

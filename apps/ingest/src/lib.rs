@@ -3,3 +3,4 @@
 //! pure, testable function (task 88).
 
 pub mod daily_loop;
+pub mod pool_config;

@@ -9,16 +9,23 @@ use std::time::Duration;
 use crate::support;
 use db::pool;
 use ingest::daily_loop;
+use ingest::pool_config;
 
 /// The daemon loop body. Runs migrations once (self-bootstrapping so the
 /// compose service works on a fresh database), then loops: ingest → sleep
 /// until the next 03:00 UTC.
 pub fn run() {
+    let limits = pool_config::PoolLimits::from_env().unwrap_or_else(|error| {
+        // Panic justification: boot composition root of the daemon; an
+        // invalid environment is a fatal boot failure (compose restarts it)
+        // rather than looping forever on a broken configuration.
+        panic!("daemon pool config: {error}")
+    });
     let pool = support::block_on(async {
         db::connect(
             &support::database_url(None),
-            db::pool::DEFAULT_MAX_CONNECTIONS,
-            std::time::Duration::from_secs(30),
+            limits.pool_max,
+            limits.acquire_timeout,
         )
         .await
         // Panic justification: boot composition root of the daemon; a

@@ -3,6 +3,7 @@
 //! together. Each constructor keeps its seam so tests can substitute parts.
 
 use db::repos::procedures::PostgresProcedureRepository;
+use ingest::pool_config;
 use ingestion::ports::ProcedureRepository;
 use std::sync::OnceLock;
 
@@ -17,22 +18,25 @@ pub fn database_url(explicit: Option<&str>) -> String {
 
 /// Blocking sync path onto the sqlx pool: the repository bridges async sqlx
 /// with the synchronous ingestion port internally (B4 adapter), so the
-/// worker just needs a connected pool. Explicit previous-behavior pool
-/// limits until the ingestion configuration layer lands (design §7.1).
+/// worker just needs a connected pool. Pool limits come from
+/// `INGEST_POOL_MAX` / `INGEST_ACQUIRE_TIMEOUT_MS` (design §7.1: a small
+/// configurable worker pool, default 2 / 30 s).
 pub fn connect_pool(url: &str) -> sqlx::PgPool {
-    block_on(async {
-        db::connect(
-            url,
-            db::pool::DEFAULT_MAX_CONNECTIONS,
-            std::time::Duration::from_secs(30),
-        )
-        .await
+    let limits = pool_config::PoolLimits::from_env().unwrap_or_else(|error| {
         // Panic justification: composition helper for the CLI/daemon entry
-        // points; every caller treats an unusable database as a fatal
-        // environment failure at boot, so fail-fast is the documented
-        // contract here rather than a typed error threaded through callers
-        // that would abort anyway.
-        .expect("database pool connects")
+        // points; an invalid environment is a fatal boot failure for every
+        // caller, so fail-fast is the documented contract here.
+        panic!("ingest pool config: {error}")
+    });
+    block_on(async {
+        db::connect(url, limits.pool_max, limits.acquire_timeout)
+            .await
+            // Panic justification: composition helper for the CLI/daemon entry
+            // points; every caller treats an unusable database as a fatal
+            // environment failure at boot, so fail-fast is the documented
+            // contract here rather than a typed error threaded through callers
+            // that would abort anyway.
+            .expect("database pool connects")
     })
 }
 
