@@ -1,0 +1,9 @@
+# Keep the web build context small and deterministic: the builder stage runs
+# `npm ci` itself and host artifacts would only bloat or poison the image.
+node_modules
+.next
+out
+*.tsbuildinfo
+.env*
+tests
+.git

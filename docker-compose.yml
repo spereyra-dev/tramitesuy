@@ -1,7 +1,7 @@
 # TrámitesUY development stack (design D-6).
 # Start the database only: `docker compose up -d db` (or `make dev`).
-# Full stack: `docker compose up --build` boots db + api + ingest (task 88);
-# there is no `web` service — the Next.js UI is a separate follow-up (D-6).
+# Full stack: `docker compose up --build` boots db + api + ingest (task 88)
+# + web (task 24, add-web-frontend): the Next.js UI on port 3000.
 
 services:
   db:
@@ -33,6 +33,13 @@ services:
       TRAMITESUY_BIND: 0.0.0.0:8080
       TRAMITESUY_DATA_DIR: /app/data
     command: ["/usr/local/bin/api"]
+    healthcheck:
+      # Port probe via bash's /dev/tcp (the slim runtime image has bash but no
+      # curl/wget). Lets the web service depend on api being actually healthy.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8080'"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     # The api applies the embedded migrations at boot (idempotent), so the
     # full stack self-bootstraps on a fresh database.
 
@@ -48,6 +55,24 @@ services:
     command: ["/usr/local/bin/ingest", "daemon"]
     # Daily-loop service mode (IN-1): one pass at boot, then sleep until
     # 03:00 UTC every day. No web service, no cron orchestration (design §10).
+
+  web:
+    build:
+      context: ./apps/web
+      # Baked at build time (see apps/web/Dockerfile): Next 15 resolves
+      # rewrites() during `next build`.
+      args:
+        API_BASE_URL: http://api:8080
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      # Where the same-origin rewrite proxy forwards. The browser still only
+      # ever calls the web origin on :3000 — this sets the proxy destination,
+      # not the address the UI fetches (web spec, same-origin proxy fetch).
+      API_BASE_URL: http://api:8080
 
 volumes:
   tramitesuy-db-data:
