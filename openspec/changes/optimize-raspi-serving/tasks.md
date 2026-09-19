@@ -102,7 +102,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - Verify: `.sqlx/` regenerated; `cargo test -p db` green.
   - Satisfies: OPT-06 (intermediate phase ≤4 SQL ops), operations delta.
 
-- [ ] 8. [S3] Make pool and timeout limits configurable: new `apps/api/src/config.rs` (`ApiLimits`: `pool_max`, `acquire_timeout`, `search_deadline`, `max_concurrent_searches`, `q_max_chars`, `q_max_bytes`, `retry_after_seconds`) and `crates/db/src/pool.rs::connect(url, max_connections, acquire_timeout)`. Update every caller (`apps/api/src/main.rs`, `apps/ingest/src/support.rs`, `crates/db/tests/*`) in this same unit.
+- [x] 8. [S3] Make pool and timeout limits configurable: new `apps/api/src/config.rs` (`ApiLimits`: `pool_max`, `acquire_timeout`, `search_deadline`, `max_concurrent_searches`, `q_max_chars`, `q_max_bytes`, `retry_after_seconds`) and `crates/db/src/pool.rs::connect(url, max_connections, acquire_timeout)`. Update every caller (`apps/api/src/main.rs`, `apps/ingest/src/support.rs`, `crates/db/tests/*`) in this same unit.
   - RED: `cargo test -p db --test pool` — defaults are 5 connections / 500 ms acquire timeout (previous behavior preserved), and explicit values are honored; `apps/api/tests/config.rs` — env parsing, defaults, and invalid-value rejection.
   - GREEN: remove the hardcoded `max_connections(5)` / `acquire_timeout(30s)`; ingest uses its own small configurable pool.
   - TRIANGULATE: a call acquiring beyond `pool_max` fails within `acquire_timeout` instead of waiting 30 s.

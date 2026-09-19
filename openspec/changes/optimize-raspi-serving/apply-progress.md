@@ -230,3 +230,99 @@ Tasks 1–7 complete (49 total, 7 checked).
   rollback card path; open mode falls back to the 5-op path.
 
 - 2026-09-18 — Maintainer accepted blanket per-slice `size:exception`: any slice whose honest scope exceeds 400 lines proceeds without a further pause; real counts reported per PR (S2 recorded at 728).
+
+## Slice S3 — Stage 2 SQL and async (task 8) — branch `opt/s3-pool-limits`
+
+Status: **complete**. Delivery: auto-chain, stacked-to-main (maintainer
+resolved; S3 is PR 3, stacked on PR 2 / `opt/s2-sql-async`). Structured
+status consumed before work: `gentle-ai.sdd-status` v2, change
+`optimize-raspi-serving`, `applyState: ready`, `nextRecommended: apply`,
+`mode: repo-local` with the whole workspace as the allowed edit root; no
+native blockers; the future-edit-roots note (`/`) does not affect this
+slice. Skill paths injected by the parent (chained-pr, work-unit-commits);
+both SKILL.md files read before work (`skill_resolution: paths-injected`).
+Blanket per-slice `size:exception` pre-approved (recorded 2026-09-18).
+
+### Completed tasks and proof
+
+| Task | Proof (exact commands, results) |
+|---|---|
+| 8 pool/limits configurable | RED 1: `cargo test -p db --test pool` → compile failure (`connect` takes 1 arg, `DEFAULT_*` constants missing). GREEN 1: `crates/db/src/pool.rs::connect(url, max_connections, acquire_timeout)` + `DEFAULT_MAX_CONNECTIONS=5` / `DEFAULT_ACQUIRE_TIMEOUT=500ms`; mechanical caller updates keep previous behavior (5 / 30 s) in the same unit. `cargo test -p db --test pool` → 3 passed. RED 2: `cargo test -p api --test config` → E0432 (`api::config` missing). GREEN 2: `apps/api/src/config.rs` `ApiLimits` (pool_max 5, acquire 500 ms, deadline 2 s, concurrent 32, q 512 chars / 2048 bytes, retry-after 1) with `API_*` env parsing; `cargo test -p api --test config` → 5 passed (defaults, unset-env defaults, full override, non-numeric rejection, zero pool rejection). RED 3: `cargo test -p ingest --test pool_config` → E0432 (`ingest::pool_config` missing). GREEN 3: `apps/ingest/src/pool_config.rs` (`INGEST_POOL_MAX` default 2 per design §7.1's small worker pool, `INGEST_ACQUIRE_TIMEOUT_MS` default 30 s — ingest acquire behavior preserved) + wiring in `main.rs` / `support.rs::connect_pool` / `daemon.rs`; `cargo test -p ingest --test pool_config` → 3 passed. TRIANGULATE: `acquiring_beyond_pool_max_times_out_within_the_acquire_timeout` (pool_max 1, hold the only connection, second acquire → `PoolTimedOut` at ~500 ms, asserted < 5 s — the old 30 s behavior fails this bound; test suite finished in 0.89 s) |
+
+### TDD Cycle Evidence (strict TDD, runner `cargo test`)
+
+| Task | RED (failing test first) | GREEN (minimal implementation) | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| 8 | unit A: `crates/db/tests/pool.rs` → E0061 (3-arg `connect`) + E0425 (`DEFAULT_MAX_CONNECTIONS`); unit B: `apps/api/tests/config.rs` → E0432 `api::config`; unit C: `apps/ingest/tests/pool_config.rs` → E0432 `ingest::pool_config` | unit A: 3-arg `connect` + constants (defaults 5/500 ms pinned by test); unit B: `ApiLimits` + `from_lookup`/`from_env` + `ConfigError`; unit C: `PoolLimits` + `ingest_pool_limits` + wiring | explicit-limits honored via `pool.options()` getters; acquire-beyond-max times out inside the configured window (no 30 s wait); ingest defaults small pool with previous acquire | clippy: `ok_or` instead of `ok_or_else`, unused `_pool` bindings; fmt pass |
+
+### Files changed (S3)
+
+- `crates/db/src/pool.rs` (`connect(url, max_connections, acquire_timeout)` + defaults), `crates/db/tests/pool.rs` (new)
+- `apps/api/src/config.rs` (new `ApiLimits`), `apps/api/src/lib.rs` (module), `apps/api/src/main.rs` (env-driven boot wiring), `apps/api/tests/config.rs` (new)
+- `apps/ingest/src/pool_config.rs` (new), `apps/ingest/src/lib.rs` (module), `apps/ingest/src/support.rs` (`connect_pool` config-driven), `apps/ingest/src/commands/daemon.rs` (config-driven), `apps/ingest/tests/pool_config.rs` (new)
+- No query changes ⇒ committed `.sqlx` cache untouched (verified by diff).
+
+### Boundary decisions and deviations (recorded)
+
+1. **`crates/db/tests/*` needed no update:** the task text lists them as
+   callers, but all db test helpers build pools directly with
+   `PgPoolOptions` (never `db::connect`), so the only callers of the old
+   1-arg signature were `apps/api/src/main.rs`, `apps/ingest/src/support.rs`
+   and `apps/ingest/src/commands/daemon.rs` — all updated in unit A
+   (mechanical, previous values passed explicitly) and switched to
+   configuration in unit C, keeping every intermediate commit compiling.
+2. **Acquire-timeout default (500 ms) is a db-level constant** adopted
+   through `ApiLimits::default()` (single source of truth reused);
+   `DEFAULT_MAX_CONNECTIONS`/`DEFAULT_ACQUIRE_TIMEOUT` are pinned by
+   `crates/db/tests/pool.rs` per the task's RED line.
+3. **Ingest defaults:** design §7.1 says the worker uses its own small
+   pool ("p. ej. 2"); 2 is adopted as `INGEST_POOL_MAX` default. Ingest
+   acquire timeout is NOT specified in the design → preserved at 30 s
+   (configurable via `INGEST_ACQUIRE_TIMEOUT_MS`), per "keep current
+   values for everything not explicitly specified".
+4. **q limits and deadline/admission fields are defined but not wired:**
+   `q_max_chars`/`q_max_bytes` validation is task 37 (S12), the deadline/
+   admission/retry-after consumption is tasks 38–39 (S12). Task 8 delivers
+   the configuration surface only; no behavior beyond pool limits changed.
+5. **Boot-path panic justifications:** the gga review flagged pre-existing
+   unjustified `.expect()`/`#[allow(dead_code)]` sites in the touched
+   ingest files; fixed with inline justification comments (no behavior
+   change, no scope creep) per the reviewer's accepted remedy.
+6. **Known flake (pre-existing):** one full-`make test` run failed
+   `cards_by_event_issues_exactly_one_statement` (observed 2 vs 1) — the
+   documented parallel statement-leak issue from S1/S2. Isolated rerun and
+   a second full `make test` both green (77 suites ok); no statement-count
+   behavior was touched by S3.
+
+### Test commands run (final state)
+
+- `cargo test -p db --test pool` → 3 passed; `cargo test -p api --test config` → 5 passed; `cargo test -p ingest --test pool_config` → 3 passed
+- `make test` (`cargo test --workspace`) → 77 suites `test result: ok`, 0 FAILED
+- `make lint` → `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` green
+- `SQLX_OFFLINE` parity: no query changed; `cargo check --workspace` green
+
+### Remaining tasks (unchecked at the tasks locator)
+
+Tasks 9–49 remain, starting with:
+
+- `- [ ] 9. [S4a] Decompose the engine: expose SearchEngine::score(...) ...`
+
+Tasks 1–8 complete (49 total, 8 checked).
+
+### Workload / PR boundary
+
+- Slice S3 = PR 3 of the 15-PR stacked chain (branch `opt/s3-pool-limits`,
+  stacked on `opt/s2-sql-async`). Not pushed; no PR opened (parent
+  instruction). Commits: `17914a3` (unit A: db pool signature + callers,
+  mechanical), `036046a` (unit B: ApiLimits), `fc81f73` (unit C: ingest
+  pool config + boot wiring).
+- Authored changed lines (additions+deletions): **523** (503 additions,
+  20 deletions) — above the 400-line budget (the tasks forecast estimated
+  ~220/Low; the honest scope grew with three RED-first test suites — pool
+  contract, api config contract, ingest pool config — plus the ingest
+  `pool_config` module and the gga-required justification comments).
+  **`size:exception` pre-approved via the blanket policy (2026-09-18)**;
+  no comments, blank lines, docs, or tests were compressed to fit.
+- Rollback boundary: revert the three commits — no migrations, no `.sqlx`
+  change, no schema/data change; `pool.rs` regains the hardcoded 5/30 s
+  pool, API/ingest boot lose env-driven limits (config module removal only).
