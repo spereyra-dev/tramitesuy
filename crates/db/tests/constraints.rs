@@ -66,7 +66,7 @@ async fn migrations_are_idempotent_when_rerun() {
     .await
     .expect("count application tables before rerun");
     assert_eq!(
-        tables_before_rerun, 11,
+        tables_before_rerun, 12,
         "the embedded migration set must create all expected application tables"
     );
 

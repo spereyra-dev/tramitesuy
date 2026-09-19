@@ -24,6 +24,7 @@ async fn migrations_preserve_base_tables_and_add_catalog_generation_manifest() {
         "search_logs",
         "search_feedback",
         "catalog_generations",
+        "ingestion_runs",
     ]
     .into_iter()
     .map(str::to_string)
@@ -123,6 +124,179 @@ async fn catalog_generation_manifest_has_required_columns_and_status_constraint(
     common::drop_test_db(&name).await;
 }
 
+#[tokio::test]
+async fn ingestion_runs_enforce_contract_and_preserve_committed_records_on_rollback() {
+    let (pool, name) = common::fresh_migrated_db().await;
+
+    let mut columns: Vec<String> = sqlx::query(
+        "SELECT column_name FROM information_schema.columns \
+         WHERE table_schema = 'public' AND table_name = 'ingestion_runs' \
+         ORDER BY ordinal_position",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("list ingestion run columns")
+    .into_iter()
+    .map(|row| row.get::<String, _>(0))
+    .collect();
+    columns.sort();
+
+    let mut expected = vec![
+        "run_id",
+        "trigger",
+        "started_at",
+        "finished_at",
+        "status",
+        "counts",
+        "candidate_generation_id",
+        "published_generation_id",
+        "attempt",
+    ];
+    expected.sort();
+    assert_eq!(
+        columns, expected,
+        "run-record columns must match the contract"
+    );
+
+    let generation_reference_columns: Vec<(String, String, String)> = sqlx::query(
+        "SELECT column_name, data_type, is_nullable FROM information_schema.columns \
+         WHERE table_schema = 'public' AND table_name = 'ingestion_runs' \
+         AND column_name IN ('counts', 'candidate_generation_id', 'published_generation_id') \
+         ORDER BY column_name",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("read ingestion run contract column metadata")
+    .into_iter()
+    .map(|row| {
+        (
+            row.get("column_name"),
+            row.get("data_type"),
+            row.get("is_nullable"),
+        )
+    })
+    .collect();
+    assert_eq!(
+        generation_reference_columns,
+        vec![
+            (
+                "candidate_generation_id".to_string(),
+                "uuid".to_string(),
+                "YES".to_string()
+            ),
+            ("counts".to_string(), "jsonb".to_string(), "NO".to_string()),
+            (
+                "published_generation_id".to_string(),
+                "uuid".to_string(),
+                "YES".to_string()
+            ),
+        ],
+        "counts must be JSONB and generation references must remain nullable"
+    );
+
+    let candidate_generation_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO catalog_generations \
+         (generation_id, content_hash, taxonomy_version, engine_version, source_synced_at, event_count, procedure_count, projection_status) \
+         VALUES (gen_random_uuid(), 'candidate-hash', 'taxonomy', 'engine', now(), 0, 0, 'pending') \
+         RETURNING generation_id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("create candidate generation");
+    let published_generation_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO catalog_generations \
+         (generation_id, status, content_hash, taxonomy_version, engine_version, source_synced_at, event_count, procedure_count, projection_status) \
+         VALUES (gen_random_uuid(), 'published', 'published-hash', 'taxonomy', 'engine', now(), 0, 0, 'complete') \
+         RETURNING generation_id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("create published generation");
+
+    let run_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO ingestion_runs \
+         (run_id, trigger, finished_at, status, counts, candidate_generation_id, published_generation_id, attempt) \
+         VALUES (gen_random_uuid(), 'manual', now(), 'skipped', '{\"read\": 0}'::jsonb, $1, $2, 1) \
+         RETURNING run_id",
+    )
+    .bind(candidate_generation_id)
+    .bind(published_generation_id)
+    .fetch_one(&pool)
+    .await
+    .expect("a skipped run record is accepted");
+
+    let invalid_trigger = sqlx::query(
+        "INSERT INTO ingestion_runs (run_id, trigger, status, counts, attempt) \
+         VALUES (gen_random_uuid(), 'invalid', 'skipped', '{}'::jsonb, 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect_err("trigger constraint must reject values outside the contract");
+    assert!(
+        matches!(&invalid_trigger, sqlx::Error::Database(db) if db.code().as_deref() == Some("23514")),
+        "unexpected error for invalid trigger: {invalid_trigger:?}"
+    );
+
+    let invalid_attempt = sqlx::query(
+        "INSERT INTO ingestion_runs (run_id, trigger, status, counts, attempt) \
+         VALUES (gen_random_uuid(), 'manual', 'skipped', '{}'::jsonb, 4)",
+    )
+    .execute(&pool)
+    .await
+    .expect_err("attempt constraint must reject values outside 1..3");
+    assert!(
+        matches!(&invalid_attempt, sqlx::Error::Database(db) if db.code().as_deref() == Some("23514")),
+        "unexpected error for invalid attempt: {invalid_attempt:?}"
+    );
+
+    let missing_generation = sqlx::query(
+        "INSERT INTO ingestion_runs \
+         (run_id, trigger, status, counts, candidate_generation_id, attempt) \
+         VALUES (gen_random_uuid(), 'manual', 'skipped', '{}'::jsonb, gen_random_uuid(), 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect_err("generation references must be foreign keys");
+    assert!(
+        common::is_fk_violation(&missing_generation),
+        "unexpected error for missing generation: {missing_generation:?}"
+    );
+
+    let missing_published_generation = sqlx::query(
+        "INSERT INTO ingestion_runs \
+         (run_id, trigger, status, counts, published_generation_id, attempt) \
+         VALUES (gen_random_uuid(), 'manual', 'skipped', '{}'::jsonb, gen_random_uuid(), 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect_err("published generation reference must be a foreign key");
+    assert!(
+        common::is_fk_violation(&missing_published_generation),
+        "unexpected error for missing published generation: {missing_published_generation:?}"
+    );
+
+    let mut transaction = pool.begin().await.expect("begin run update transaction");
+    sqlx::query("UPDATE ingestion_runs SET status = 'failed', counts = '{\"read\": 1}'::jsonb WHERE run_id = $1")
+        .bind(run_id)
+        .execute(&mut *transaction)
+        .await
+        .expect("stage partial run update");
+    transaction
+        .rollback()
+        .await
+        .expect("roll back partial run update");
+
+    let (status, counts): (String, serde_json::Value) =
+        sqlx::query_as("SELECT status, counts FROM ingestion_runs WHERE run_id = $1")
+            .bind(run_id)
+            .fetch_one(&pool)
+            .await
+            .expect("committed run record survives rollback");
+    assert_eq!(status, "skipped");
+    assert_eq!(counts, serde_json::json!({"read": 0}));
+
+    common::drop_test_db(&name).await;
+}
 
 
 #[tokio::test]
