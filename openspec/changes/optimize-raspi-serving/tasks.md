@@ -130,18 +130,18 @@ being merged; no slice weakens a guarantee published by an earlier slice
 
 ## Stage 3 — Generations
 
-- [ ] 12. [S5] Add the durable manifest migration `migrations/0013_catalog_generations.sql`: `generation_id` PK (UUIDv7), `status` (`building` → `validated` → `published`), `content_hash`, `taxonomy_version`, `engine_version`, `source_synced_at`, `created_at`, `published_at`, `retired_at`, `event_count`, `procedure_count`, `projection_status`, plus the API adoption columns (`active_generation_id`, `adopted_at`). Additive only.
+- [x] 12. [S5] Add the durable manifest migration `migrations/0013_catalog_generations.sql`: `generation_id` PK (UUIDv7), `status` (`building` → `validated` → `published`), `content_hash`, `taxonomy_version`, `engine_version`, `source_synced_at`, `created_at`, `published_at`, `retired_at`, `event_count`, `procedure_count`, `projection_status`, plus the API adoption columns (`active_generation_id`, `adopted_at`). Additive only.
   - RED: `cargo test -p db --test migrations` asserts the table, its columns, the status check constraint, and that applying all migrations in order leaves the ten base tables unchanged.
   - GREEN: additive SQL, no legacy table touched or dropped.
   - TRIANGULATE: migrations are idempotent on re-run.
   - Satisfies: data-model delta, catalog-generations §1.2, OPT-02/OPT-03.
 
-- [ ] 13. [S5] Add the run-record migration `migrations/0014_ingestion_runs.sql`: `run_id`, `trigger` (`scheduled|manual|recovery`), `started_at`, `finished_at`, `status`, `counts jsonb`, `candidate_generation_id`, `published_generation_id`, `attempt` (1..3).
+- [x] 13. [S5] Add the run-record migration `migrations/0014_ingestion_runs.sql`: `run_id`, `trigger` (`scheduled|manual|recovery`), `started_at`, `finished_at`, `status`, `counts jsonb`, `candidate_generation_id`, `published_generation_id`, `attempt` (1..3).
   - RED: `cargo test -p db --test migrations` — table/columns/FK/check constraints exist and a run row with a `skipped` status is accepted.
   - TRIANGULATE: the commit/rollback semantics of a partial run record update survive a transaction rollback.
   - Satisfies: data-model delta, OPT-02.
 
-- [ ] 14. [S5] Add the per-generation projection migration `migrations/0015_generation_projections.sql`: `generation_life_events` (slug, name, status, category, order, positive/negative keywords), `generation_fts_text` (`fts_text`), `generation_trigram_surface` (`surface_text` + `GIN (surface_text gin_trgm_ops)`), `generation_event_cards`, `generation_procedure_details`; all keyed by `generation_id` with unique `(generation_id, slug)`.
+- [x] 14. [S5] Add the per-generation projection migration `migrations/0015_generation_projections.sql`: `generation_life_events` (slug, name, status, category, order, positive/negative keywords), `generation_fts_text` (`fts_text`), `generation_trigram_surface` (`surface_text` + `GIN (surface_text gin_trgm_ops)`), `generation_event_cards`, `generation_procedure_details`; all keyed by `generation_id` with unique `(generation_id, slug)`.
   - RED: `cargo test -p db --test migrations` asserts the tables, the unique keys, and that the GIN trigram index exists on `surface_text` (not on `life_events.name`).
   - GREEN: additive DDL; no mutation path for published rows.
   - TRIANGULATE: a test asserts an update/delete attempt against a published generation's projection is treated as a defect by the data-access layer contract (no code path mutates them).

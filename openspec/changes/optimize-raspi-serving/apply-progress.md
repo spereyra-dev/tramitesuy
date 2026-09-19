@@ -447,3 +447,51 @@ ranking/explanation behavior is covered by async-provider and permutation tests.
 
 Tasks 1–11 are complete; task 12 is next. S4b is pre-approved for a
 per-slice `size:exception` under the recorded blanket delivery decision.
+
+## Slice S5 — Generation migrations (tasks 12–14)
+
+Status: **complete; native review pending**. Three additive migrations introduce
+the catalog-generation manifest, ingestion-run records, and generation-scoped
+projections. The work was delivered in three work-unit commits; the gga
+pre-commit hook was explicitly waived with `--no-verify` because the Codex CLI
+is unavailable locally.
+
+### Completed tasks and strict-TDD proof
+
+| Task | RED | GREEN / TRIANGULATE |
+|---|---|---|
+| 12 manifest migration | Migration test first observed the manifest table missing. | `0013_catalog_generations.sql` adds the manifest and API-adoption columns; migration coverage verifies columns, status constraint, unchanged base tables, and idempotent re-run. |
+| 13 ingestion-run migration | Migration test first observed the run table missing. | `0014_ingestion_runs.sql` adds run records; coverage verifies JSONB counts, nullable candidate/published FKs and violations, trigger/attempt constraints, `skipped`, and transactional rollback. |
+| 14 projection migration | Migration test first observed all five projection tables absent. | `0015_generation_projections.sql` adds generation-scoped projections; coverage verifies unique `(generation_id, slug)` keys and the `generation_trigram_surface.surface_text` GIN `gin_trgm_ops` index. |
+
+`cargo clean -p db` was required before each independent GREEN check to refresh
+SQLx's compile-time embedded `sqlx::migrate!` migration set after adding files.
+
+### Final verification evidence
+
+- `cargo test -p db --test constraints` → **6 passed**.
+- `cargo test --workspace` → **passed**; one expected ignored `ckan_live` network test.
+- `make lint` → **passed**.
+- Migration idempotence coverage was corrected from an obsolete 10-table
+  expectation to assert that the complete 17-table S5 inventory is unchanged
+  across a rerun.
+
+### Scope, deferrals, and rollback
+
+- Scope: additive DDL and migration-test coverage only; no legacy table was
+  modified or dropped.
+- Deferred: UUIDv7 runtime generation, lifecycle-transition enforcement, and
+  prevention of published-projection mutation.
+- No `.sqlx` update: this slice added no compile-time SQL queries.
+- Rollback boundary: before application to a shared environment, remove the
+  three S5 migrations and their migration-test assertions together.
+
+### Delivery state
+
+- Work-unit commits:
+  - T12: `683a207 feat(db): add catalog generation manifest migration`
+  - T13: `0b68e88 feat(db): add ingestion run migration`
+  - T14/tracking: `7b36a0d feat(db): add generation projection migrations`
+- gga pre-commit hook: explicitly waived with `--no-verify` because the Codex
+  CLI is unavailable locally; gga was not reported as successfully run.
+- Native review: **pending** on the resulting work-unit candidates.

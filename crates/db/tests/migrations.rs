@@ -25,6 +25,11 @@ async fn migrations_preserve_base_tables_and_add_catalog_generation_manifest() {
         "search_feedback",
         "catalog_generations",
         "ingestion_runs",
+        "generation_life_events",
+        "generation_fts_text",
+        "generation_trigram_surface",
+        "generation_event_cards",
+        "generation_procedure_details",
     ]
     .into_iter()
     .map(str::to_string)
@@ -298,6 +303,72 @@ async fn ingestion_runs_enforce_contract_and_preserve_committed_records_on_rollb
     common::drop_test_db(&name).await;
 }
 
+#[tokio::test]
+async fn generation_projections_have_generation_scoped_unique_slugs_and_a_surface_trigram_index() {
+    let (pool, name) = common::fresh_migrated_db().await;
+
+    let projection_tables = [
+        "generation_life_events",
+        "generation_fts_text",
+        "generation_trigram_surface",
+        "generation_event_cards",
+        "generation_procedure_details",
+    ];
+    for table in projection_tables {
+        let generation_id_type: String = sqlx::query_scalar(
+            "SELECT data_type FROM information_schema.columns \
+             WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'generation_id'",
+        )
+        .bind(table)
+        .fetch_one(&pool)
+        .await
+        .expect("projection must have a generation ID");
+        assert_eq!(
+            generation_id_type, "uuid",
+            "{table} generation ID must be UUID"
+        );
+
+        let unique_slug_key: bool = sqlx::query_scalar(
+            "SELECT EXISTS ( \
+                 SELECT 1 FROM pg_index index_definition \
+                 WHERE index_definition.indrelid = $1::regclass \
+                   AND index_definition.indisunique \
+                   AND pg_get_indexdef(index_definition.indexrelid) \
+                       LIKE '%(generation_id, slug)%' \
+             )",
+        )
+        .bind(table)
+        .fetch_one(&pool)
+        .await
+        .expect("read projection unique keys");
+        assert!(
+            unique_slug_key,
+            "{table} must have a unique key on (generation_id, slug)"
+        );
+    }
+
+    let trigram_index_definition: String = sqlx::query_scalar(
+        "SELECT pg_get_indexdef(index_definition.indexrelid) \
+         FROM pg_index index_definition \
+         WHERE index_definition.indrelid = 'generation_trigram_surface'::regclass \
+           AND index_definition.indisvalid \
+           AND pg_get_indexdef(index_definition.indexrelid) \
+               LIKE 'CREATE INDEX % USING gin (surface_text gin_trgm_ops)'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("generation trigram index must target surface_text");
+    assert!(
+        trigram_index_definition.contains("surface_text gin_trgm_ops"),
+        "trigram index must target generation_trigram_surface.surface_text"
+    );
+    assert!(
+        !trigram_index_definition.contains("life_events"),
+        "projection trigram index must not target life_events.name"
+    );
+
+    common::drop_test_db(&name).await;
+}
 
 #[tokio::test]
 async fn migrations_create_no_extensions() {
