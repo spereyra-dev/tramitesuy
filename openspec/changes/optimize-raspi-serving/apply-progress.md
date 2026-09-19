@@ -423,3 +423,27 @@ Tasks 1–9 complete (49 total, 9 checked).
   tests disappear with them, and `sql_counter.rs` returns to counting all
   `sqlx::query` events (flake returns, no behavioral change). No migrations,
   no `.sqlx` change, no schema/data change.
+
+## Slice S4b — Async providers and HTTP orchestration (tasks 10–11) — branch `opt/s4b-async-providers`
+
+Status: **complete**. `CandidateProvider` is now generation-scoped and async;
+`crates/search` remains runtime-, database-, and HTTP-free. The API search path
+awaits the DB orchestration layer directly, with no `block_in_place`, `block_on`,
+or shared-runtime bridge. Provider failures remain structural and deterministic
+ranking/explanation behavior is covered by async-provider and permutation tests.
+
+### Evidence
+
+- Task 10 commit: `50812f7` (`feat(search,db): async generation-scoped CandidateProvider contract`).
+- Task 11 implementation is staged with its RED/GREEN tests, including
+  `apps/api/tests/no_sync_bridge.rs` and `crates/db/tests/orchestrator.rs`.
+- `make test` (`cargo test --workspace`) passed after recovery.
+- `make lint` (`cargo fmt --check` plus clippy `-D warnings`) passed after recovery.
+- `gga run --no-cache` was attempted after switching `.gga` from `opencode` to
+  `codex`, but could not run because Codex CLI is not installed locally. The
+  maintainer explicitly accepted closure without that external review.
+
+### Remaining tasks
+
+Tasks 1–11 are complete; task 12 is next. S4b is pre-approved for a
+per-slice `size:exception` under the recorded blanket delivery decision.

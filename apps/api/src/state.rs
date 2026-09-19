@@ -10,6 +10,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::metrics::Metrics;
+use db::providers::orchestrator::ProviderFetch;
 use search::engine::SearchEngine;
 use search::tokenizer::SynonymMap;
 use search::types::{
@@ -27,6 +28,10 @@ pub struct AppState {
     /// resolver for event/category display names.
     pub taxonomy: Arc<taxonomy::model::Taxonomy>,
     pub pool: PgPool,
+    /// FTS/trigram policy consumed by the async db orchestrator (S4b task
+    /// 11). Tests and default boot stay sequential unless configuration
+    /// explicitly opts into concurrent provider fetching.
+    pub provider_fetch: ProviderFetch,
     /// The privacy-safe metrics sink (task 1): every served request reports
     /// route/status latency, SQL ops, cache events, and generation state
     /// through this seam — never query-derived text (R14).
@@ -74,6 +79,7 @@ impl AppState {
             engine: Arc::new(SearchEngine::new(events, synonyms)),
             taxonomy: Arc::new(taxonomy),
             pool,
+            provider_fetch: ProviderFetch::Sequential,
             metrics,
         })
     }

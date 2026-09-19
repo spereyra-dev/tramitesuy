@@ -11,8 +11,9 @@ async fn main() {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/tramitesuy".to_string());
     // Serving limits from the environment (design §7.1): pool size and the
-    // connection acquire timeout drive the pool; the remaining fields
-    // (deadline, admission, q limits) are consumed by their later slices.
+    // connection acquire timeout drive the pool; the provider fetch policy
+    // is wired into AppState in S4b; deadline/admission/q limits are
+    // consumed by their later slices.
     let limits = api::config::ApiLimits::from_env().unwrap_or_else(|error| {
         // Panic justification: boot composition root of the binary; an
         // invalid environment is a fatal boot failure, and the operator
@@ -37,8 +38,9 @@ async fn main() {
     // §4.2): loaded once at boot and cached in AppState. `TRAMITESUY_DATA_DIR`
     // overrides the default `./data` (the repository layout from any cwd).
     let data_dir = std::env::var("TRAMITESUY_DATA_DIR").unwrap_or_else(|_| "data".to_string());
-    let state = api::state::AppState::build(pool, Path::new(&data_dir))
+    let mut state = api::state::AppState::build(pool, Path::new(&data_dir))
         .unwrap_or_else(|error| panic!("boot: {error}"));
+    state.provider_fetch = limits.provider_fetch;
     // Task 1 wiring: the serving-generation gauge boots at `NotLoaded`
     // (stage 3 swaps it to `Active` with the first loaded generation).
     state

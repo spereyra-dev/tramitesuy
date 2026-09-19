@@ -14,6 +14,9 @@
 
 #[path = "c2support/mod.rs"]
 mod c2support;
+#[allow(dead_code)]
+#[path = "support/catalog_fixture.rs"]
+mod catalog_fixture;
 
 use c2support::*;
 use search::engine::CandidateProvider;
@@ -75,6 +78,116 @@ async fn seed_provider_fixture(pool: &sqlx::PgPool) {
 
 fn query_of(text: &str) -> NormalizedQuery {
     normalize(text)
+}
+
+/// The real YAML fixture directory: task 3's representative catalog seeds
+/// these taxonomy events before adding the synthetic 3,600-procedure load.
+fn repo_data_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("repo root")
+        .join("data")
+}
+
+/// The exact provider-side text construction used before S4b: canonical
+/// normalized tokens joined by spaces. Keeping this local reference makes
+/// the fixture comparison below a real-PostgreSQL equivalence test against
+/// the pre-async provider query behavior, not another call through the
+/// provider implementation under test.
+fn pre_async_query_text(query: &NormalizedQuery) -> String {
+    query
+        .tokens
+        .iter()
+        .map(|token| token.canonical.as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn canonical_candidates(
+    mut candidates: Vec<search::types::Candidate>,
+) -> Vec<search::types::Candidate> {
+    candidates.sort_by(|a, b| {
+        (&a.event_slug, &a.rule_name, a.value).cmp(&(&b.event_slug, &b.rule_name, b.value))
+    });
+    candidates
+}
+
+/// Direct copy of the pre-S4b FTS SQL/reference mapping: this test-side
+/// query is intentionally runtime-checked, matching the repository's
+/// integration-test style without changing a production query or `.sqlx`.
+async fn pre_async_fts_candidates(
+    pool: &sqlx::PgPool,
+    query: &NormalizedQuery,
+) -> Result<Vec<search::types::Candidate>, sqlx::Error> {
+    let text = pre_async_query_text(query);
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(String, f32)> = sqlx::query_as(
+        "WITH q AS (SELECT plainto_tsquery('simple', $1) AS tsq) \
+         SELECT e.slug, ts_rank(e.generated_tsvector, q.tsq) \
+         FROM life_events e, q \
+         WHERE e.status = 'active' \
+           AND e.generated_tsvector @@ q.tsq",
+    )
+    .bind(text)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(event_slug, rank)| {
+            let value = (f64::from(rank) * 100.0).round() as i64;
+            (value > 0).then(|| search::types::Candidate {
+                event_slug,
+                rule_name: "FTS_TEXT".to_string(),
+                value,
+            })
+        })
+        .collect())
+}
+
+/// Direct copy of the pre-S4b trigram SQL/reference mapping, preserving its
+/// negative-keyword exclusion, strict `>` threshold and rounded score scale.
+async fn pre_async_trigram_candidates(
+    pool: &sqlx::PgPool,
+    query: &NormalizedQuery,
+) -> Result<Vec<search::types::Candidate>, sqlx::Error> {
+    const SIMILARITY_THRESHOLD: f32 = 0.3;
+    let text = pre_async_query_text(query);
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(String, f32)> = sqlx::query_as(
+        "WITH kw AS ( \
+             SELECT life_event_id, \
+                    string_agg(term || ' ' || COALESCE(canonical_term, ''), ' ') AS terms \
+             FROM life_event_keywords \
+             WHERE NOT negative \
+             GROUP BY life_event_id \
+           ) \
+           SELECT e.slug, \
+                  similarity(e.name || ' ' || COALESCE(kw.terms, ''), $1) AS sim \
+           FROM life_events e \
+           LEFT JOIN kw ON kw.life_event_id = e.id \
+           WHERE e.status = 'active' \
+             AND similarity(e.name || ' ' || COALESCE(kw.terms, ''), $1) > $2",
+    )
+    .bind(text)
+    .bind(SIMILARITY_THRESHOLD)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(event_slug, similarity)| {
+            let value = (f64::from(similarity) * 10.0).round() as i64;
+            (value > 0).then(|| search::types::Candidate {
+                event_slug,
+                rule_name: "TRIGRAM".to_string(),
+                value,
+            })
+        })
+        .collect())
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -302,6 +415,60 @@ async fn providers_return_no_candidates_for_a_stop_word_only_query() {
             .is_empty(),
         "no TRIGRAM candidates for a stop-word-only query"
     );
+
+    drop_db(&db_name).await;
+}
+
+/// Task 11 TRIANGULATE: over task 3's PII-free representative catalog,
+/// each async provider must match the exact query and score mapping that
+/// existed before the async refactor. The direct SQL helpers above are the
+/// pre-async reference; provider output is canonically sorted only for the
+/// assertion because neither SQL query promises an output order.
+#[tokio::test(flavor = "multi_thread")]
+async fn async_providers_match_pre_async_queries_on_the_task3_catalog_fixture() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    catalog_fixture::apply(&pool, &repo_data_dir(), 42)
+        .await
+        .expect("task 3 catalog fixture applies");
+    let fts = db::providers::fts::FtsProvider::new(pool.clone());
+    let trigram = db::providers::trigram::TrigramProvider::new(pool.clone());
+
+    for raw_query in [
+        "compre un auto usado",
+        "compré un auto usado",
+        "vender vehículo usado",
+        "vendér un vehículo",
+        "pagar la patente",
+        "pagár paténte",
+        "quiero abrir una cuenta bancaria",
+    ] {
+        let normalized = query_of(raw_query);
+        let async_fts = fts
+            .candidates(GENERATION, &normalized)
+            .await
+            .expect("async FTS provider succeeds");
+        let reference_fts = pre_async_fts_candidates(&pool, &normalized)
+            .await
+            .expect("pre-async FTS reference query succeeds");
+        assert_eq!(
+            canonical_candidates(async_fts),
+            canonical_candidates(reference_fts),
+            "FTS candidates must match the pre-async query for {raw_query:?}"
+        );
+
+        let async_trigram = trigram
+            .candidates(GENERATION, &normalized)
+            .await
+            .expect("async trigram provider succeeds");
+        let reference_trigram = pre_async_trigram_candidates(&pool, &normalized)
+            .await
+            .expect("pre-async trigram reference query succeeds");
+        assert_eq!(
+            canonical_candidates(async_trigram),
+            canonical_candidates(reference_trigram),
+            "trigram candidates must match the pre-async query for {raw_query:?}"
+        );
+    }
 
     drop_db(&db_name).await;
 }

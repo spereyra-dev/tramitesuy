@@ -115,13 +115,13 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - Verify: `cargo test -p search --test golden` — Top1/Top3/no-result/ambiguous unchanged.
   - Satisfies: OPT-08, search-engine delta (deterministic ordering, pure engine).
 
-- [ ] 10. [S4b] Change the `CandidateProvider` contract in `crates/search/src/engine.rs`: providers are invoked asynchronously and receive the request's captured `generation_id`; the trait path carries no database/HTTP/runtime dependency and `FTS_TEXT`/`TRIGRAM` rule names are preserved verbatim.
+- [x] 10. [S4b] Change the `CandidateProvider` contract in `crates/search/src/engine.rs`: providers are invoked asynchronously and receive the request's captured `generation_id`; the trait path carries no database/HTTP/runtime dependency and `FTS_TEXT`/`TRIGRAM` rule names are preserved verbatim.
   - RED: `cargo test -p search --test engine` — async stub providers returning generation-scoped candidates still yield both `FTS_TEXT` and `TRIGRAM` explanation entries summing to the final score; `cargo test -p search --test no_forbidden_deps` proves no runtime/DB dependency entered the crate.
   - GREEN: `async fn` in the trait (or a generic parameter over `P: CandidateProvider`); no `tokio` in `crates/search`'s dependency tree.
   - TRIANGULATE: embedding seam stays empty (no model, vector store, or embedding implementation exists).
   - Satisfies: search-engine delta (MODIFIED "Candidate providers behind a trait"), OPT-08.
 
-- [ ] 11. [S4b] Move SQL waiting into the async orchestration layer and delete the synchronous bridge: add `crates/db/src/providers/orchestrator.rs` (`run_search`: normalize → async providers → canonical ordering → `score`), make `crates/db/src/providers/{fts,trigram}.rs` async implementations, remove `bridge_block_on` + `shared_runtime` from `crates/db/src/providers/mod.rs`, and update the callers in `apps/api/src/handlers/search.rs::run_pipeline` in this same unit.
+- [x] 11. [S4b] Move SQL waiting into the async orchestration layer and delete the synchronous bridge: add `crates/db/src/providers/orchestrator.rs` (`run_search`: normalize → async providers → canonical ordering → `score`), make `crates/db/src/providers/{fts,trigram}.rs` async implementations, remove `bridge_block_on` + `shared_runtime` from `crates/db/src/providers/mod.rs`, and update the callers in `apps/api/src/handlers/search.rs::run_pipeline` in this same unit.
   - RED: `apps/api/tests/no_sync_bridge.rs` asserts no `block_in_place`/`block_on` on the HTTP search path (source inspection plus a search request served successfully); `crates/db/tests/providers.rs` real-PostgreSQL equivalence for FTS and trigram against the pre-change results on the fixture from task 3.
   - GREEN: `run_pipeline` calls the orchestrator; provider failure maps to the structural `provider_failed` error and never a partial ranking (public 500).
   - TRIANGULATE: `provider_fetch: sequential` default; a `concurrent` variant is config-gated and off by default; the log still runs after ranking.

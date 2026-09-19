@@ -16,10 +16,12 @@
 //! | `API_Q_MAX_CHARS` | 512 | `q` Unicode-character limit |
 //! | `API_Q_MAX_BYTES` | 2048 | `q` UTF-8 byte limit |
 //! | `API_RETRY_AFTER_SECONDS` | 1 | overload `Retry-After` value |
+//! | `API_PROVIDER_FETCH` | `sequential` | FTS/trigram fetch policy |
 
 use std::time::Duration;
 
 use db::pool::{DEFAULT_ACQUIRE_TIMEOUT, DEFAULT_MAX_CONNECTIONS};
+use db::providers::orchestrator::ProviderFetch;
 
 /// Every operational limit of the API serving path (design §7.1). The
 /// deadline/admission/q-limit fields are consumed by their own later
@@ -33,6 +35,9 @@ pub struct ApiLimits {
     pub q_max_chars: usize,
     pub q_max_bytes: usize,
     pub retry_after_seconds: u64,
+    /// FTS/trigram fetch policy (S4b task 11): sequential by default;
+    /// concurrent fetching must be explicitly configured.
+    pub provider_fetch: ProviderFetch,
 }
 
 impl Default for ApiLimits {
@@ -47,6 +52,7 @@ impl Default for ApiLimits {
             q_max_chars: 512,
             q_max_bytes: 2048,
             retry_after_seconds: 1,
+            provider_fetch: ProviderFetch::Sequential,
         }
     }
 }
@@ -111,7 +117,27 @@ impl ApiLimits {
                 "API_RETRY_AFTER_SECONDS",
                 defaults.retry_after_seconds,
             )?,
+            provider_fetch: parse_provider_fetch(&lookup)?,
         })
+    }
+}
+
+/// Parses the explicit FTS/trigram fetch policy. Only the documented,
+/// lowercase values are accepted so an operator typo fails at boot rather
+/// than silently enabling a concurrency mode they did not choose.
+fn parse_provider_fetch(
+    lookup: &impl Fn(&str) -> Option<String>,
+) -> Result<ProviderFetch, ConfigError> {
+    match lookup("API_PROVIDER_FETCH") {
+        None => Ok(ProviderFetch::Sequential),
+        Some(raw) => match raw.as_str() {
+            "sequential" => Ok(ProviderFetch::Sequential),
+            "concurrent" => Ok(ProviderFetch::Concurrent),
+            _ => Err(ConfigError {
+                field: "API_PROVIDER_FETCH",
+                value: raw,
+            }),
+        },
     }
 }
 

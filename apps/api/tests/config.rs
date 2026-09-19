@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use api::config::ApiLimits;
+use db::providers::orchestrator::ProviderFetch;
 
 fn lookup_from(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
     let map: HashMap<&str, String> = vars.iter().map(|(k, v)| (*k, (*v).to_string())).collect();
@@ -23,6 +24,8 @@ fn defaults_match_design_section_7() {
     assert_eq!(limits.q_max_chars, 512);
     assert_eq!(limits.q_max_bytes, 2048);
     assert_eq!(limits.retry_after_seconds, 1);
+    // S4b task 11: FTS/trigram fetch concurrency is OFF by default.
+    assert_eq!(limits.provider_fetch, ProviderFetch::Sequential);
 }
 
 #[test]
@@ -41,6 +44,7 @@ fn every_limit_responds_to_its_environment_variable() {
         ("API_Q_MAX_CHARS", "300"),
         ("API_Q_MAX_BYTES", "1024"),
         ("API_RETRY_AFTER_SECONDS", "2"),
+        ("API_PROVIDER_FETCH", "concurrent"),
     ]))
     .expect("configured values parse");
     assert_eq!(limits.pool_max, 10);
@@ -50,6 +54,19 @@ fn every_limit_responds_to_its_environment_variable() {
     assert_eq!(limits.q_max_chars, 300);
     assert_eq!(limits.q_max_bytes, 1024);
     assert_eq!(limits.retry_after_seconds, 2);
+    assert_eq!(limits.provider_fetch, ProviderFetch::Concurrent);
+}
+
+#[test]
+fn provider_fetch_rejects_unknown_policies() {
+    for (key, value) in [
+        ("API_PROVIDER_FETCH", "simultaneous"),
+        ("API_PROVIDER_FETCH", "CONCURRENT"),
+        ("API_PROVIDER_FETCH", "parallel"),
+    ] {
+        let result = ApiLimits::from_lookup(lookup_from(&[(key, value)]));
+        assert!(result.is_err(), "{key}={value} must be rejected");
+    }
 }
 
 #[test]

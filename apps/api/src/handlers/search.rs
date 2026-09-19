@@ -1,7 +1,7 @@
 //! `GET /search` and `GET /search/debug` (API-2/API-5, tasks 79–80): the
 //! full search pipeline from design §4.2 —
-//! redact (log copy) → `SearchEngine::search` over the YAML-fed engine with
-//! the DB-backed FTS/trigram providers → persist the redacted `search_logs`
+//! redact (log copy) → db-side async orchestrator over the YAML-fed engine
+//! with DB-backed FTS/trigram providers → persist the redacted `search_logs`
 //! row (task 82) → JSON per the mode shape.
 //!
 //! The engine's lexicons come from the YAML taxonomy cached in `AppState`
@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use axum::Json;
 use axum::extract::{Query, State};
 use db::providers::fts::FtsProvider;
+use db::providers::orchestrator;
 use db::providers::trigram::TrigramProvider;
 use db::repos::search_log::{self, NewSearchLog};
 use search::normalizer::normalize;
@@ -70,21 +71,23 @@ fn query_parameter(params: &HashMap<String, String>) -> Result<String, ApiError>
         .ok_or_else(|| ApiError::BadRequest("missing or empty q parameter".to_string()))
 }
 
-/// Runs the deterministic pipeline: the YAML-fed engine plus the two
-/// DB-backed candidate providers, awaited directly on the async handler
-/// (S4b task 11: no synchronous bridging on the HTTP search path).
+/// Runs the deterministic pipeline through the db-side async orchestration
+/// boundary (S4b task 11): normalize → await FTS/trigram per configuration
+/// → pure `score`. Provider errors stay structural and map to the existing
+/// public 500 path; no partial candidate ranking is produced.
 async fn run_pipeline(state: &AppState, query: &str) -> Result<SearchOutcome, ApiError> {
     let fts = FtsProvider::new(state.pool.clone());
     let trigram = TrigramProvider::new(state.pool.clone());
-    state
-        .engine
-        .search(
-            db::providers::LEGACY_GENERATION_ID,
-            query,
-            &[&fts, &trigram],
-        )
-        .await
-        .map_err(|error| ApiError::InternalServerError(format!("search pipeline failed: {error}")))
+    orchestrator::run_search(
+        &state.engine,
+        db::providers::LEGACY_GENERATION_ID,
+        query,
+        &fts,
+        &trigram,
+        state.provider_fetch,
+    )
+    .await
+    .map_err(|error| ApiError::InternalServerError(format!("search pipeline failed: {error}")))
 }
 
 /// Persists the redacted log row (API-10, task 82): ONLY the redacted query,

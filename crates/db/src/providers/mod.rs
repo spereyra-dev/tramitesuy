@@ -9,6 +9,7 @@
 //! its shared runtime are gone from the search path.
 
 pub mod fts;
+pub mod orchestrator;
 pub mod trigram;
 
 use search::engine::EngineError;
