@@ -10,7 +10,8 @@ use crate::types::{Candidate, EventScore, Explanation, NormalizedQuery, ScoredEv
 
 /// Merges taxonomy-derived event scores and provider candidates, then ranks
 /// them: score descending, ties broken by slug ascending (SE-8). Events
-/// with no entries and no candidates produce no result.
+/// with no entries, no candidates, or a non-positive total score produce no
+/// result.
 pub fn rank(
     query: &NormalizedQuery,
     event_scores: &[EventScore],
@@ -38,7 +39,9 @@ pub fn rank(
 
     let mut ranked: Vec<ScoredEvent> = by_slug
         .into_iter()
-        .filter(|(_, entries)| !entries.is_empty())
+        .filter(|(_, entries)| {
+            !entries.is_empty() && entries.iter().map(|entry| entry.value).sum::<i64>() > 0
+        })
         .map(|(slug, entries)| {
             let score = entries.iter().map(|entry| entry.value).sum();
             ScoredEvent {

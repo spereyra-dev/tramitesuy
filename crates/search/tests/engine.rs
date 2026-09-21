@@ -254,16 +254,12 @@ fn near_duplicate_actions_are_separable_through_the_facade() {
         .expect("search must succeed");
     assert_eq!(vender.results[0].slug, "vender-vehiculo");
     assert_eq!(vender.results[0].score, 33, "10 + 8 + ACTION_ENTITY 15");
-    // The negative penalty keeps comprar-vehiculo reconstructible in the list.
-    let penalized = &vender.results[1];
-    assert_eq!(penalized.slug, "comprar-vehiculo");
-    assert_eq!(penalized.score, -7, "8 - 15");
-    assert!(
-        penalized
-            .explanation
-            .entries
-            .iter()
-            .any(|entry| entry.rule_name == "NEGATIVE_KEYWORD" && entry.value == -15)
+    // Net non-positive scores are filtered from the ranked list
+    // (lote-1 ranker contract): only the positive winner remains.
+    assert_eq!(
+        vender.results.len(),
+        1,
+        "negative-scored events never surface as results"
     );
 }
 

@@ -104,6 +104,22 @@ fn higher_scores_rank_first() {
 }
 
 #[test]
+fn non_positive_total_scores_produce_no_result() {
+    let query = search::normalizer::normalize("empresa");
+    let event_scores = vec![EventScore {
+        slug: "crear-usuario-gub-uy".to_string(),
+        entries: vec![keyword_entry("empresa", -5)],
+    }];
+
+    let ranked = rank(&query, &event_scores, &[]);
+
+    assert!(
+        ranked.is_empty(),
+        "a net non-positive event score must never surface as a result, got {ranked:?}"
+    );
+}
+
+#[test]
 fn empty_inputs_yield_no_results() {
     let query = search::normalizer::normalize("auto");
 
