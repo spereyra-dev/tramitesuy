@@ -19,7 +19,7 @@ use api::dto;
 
 /// The repository root (apps/api → repo root), where the real `data/` seed
 /// lives; the search tests boot `AppState` from it exactly like production.
-fn repo_root() -> std::path::PathBuf {
+pub fn repo_root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(2)
@@ -380,6 +380,51 @@ pub async fn last_seen_of(pool: &PgPool, external_id: &str) -> String {
 }
 
 pub use db::test_support::sql_counter::{SqlCounter, SqlSection};
+
+/// Publishes one catalog generation from the current legacy-table state
+/// (S7 task 19): the test-side stand-in for the worker's promotion flow
+/// (`apps/ingest` `publish`): build → validate → mark `published`. The
+/// promotion UPDATE mirrors `apps/ingest/src/commands/publish.rs`'s guarded
+/// reference advance (`status = 'validated' AND projection_status =
+/// 'complete'`), so a test can never publish an incomplete candidate.
+///
+/// The `taxonomy_version` comes from the same YAML bytes the API loads at
+/// boot (repo `data/`), so the snapshot loader's version check accepts the
+/// candidate — exactly the production invariant.
+pub async fn publish_sample_generation(pool: &PgPool) -> db::generations::build::BuildManifest {
+    let data_dir = repo_root().join("data");
+    let taxonomy_version = api::generation::taxonomy_version(&data_dir)
+        .expect("taxonomy version hash from the repo data seed");
+
+    let built = db::generations::build::build_generation(pool, &taxonomy_version)
+        .await
+        .expect("generation build over the seeded legacy tables");
+    // The taxonomy-alignment gate needs the FULL YAML taxonomy projected
+    // (production runs seed-taxonomy first); the api fixtures seed a small
+    // catalog, so this helper validates the generation's structural gate
+    // only (the same `None`-taxonomy path S6's publish tests use). The
+    // snapshot loader enforces the taxonomy_version match itself.
+    let report = db::generations::validate::validate_generation(pool, built.generation_id, None)
+        .await
+        .expect("publication validation runs");
+    assert!(
+        report.passed(),
+        "the fixture generation must validate: {:?}",
+        report.failures
+    );
+
+    sqlx::query(
+        "UPDATE catalog_generations SET status = 'published', published_at = now() \
+         WHERE generation_id = $1 AND status = 'validated' AND projection_status = 'complete'",
+    )
+    .bind(built.generation_id)
+    .execute(pool)
+    .await
+    .expect("promote the validated reference")
+    .rows_affected();
+
+    built
+}
 
 /// Fresh migrated scratch database plus a statement-counting pool, with
 /// the measurement section already held across setup: the test calls

@@ -4,6 +4,7 @@
 pub mod config;
 pub mod dto;
 pub mod error;
+pub mod generation;
 pub mod handlers;
 pub mod metrics;
 pub mod redaction;

@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT ON (g.slug) g.slug, g.name, g.status, g.category_slug,\n                  COALESCE(l.description, '') AS \"description!\"\n           FROM generation_life_events g\n           LEFT JOIN life_events l ON l.slug = g.slug\n           WHERE g.generation_id = $1\n           ORDER BY g.slug",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "generation_life_events",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "generation_life_events",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "generation_life_events",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "category_slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "generation_life_events",
+            "name": "category_slug"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "description!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "bd030dc46439608267fa8d67a801410a3186d324d77a29ad956154d4a147ecd6"
+}

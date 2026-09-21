@@ -81,15 +81,18 @@ name = "api"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "chrono",
  "db",
  "regex",
  "search",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "sqlx",
  "taxonomy",
  "tokio",
  "tower",
+ "uuid",
 ]
 
 [[package]]

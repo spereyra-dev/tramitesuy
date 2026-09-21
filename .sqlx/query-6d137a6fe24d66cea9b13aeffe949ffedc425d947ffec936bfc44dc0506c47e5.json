@@ -1,0 +1,122 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT generation_id, content_hash, taxonomy_version, engine_version,\n                  source_synced_at, published_at, event_count, procedure_count,\n                  projection_status\n           FROM catalog_generations\n           WHERE status = 'published' AND published_at IS NOT NULL\n           ORDER BY published_at DESC, created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "generation_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "generation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "content_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "content_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "taxonomy_version",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "taxonomy_version"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "engine_version",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "engine_version"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "source_synced_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "source_synced_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "event_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "event_count"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "procedure_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "procedure_count"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "projection_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "projection_status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6d137a6fe24d66cea9b13aeffe949ffedc425d947ffec936bfc44dc0506c47e5"
+}

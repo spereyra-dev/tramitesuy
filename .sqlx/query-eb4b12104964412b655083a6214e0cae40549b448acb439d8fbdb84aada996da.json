@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT slug, cards FROM generation_event_cards WHERE generation_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "generation_event_cards",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "cards",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "generation_event_cards",
+            "name": "cards"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "eb4b12104964412b655083a6214e0cae40549b448acb439d8fbdb84aada996da"
+}
