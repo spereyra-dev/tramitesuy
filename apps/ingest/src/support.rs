@@ -3,8 +3,8 @@
 //! together. Each constructor keeps its seam so tests can substitute parts.
 
 use crate::errors::PublishError;
-use db::repos::procedures::PostgresProcedureRepository;
 use crate::pool_config;
+use db::repos::procedures::PostgresProcedureRepository;
 use ingestion::ports::ProcedureRepository;
 use sha2::{Digest, Sha256};
 use std::path::Path;

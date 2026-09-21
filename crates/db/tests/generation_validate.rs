@@ -100,13 +100,9 @@ async fn valid_generation_passes_and_is_marked_validated() {
         .await
         .expect("build succeeds");
 
-    let gate = db::generations::validate::validate_generation(
-        &pool,
-        report.generation_id,
-        None,
-    )
-    .await
-    .expect("validation runs");
+    let gate = db::generations::validate::validate_generation(&pool, report.generation_id, None)
+        .await
+        .expect("validation runs");
     assert!(
         gate.failures.is_empty(),
         "the small valid catalog must pass, got: {:?}",
@@ -145,17 +141,11 @@ async fn zero_procedure_catalog_is_rejected() {
         .await
         .expect("build succeeds (a build is not a publication)");
 
-    let gate = db::generations::validate::validate_generation(
-        &pool,
-        report.generation_id,
-        None,
-    )
-    .await
-    .expect("validation runs");
+    let gate = db::generations::validate::validate_generation(&pool, report.generation_id, None)
+        .await
+        .expect("validation runs");
     assert!(
-        gate.failures
-            .iter()
-            .any(|f| f.kind == "empty_catalog"),
+        gate.failures.iter().any(|f| f.kind == "empty_catalog"),
         "a zero-procedure catalog must be rejected as empty, got: {:?}",
         gate.failures
     );
@@ -166,7 +156,10 @@ async fn zero_procedure_catalog_is_rejected() {
             .fetch_one(&pool)
             .await
             .expect("manifest row exists");
-    assert_ne!(status, "published", "a rejected candidate is never published");
+    assert_ne!(
+        status, "published",
+        "a rejected candidate is never published"
+    );
     assert_ne!(status, "validated", "a rejected candidate never validates");
 
     drop_db(&db_name).await;
@@ -193,17 +186,11 @@ async fn dangling_relation_is_rejected() {
     .await
     .expect("details row deleted");
 
-    let gate = db::generations::validate::validate_generation(
-        &pool,
-        report.generation_id,
-        None,
-    )
-    .await
-    .expect("validation runs");
+    let gate = db::generations::validate::validate_generation(&pool, report.generation_id, None)
+        .await
+        .expect("validation runs");
     assert!(
-        gate.failures
-            .iter()
-            .any(|f| f.kind == "relation_integrity"),
+        gate.failures.iter().any(|f| f.kind == "relation_integrity"),
         "a dangling card→procedure relation must be rejected, got: {:?}",
         gate.failures
     );
@@ -237,17 +224,11 @@ async fn missing_search_projection_rows_for_a_declared_event_are_rejected() {
     .await
     .expect("trigram row deleted");
 
-    let gate = db::generations::validate::validate_generation(
-        &pool,
-        report.generation_id,
-        None,
-    )
-    .await
-    .expect("validation runs");
+    let gate = db::generations::validate::validate_generation(&pool, report.generation_id, None)
+        .await
+        .expect("validation runs");
     assert!(
-        gate.failures
-            .iter()
-            .any(|f| f.kind == "search_projection"),
+        gate.failures.iter().any(|f| f.kind == "search_projection"),
         "missing FTS/trigram rows for a declared event must be rejected, got: {:?}",
         gate.failures
     );
@@ -267,13 +248,9 @@ async fn status_never_advances_without_complete_projections() {
         .await
         .expect("begin_build succeeds");
 
-    let gate = db::generations::validate::validate_generation(
-        &pool,
-        begun.generation_id,
-        None,
-    )
-    .await
-    .expect("validation runs");
+    let gate = db::generations::validate::validate_generation(&pool, begun.generation_id, None)
+        .await
+        .expect("validation runs");
     assert!(
         !gate.failures.is_empty(),
         "an incomplete candidate must fail the gate, got: {:?}",
@@ -304,13 +281,9 @@ async fn revalidating_a_validated_generation_is_idempotent() {
         .await
         .expect("build succeeds");
 
-    let first = db::generations::validate::validate_generation(
-        &pool,
-        report.generation_id,
-        None,
-    )
-    .await
-    .expect("first validation runs");
+    let first = db::generations::validate::validate_generation(&pool, report.generation_id, None)
+        .await
+        .expect("first validation runs");
     assert!(first.failures.is_empty());
     let manifest_after_first: (String, String) = sqlx::query_as(
         "SELECT status, projection_status FROM catalog_generations WHERE generation_id = $1",
@@ -320,13 +293,9 @@ async fn revalidating_a_validated_generation_is_idempotent() {
     .await
     .expect("manifest row exists");
 
-    let second = db::generations::validate::validate_generation(
-        &pool,
-        report.generation_id,
-        None,
-    )
-    .await
-    .expect("second validation runs");
+    let second = db::generations::validate::validate_generation(&pool, report.generation_id, None)
+        .await
+        .expect("second validation runs");
     assert_eq!(first.failures, second.failures);
     let manifest_after_second: (String, String) = sqlx::query_as(
         "SELECT status, projection_status FROM catalog_generations WHERE generation_id = $1",
@@ -366,9 +335,7 @@ async fn taxonomy_drift_is_rejected_and_aligned_taxonomy_passes() {
     .await
     .expect("validation runs");
     assert!(
-        gate.failures
-            .iter()
-            .any(|f| f.kind == "taxonomy"),
+        gate.failures.iter().any(|f| f.kind == "taxonomy"),
         "a taxonomy drift must be rejected, got: {:?}",
         gate.failures
     );
@@ -401,13 +368,9 @@ async fn individual_invalid_source_rows_keep_skip_and_report() {
         .await
         .expect("build succeeds");
 
-    let gate = db::generations::validate::validate_generation(
-        &pool,
-        report.generation_id,
-        None,
-    )
-    .await
-    .expect("validation runs");
+    let gate = db::generations::validate::validate_generation(&pool, report.generation_id, None)
+        .await
+        .expect("validation runs");
     assert!(
         gate.failures.is_empty(),
         "skipped-and-reported individual source rows must not fail validation, got: {:?}",

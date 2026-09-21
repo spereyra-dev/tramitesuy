@@ -147,7 +147,15 @@ pub async fn publish(
         });
     }
 
-    let result = publish_locked(pool, &taxonomy, &taxonomy_version, trigger, run_id, started_at).await;
+    let result = publish_locked(
+        pool,
+        &taxonomy,
+        &taxonomy_version,
+        trigger,
+        run_id,
+        started_at,
+    )
+    .await;
 
     if let Err(error) = &result {
         // Error paths mark the run `failed`: no run record is left `running`.
@@ -163,12 +171,10 @@ pub async fn publish(
         .await;
     }
 
-    sqlx::query!(
-        "SELECT pg_advisory_unlock(hashtext('tramitesuy:ingestion')) AS \"released!\"",
-    )
-    .fetch_one(&mut *exclusivity)
-    .await
-    .map_err(|e| PublishError::Exclusion(e.to_string()))?;
+    sqlx::query!("SELECT pg_advisory_unlock(hashtext('tramitesuy:ingestion')) AS \"released!\"",)
+        .fetch_one(&mut *exclusivity)
+        .await
+        .map_err(|e| PublishError::Exclusion(e.to_string()))?;
     drop(exclusivity);
 
     result
@@ -227,13 +233,10 @@ async fn publish_locked(
     }
 
     // 2. Validate the persisted artifacts (the publication validation gate).
-    let gate = db::generations::validate::validate_generation(
-        pool,
-        built.generation_id,
-        Some(taxonomy),
-    )
-    .await
-    .map_err(|e| PublishError::Validation(e.to_string()))?;
+    let gate =
+        db::generations::validate::validate_generation(pool, built.generation_id, Some(taxonomy))
+            .await
+            .map_err(|e| PublishError::Validation(e.to_string()))?;
     let failure_messages: Vec<String> = gate
         .failures
         .iter()

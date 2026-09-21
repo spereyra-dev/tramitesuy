@@ -307,13 +307,19 @@ async fn validate_taxonomy(
         match projected_by_slug.remove(&event.slug) {
             None => failures.push(ValidationFailure {
                 kind: "taxonomy",
-                detail: format!("the YAML event {:?} is missing from the projection", event.slug),
+                detail: format!(
+                    "the YAML event {:?} is missing from the projection",
+                    event.slug
+                ),
             }),
             Some((name, category)) => {
                 if name != event.name || category != event.category {
                     failures.push(ValidationFailure {
                         kind: "taxonomy",
-                        detail: format!("the YAML event {:?} drifted from the projection", event.slug),
+                        detail: format!(
+                            "the YAML event {:?} drifted from the projection",
+                            event.slug
+                        ),
                     });
                 }
                 validate_event_keywords(pool, generation_id, event, failures).await?;

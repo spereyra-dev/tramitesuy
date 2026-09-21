@@ -10,7 +10,7 @@ mod common;
 
 use common::*;
 
-use ingest::commands::publish::{publish, Trigger};
+use ingest::commands::publish::{Trigger, publish};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -128,8 +128,7 @@ async fn full_publish_promotes_and_records_the_run() {
         panic!("a successful publish promotes a generation: {report:?}");
     };
     assert_eq!(
-        report.candidate_generation_id,
-        report.published_generation_id,
+        report.candidate_generation_id, report.published_generation_id,
         "the built candidate is the published generation"
     );
 
@@ -230,14 +229,16 @@ async fn restart_between_build_and_promotion_completes_promotion_idempotently() 
     .fetch_one(&pool)
     .await
     .expect("projection counts");
-    assert_eq!(life_events_after, life_events_before, "no duplicated artifacts");
+    assert_eq!(
+        life_events_after, life_events_before,
+        "no duplicated artifacts"
+    );
     assert_eq!(cards_after, cards_before, "no duplicated artifacts");
 
-    let generation_rows: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM catalog_generations")
-            .fetch_one(&pool)
-            .await
-            .expect("generation rows");
+    let generation_rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM catalog_generations")
+        .fetch_one(&pool)
+        .await
+        .expect("generation rows");
     assert_eq!(generation_rows, 1, "exactly one generation exists");
 
     drop_test_db(&db_name).await;
@@ -268,12 +269,14 @@ async fn republishing_identical_content_produces_no_second_generation() {
         "the same generation stays published"
     );
 
-    let generation_rows: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM catalog_generations")
-            .fetch_one(&pool)
-            .await
-            .expect("generation rows");
-    assert_eq!(generation_rows, 1, "no second generation for identical content");
+    let generation_rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM catalog_generations")
+        .fetch_one(&pool)
+        .await
+        .expect("generation rows");
+    assert_eq!(
+        generation_rows, 1,
+        "no second generation for identical content"
+    );
 
     drop_test_db(&db_name).await;
 }
@@ -317,7 +320,10 @@ async fn validation_failure_never_makes_working_tables_the_sole_copy() {
     let runs = run_rows(&pool).await;
     assert_eq!(runs.len(), 1);
     assert_eq!(runs[0].0, "validation_failed");
-    assert!(runs[0].1.is_some(), "the failed run finished with a timestamp");
+    assert!(
+        runs[0].1.is_some(),
+        "the failed run finished with a timestamp"
+    );
 
     // The working tables still hold their data — the ingestion pipeline's
     // dual-write guarantees they are never the sole copy of live data, and a
