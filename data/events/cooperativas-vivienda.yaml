@@ -1,0 +1,53 @@
+slug: cooperativas-vivienda
+name: Cooperativas de vivienda
+description: "Trámites de las cooperativas de vivienda ante la ANV: refinanciación, regularización de morosidad y subsidios."
+category: vivienda
+keywords:
+  - term: cooperativa
+    type: ENTITY
+    weight: 15
+  - term: vivienda
+    type: ENTITY
+    weight: 10
+  - term: regularizar
+    type: ACTION
+    weight: 8
+  - term: refinanciar
+    type: ACTION
+    weight: 10
+  - term: subsidio
+    type: ENTITY
+    weight: 10
+  - term: morosidad
+    type: ENTITY
+    weight: 8
+  - term: credito
+    type: ENTITY
+    weight: 10
+    negative: true
+rules:
+  - action: refinanciar
+    entity: cooperativa
+    bonus: 15
+relations:
+  - external_id: "6899"
+    order: 1
+    required: true
+  - external_id: "6900"
+    order: 2
+    required: true
+  - external_id: "6903"
+    order: 3
+    required: false
+  - external_id: "6904"
+    order: 4
+    required: false
+tests:
+  positive:
+    - regularizar la morosidad de mi cooperativa de vivienda
+    - refinanciar el saldo de la cooperativa
+    - subsidios para las cooperativas de vivienda
+  negative:
+    - refinanciar el credito de mi casa anv
+    - solicitar el subsidio de desempleo
+    - escriturar mi vivienda anv

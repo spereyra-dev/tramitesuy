@@ -1,0 +1,50 @@
+slug: solicitar-subsidio-cuota-anv
+name: Solicitar el subsidio de cuota ANV
+description: Solicitud y renovación de subsidios a la cuota en promesas y para cooperativas de vivienda ante la ANV.
+category: vivienda
+keywords:
+  - term: subsidio
+    type: ENTITY
+    weight: 15
+  - term: cuota
+    type: ENTITY
+    weight: 12
+  - term: anv
+    type: ENTITY
+    weight: 8
+  - term: promesa
+    type: ENTITY
+    weight: 8
+  - term: renovar
+    type: ACTION
+    weight: 6
+  - term: desempleo
+    type: ENTITY
+    weight: 12
+    negative: true
+rules:
+  - action: solicitar
+    entity: subsidio
+    bonus: 15
+relations:
+  - external_id: "6927"
+    order: 1
+    required: true
+  - external_id: "6926"
+    order: 2
+    required: false
+  - external_id: "6904"
+    order: 3
+    required: false
+  - external_id: "6903"
+    order: 4
+    required: false
+tests:
+  positive:
+    - solicitar el subsidio de cuota anv
+    - renovar el subsidio anv en promesa
+    - subsidios para la cuota de la cooperativa
+  negative:
+    - solicitar el subsidio de desempleo
+    - refinanciar el credito de mi casa
+    - comprar una vivienda del mvot

@@ -1,0 +1,62 @@
+slug: refinanciar-credito-vivienda
+name: Refinanciar o regularizar el crédito ANV
+description: Regularización de morosidad, refinanciación, novación de hipotecas, amortización extraordinaria y cancelación de crédito o hipoteca ante la ANV.
+category: vivienda
+keywords:
+  - term: refinanciar
+    type: ACTION
+    weight: 10
+  - term: regularizar
+    type: ACTION
+    weight: 10
+  - term: morosidad
+    type: ENTITY
+    weight: 10
+  - term: credito
+    type: ENTITY
+    weight: 10
+  - term: hipoteca
+    type: ENTITY
+    weight: 10
+  - term: anv
+    type: ENTITY
+    weight: 8
+  - term: atrasado
+    type: MODIFIER
+    weight: 4
+  - term: cooperativa
+    type: ENTITY
+    weight: 8
+    negative: true
+rules:
+  - action: refinanciar
+    entity: credito
+    bonus: 15
+  - action: regularizar
+    entity: morosidad
+    bonus: 15
+relations:
+  - external_id: "6925"
+    order: 1
+    required: true
+  - external_id: "6923"
+    order: 2
+    required: false
+  - external_id: "6919"
+    order: 3
+    required: false
+  - external_id: "6922"
+    order: 4
+    required: false
+  - external_id: "6880"
+    order: 5
+    required: false
+tests:
+  positive:
+    - refinanciar el credito de mi vivienda anv
+    - regularizar la morosidad de mi cuota anv
+    - cancelar la hipoteca del inmueble anv
+  negative:
+    - pagar la patente de mi auto
+    - solicitar la garantia de alquiler
+    - solicitar el subsidio de desempleo

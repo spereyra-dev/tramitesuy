@@ -265,4 +265,13 @@ cases:
     expect_top1: solicitar-estudios-trasplante
   - query: "prestamo para protesis del bps"
     expect_top1: solicitar-protesis-fnr
+  # ── lote-7 vivienda ANV positives ──────────────────────────────────
+  - query: "refinanciar el credito de mi vivienda anv"
+    expect_top1: refinanciar-credito-vivienda
+  - query: "solicitar el subsidio de cuota anv"
+    expect_top1: solicitar-subsidio-cuota-anv
+  - query: "escriturar mi vivienda anv"
+    expect_top1: escriturar-vivienda-anv
+  - query: "refinanciar el saldo de la cooperativa de vivienda"
+    expect_top1: cooperativas-vivienda
 
