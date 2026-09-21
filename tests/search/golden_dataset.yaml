@@ -312,4 +312,9 @@ cases:
     expect_top1: solicitar-subsidio-maternidad
   - query: "subsidio por paternidad del bps"
     expect_top1: solicitar-subsidio-paternidad
+  # ── lote-13 vehicle registration positives ─────────────────────────
+  - query: "empadronar mi auto nuevo"
+    expect_top1: empadronar-vehiculo
+  - query: "reempadronar mi auto de otra intendencia"
+    expect_top1: reempadronar-vehiculo
 

@@ -1,0 +1,59 @@
+slug: reempadronar-vehiculo
+name: Reempadronar un vehículo
+description: "Reempadronamiento de vehículos: cambio de radicación entre intendencias y renovación del empadronamiento."
+category: vehiculos
+keywords:
+  - term: reempadronar
+    type: ENTITY
+    weight: 15
+  - term: reempadronamiento
+    type: ENTITY
+    weight: 12
+  - term: moto
+    type: ENTITY
+    weight: 8
+  - term: cambiar
+    type: ACTION
+    weight: 6
+  - term: radicacion
+    type: MODIFIER
+    weight: 14
+  - term: empadronar
+    type: ENTITY
+    weight: 8
+    negative: true
+rules:
+  - action: reempadronar
+    entity: vehiculo
+    bonus: 15
+relations:
+  - external_id: "3955"
+    order: 1
+    required: true
+  - external_id: "4334"
+    order: 2
+    required: false
+  - external_id: "4350"
+    order: 3
+    required: false
+  - external_id: "4589"
+    order: 4
+    required: false
+  - external_id: "4929"
+    order: 5
+    required: false
+  - external_id: "6183"
+    order: 6
+    required: false
+  - external_id: "4645"
+    order: 7
+    required: false
+tests:
+  positive:
+    - reempadronar mi auto de otra intendencia
+    - reempadronamiento de una moto
+    - cambiar la radicacion del vehiculo
+  negative:
+    - empadronar un auto nuevo
+    - cambiar la matricula de mi auto
+    - solicitar el permiso de construccion

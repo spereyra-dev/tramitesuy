@@ -1,0 +1,61 @@
+slug: empadronar-vehiculo
+name: Empadronar un vehículo
+description: Empadronamiento de vehículos nuevos, importados y provenientes del extranjero en las intendencias.
+category: vehiculos
+keywords:
+  - term: empadronar
+    type: ACTION
+    weight: 10
+  - term: empadronamiento
+    type: ENTITY
+    weight: 12
+  - term: vehiculo
+    type: MODIFIER
+    weight: 4
+  - term: moto
+    type: ENTITY
+    weight: 6
+  - term: nuevo
+    type: MODIFIER
+    weight: 4
+  - term: importado
+    type: ENTITY
+    weight: 8
+  - term: extranjero
+    type: MODIFIER
+    weight: 4
+rules:
+  - action: empadronar
+    entity: vehiculo
+    bonus: 15
+relations:
+  - external_id: "3947"
+    order: 1
+    required: true
+  - external_id: "6212"
+    order: 2
+    required: false
+  - external_id: "4928"
+    order: 3
+    required: false
+  - external_id: "4690"
+    order: 4
+    required: false
+  - external_id: "4331"
+    order: 5
+    required: false
+  - external_id: "4333"
+    order: 6
+    required: false
+  - external_id: "6182"
+    order: 7
+    required: false
+tests:
+  positive:
+    - empadronar mi auto nuevo
+    - empadronamiento de un vehiculo 0 km
+    - empadronar una moto importada
+  negative:
+    - reempadronar el vehiculo
+    - pagar la patente de mi auto
+    - solicitar el permiso de construccion
