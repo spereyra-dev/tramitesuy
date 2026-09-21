@@ -5,6 +5,7 @@
 //! Migration files live in `../../migrations` and are embedded with
 //! `sqlx::migrate!` (see [`pool::run_migrations`]).
 
+pub mod generations;
 pub mod pool;
 pub mod providers;
 pub mod repos;

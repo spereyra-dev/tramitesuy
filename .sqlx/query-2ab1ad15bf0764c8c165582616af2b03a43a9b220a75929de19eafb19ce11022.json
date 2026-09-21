@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE catalog_generations SET projection_status = 'complete' WHERE generation_id = $1 AND status <> 'published'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2ab1ad15bf0764c8c165582616af2b03a43a9b220a75929de19eafb19ce11022"
+}

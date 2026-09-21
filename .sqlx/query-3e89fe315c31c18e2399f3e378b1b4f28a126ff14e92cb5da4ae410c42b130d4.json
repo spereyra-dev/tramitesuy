@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT set_config('pg_trgm.similarity_threshold', $1, true) AS \"guc!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "guc!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3e89fe315c31c18e2399f3e378b1b4f28a126ff14e92cb5da4ae410c42b130d4"
+}

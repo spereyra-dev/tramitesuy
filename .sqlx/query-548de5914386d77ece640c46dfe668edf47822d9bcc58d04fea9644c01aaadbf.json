@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status, projection_status FROM catalog_generations WHERE generation_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "projection_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "projection_status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "548de5914386d77ece640c46dfe668edf47822d9bcc58d04fea9644c01aaadbf"
+}

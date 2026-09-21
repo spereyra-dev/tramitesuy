@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO generation_procedure_details (generation_id, slug, details)\n           SELECT $1, d.external_id,\n                  jsonb_build_object(\n                      'external_id', d.external_id,\n                      'name', d.name,\n                      'description', d.description,\n                      'organization_name', d.organization_name,\n                      'official_url', d.official_url,\n                      'status', d.status,\n                      'raw_data', d.raw_data,\n                      'last_seen_at', d.last_seen_at)\n           FROM (\n               SELECT DISTINCT ON (p.external_id)\n                      p.external_id, p.name, p.description, p.official_url,\n                      p.status, p.raw_data, p.last_seen_at, o.name AS organization_name\n               FROM procedures p LEFT JOIN organizations o ON o.id = p.organization_id\n               ORDER BY p.external_id, (p.status = 'active') DESC, p.created_at DESC\n           ) d\n           ON CONFLICT (generation_id, slug) DO UPDATE\n               SET details = EXCLUDED.details",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "78f72811fabb0e5cfad28e214b1bbaad459c94d34e5482476aa3671b4a16c83c"
+}

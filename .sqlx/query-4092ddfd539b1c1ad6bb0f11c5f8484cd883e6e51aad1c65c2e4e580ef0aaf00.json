@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO generation_event_cards (generation_id, slug, cards)\n           SELECT $1, e.slug,\n                  COALESCE(jsonb_agg(jsonb_build_object(\n                          'slug', p.external_id,\n                          'name', p.name,\n                          'order_index', r.order_index,\n                          'importance', r.importance,\n                          'required', r.required,\n                          'organization_short_name', o.short_name,\n                          'cost', CASE\n                              WHEN jsonb_typeof(p.raw_data -> 'tiene_costo') = 'string'\n                                   AND btrim(p.raw_data ->> 'tiene_costo') <> ''\n                                   AND jsonb_typeof(p.raw_data -> 'valor') = 'string'\n                                   AND btrim(p.raw_data ->> 'valor') <> ''\n                              THEN p.raw_data ->> 'valor'\n                          END,\n                          'status', p.status,\n                          'official_url', p.official_url,\n                          'last_seen_at', p.last_seen_at)\n                      ORDER BY r.order_index, p.external_id)\n                      FILTER (WHERE p.id IS NOT NULL),\n                      '[]'::jsonb)\n           FROM life_events e\n           LEFT JOIN life_event_procedures r ON r.life_event_id = e.id\n           LEFT JOIN procedures p ON p.id = r.procedure_id\n           LEFT JOIN organizations o ON o.id = p.organization_id\n           GROUP BY e.slug\n           ON CONFLICT (generation_id, slug) DO UPDATE\n               SET cards = EXCLUDED.cards",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4092ddfd539b1c1ad6bb0f11c5f8484cd883e6e51aad1c65c2e4e580ef0aaf00"
+}
