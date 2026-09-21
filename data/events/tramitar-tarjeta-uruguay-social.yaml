@@ -1,0 +1,40 @@
+slug: tramitar-tarjeta-uruguay-social
+name: Tarjeta Uruguay Social
+description: Tarjeta Uruguay Social del programa de vulnerabilidad socioeconómica de MIDES, cobrada por BPS, y su baja.
+category: beneficios-familiares
+keywords:
+  - term: tarjeta
+    type: ENTITY
+    weight: 15
+  - term: uruguay
+    type: ENTITY
+    weight: 10
+  - term: social
+    type: ENTITY
+    weight: 12
+  - term: bps
+    type: ENTITY
+    weight: 6
+  - term: baja
+    type: MODIFIER
+    weight: 4
+rules:
+  - action: tramitar
+    entity: tarjeta
+    bonus: 15
+relations:
+  - external_id: "7359"
+    order: 1
+    required: true
+  - external_id: "7379"
+    order: 2
+    required: false
+tests:
+  positive:
+    - tarjeta uruguay social
+    - tramitar la tarjeta uruguay social
+    - dar de baja la tarjeta bps
+  negative:
+    - tramitar la firma digital
+    - subsidio por maternidad del bps
+    - sacar la cedula

@@ -1,0 +1,34 @@
+slug: consultar-jubilacion-estimada
+name: Consultar mi jubilación estimada
+description: Consulta de la estimación de la futura jubilación en el portal del BPS.
+category: jubilaciones
+keywords:
+  - term: estimada
+    type: ENTITY
+    weight: 12
+  - term: jubilacion
+    type: ENTITY
+    weight: 15
+  - term: estimar
+    type: ACTION
+    weight: 10
+  - term: consultar
+    type: ACTION
+    weight: 8
+rules:
+  - action: consultar
+    entity: jubilacion
+    bonus: 15
+relations:
+  - external_id: "7352"
+    order: 1
+    required: true
+tests:
+  positive:
+    - mi jubilacion estimada
+    - consultar la estimacion de mi jubilacion
+    - cuanto va a ser mi jubilacion
+  negative:
+    - consultar el estado del tramite jubilatorio
+    - solicitar mi jubilacion
+    - cesar mis aportes jubilatorios

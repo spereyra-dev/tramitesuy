@@ -1,0 +1,49 @@
+slug: consultar-tramite-jubilatorio
+name: Consultar el trámite jubilatorio
+description: Consulta del estado del trámite jubilatorio, asesoramiento sobre jubilaciones otorgadas, documentación complementaria y copia del expediente de pasividades.
+category: jubilaciones
+keywords:
+  - term: jubilatorio
+    type: ENTITY
+    weight: 15
+  - term: tramite
+    type: ENTITY
+    weight: 10
+  - term: consultar
+    type: ACTION
+    weight: 5
+  - term: estado
+    type: MODIFIER
+    weight: 5
+  - term: jubilacion
+    type: ENTITY
+    weight: 10
+  - term: asesoramiento
+    type: ENTITY
+    weight: 8
+rules:
+  - action: consultar
+    entity: tramite
+    bonus: 15
+relations:
+  - external_id: "7344"
+    order: 1
+    required: true
+  - external_id: "7342"
+    order: 2
+    required: false
+  - external_id: "7343"
+    order: 3
+    required: false
+  - external_id: "7345"
+    order: 4
+    required: false
+tests:
+  positive:
+    - consultar el estado de mi tramite jubilatorio
+    - en que esta mi tramite de jubilacion
+    - asesoramiento sobre mi jubilacion ya otorgada
+  negative:
+    - solicitar mi jubilacion
+    - pension por sobrevivencia del bps
+    - estadias vacacionales para jubilados

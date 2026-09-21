@@ -1,0 +1,46 @@
+slug: solicitar-prestamos-sociales-bps
+name: Préstamos sociales del BPS
+description: Préstamos en efectivo para jubilados y pensionistas del BPS, con cancelación y desbloqueo de préstamos.
+category: jubilaciones
+keywords:
+  - term: prestamo
+    type: ENTITY
+    weight: 15
+  - term: sociales
+    type: ENTITY
+    weight: 12
+  - term: bps
+    type: ENTITY
+    weight: 6
+  - term: jubilados
+    type: ENTITY
+    weight: 8
+  - term: cancelar
+    type: ACTION
+    weight: 6
+  - term: bloqueado
+    type: MODIFIER
+    weight: 4
+rules:
+  - action: solicitar
+    entity: prestamo
+    bonus: 15
+relations:
+  - external_id: "3577"
+    order: 1
+    required: true
+  - external_id: "7371"
+    order: 2
+    required: false
+  - external_id: "7364"
+    order: 3
+    required: false
+tests:
+  positive:
+    - prestamo social del bps para jubilados
+    - cancelar mi prestamo social
+    - desbloquear el prestamo del bps
+  negative:
+    - dar de alta a un trabajador
+    - solicitar mi jubilacion
+    - prestamo para protesis del bps

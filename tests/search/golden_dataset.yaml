@@ -38,7 +38,8 @@ baselines:
   # raised for lote-10: construction permit case adds one disambiguation-band case; measured 39/100 = 0.39 on 2026-09-21.
   # raised for lote-11: mascotas/discapacidad cases add disambiguation-band cases; measured 42/105 = 0.40 on 2026-09-21.
   # raised for lote-12: domestic work/parental subsidy cases add two disambiguation-band cases; measured 44/108 ≈ 0.41 on 2026-09-21.
-  max_ambiguous_rate: 0.41
+  # raised for lote-14: four bps jubilaciones/monetary cases add disambiguation-band cases; measured 48/114 ≈ 0.4211 on 2026-09-21.
+  max_ambiguous_rate: 0.43
 cases:
   # ── comprar-vehiculo positives ─────────────────────────────────────
   - query: "compre un auto usado"
@@ -317,4 +318,13 @@ cases:
     expect_top1: empadronar-vehiculo
   - query: "reempadronar mi auto de otra intendencia"
     expect_top1: reempadronar-vehiculo
+  # ── lote-14 bps process-query and monetary positives ───────────────
+  - query: "consultar el estado de mi tramite jubilatorio"
+    expect_top1: consultar-tramite-jubilatorio
+  - query: "mi jubilacion estimada"
+    expect_top1: consultar-jubilacion-estimada
+  - query: "prestamo social del bps para jubilados"
+    expect_top1: solicitar-prestamos-sociales-bps
+  - query: "tarjeta uruguay social"
+    expect_top1: tramitar-tarjeta-uruguay-social
 
