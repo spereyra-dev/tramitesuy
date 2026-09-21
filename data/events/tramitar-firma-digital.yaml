@@ -1,0 +1,44 @@
+slug: tramitar-firma-digital
+name: Tramitar la firma digital
+description: Certificados electrónicos de firma digital para personas, empresas y sitios web ante AGESIC.
+category: documentos
+keywords:
+  - term: firma
+    type: ENTITY
+    weight: 15
+  - term: digital
+    type: ENTITY
+    weight: 12
+  - term: certificado
+    type: ENTITY
+    weight: 10
+    canonical: partida
+  - term: electronico
+    type: ENTITY
+    weight: 8
+  - term: tramitar
+    type: ACTION
+    weight: 10
+rules:
+  - action: tramitar
+    entity: digital
+    bonus: 15
+relations:
+  - external_id: "462"
+    order: 1
+    required: true
+  - external_id: "1580"
+    order: 2
+    required: false
+  - external_id: "1581"
+    order: 3
+    required: false
+tests:
+  positive:
+    - tramitar la firma digital
+    - certificado electronico de firma digital
+    - firma digital para mi empresa
+  negative:
+    - crear el usuario de gub uy
+    - sacar la cedula de identidad
+    - carnet de salud

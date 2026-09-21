@@ -283,4 +283,11 @@ cases:
     expect_top1: convalidar-titulo-terciario
   - query: "cesar mis aportes jubilatorios"
     expect_top1: cesar-aportes-jubilatorios
+  # ── lote-9 firma digital, apostilla, convenios positives ───────────
+  - query: "tramitar la firma digital"
+    expect_top1: tramitar-firma-digital
+  - query: "apostillar un documento"
+    expect_top1: apostillar-documentos
+  - query: "convenio de pago de los adeudos de patente"
+    expect_top1: pagar-convenio-adeudos
 

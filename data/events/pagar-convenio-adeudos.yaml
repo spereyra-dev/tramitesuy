@@ -1,0 +1,51 @@
+slug: pagar-convenio-adeudos
+name: Pagar en convenios los adeudos de patente y tributos municipales
+description: Convenios de pago y refinanciación de adeudos de patente de rodados y tributos municipales en las intendencias.
+category: vehiculos
+keywords:
+  - term: convenio
+    type: ENTITY
+    weight: 15
+  - term: adeudo
+    type: ENTITY
+    weight: 12
+  - term: pagar
+    type: ACTION
+    weight: 10
+  - term: refinanciar
+    type: ACTION
+    weight: 8
+  - term: tributos
+    type: ENTITY
+    weight: 8
+  - term: patente
+    type: ENTITY
+    weight: 6
+    negative: true
+  - term: multa
+    type: ENTITY
+    weight: 10
+    negative: true
+rules:
+  - action: pagar
+    entity: convenio
+    bonus: 15
+relations:
+  - external_id: "4684"
+    order: 1
+    required: true
+  - external_id: "4379"
+    order: 2
+    required: false
+  - external_id: "7159"
+    order: 3
+    required: false
+tests:
+  positive:
+    - convenio de pago de los adeudos de patente
+    - refinanciar mis tributos municipales
+    - convenios de pago de patente
+  negative:
+    - pagar una multa de transito
+    - pagar la patente de mi auto
+    - refinanciar el credito de mi vivienda anv

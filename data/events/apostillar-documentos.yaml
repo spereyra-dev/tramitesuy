@@ -1,0 +1,40 @@
+slug: apostillar-documentos
+name: Apostillar o legalizar documentos
+description: Apostilla y legalización de documentos públicos uruguayos o extranjeros ante el Ministerio de Relaciones Exteriores.
+category: documentos
+keywords:
+  - term: apostilla
+    type: ENTITY
+    weight: 15
+  - term: apostillar
+    type: ACTION
+    weight: 12
+  - term: legalizar
+    type: ACTION
+    weight: 10
+  - term: legalizacion
+    type: ENTITY
+    weight: 12
+  - term: documentos
+    type: ENTITY
+    weight: 8
+  - term: publicos
+    type: MODIFIER
+    weight: 3
+rules:
+  - action: apostillar
+    entity: documentos
+    bonus: 15
+relations:
+  - external_id: "1441"
+    order: 1
+    required: true
+tests:
+  positive:
+    - apostillar un documento
+    - apostilla de mis documentos
+    - legalizar un documento publico uruguayo
+  negative:
+    - tramitar la firma digital
+    - sacar el pasaporte
+    - certificado de antecedentes judiciales
