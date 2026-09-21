@@ -1,0 +1,31 @@
+slug: solicitar-antecedentes-judiciales
+name: Solicitar certificado de antecedentes judiciales
+description: Solicitud del certificado de antecedentes judiciales.
+category: justicia
+keywords:
+  - term: solicitar
+    type: ACTION
+    weight: 10
+  - term: certificado
+    type: ENTITY
+    weight: 5
+  - term: antecedentes
+    type: ENTITY
+    weight: 8
+  - term: judiciales
+    type: MODIFIER
+    weight: 5
+rules:
+  - action: solicitar
+    entity: antecedentes
+    bonus: 15
+relations:
+  - external_id: "307"
+    order: 1
+    required: true
+tests:
+  positive:
+    - quiero solicitar mis antecedentes judiciales
+    - necesito el certificado de antecedentes judiciales
+  negative:
+    - quiero obtener mi certificado de vacunacion

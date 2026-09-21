@@ -1,0 +1,38 @@
+slug: solicitar-garantia-alquiler
+name: Solicitar garantía de alquiler
+description: Trámites para solicitar una garantía al alquilar una vivienda.
+category: vivienda
+keywords:
+  - term: solicitar
+    type: ACTION
+    weight: 10
+  - term: garantia
+    type: ENTITY
+    weight: 8
+  - term: alquiler
+    type: ENTITY
+    weight: 8
+  - term: pasaporte
+    type: ENTITY
+    weight: 15
+    negative: true
+rules:
+  - action: solicitar
+    entity: garantia
+    bonus: 15
+relations:
+  - external_id: "269"
+    order: 1
+    required: true
+  - external_id: "7150"
+    order: 2
+    required: false
+  - external_id: "7151"
+    order: 3
+    required: false
+tests:
+  positive:
+    - necesito una garantia para alquilar
+    - solicitar garantia de alquiler
+  negative:
+    - necesito renovar el pasaporte

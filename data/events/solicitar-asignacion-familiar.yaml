@@ -1,0 +1,28 @@
+slug: solicitar-asignacion-familiar
+name: Solicitar asignación familiar
+description: Solicitud de asignación familiar.
+category: beneficios-familiares
+keywords:
+  - term: solicitar
+    type: ACTION
+    weight: 10
+  - term: asignacion
+    type: ENTITY
+    weight: 8
+  - term: familiar
+    type: MODIFIER
+    weight: 5
+rules:
+  - action: solicitar
+    entity: asignacion
+    bonus: 15
+relations:
+  - external_id: "3582"
+    order: 1
+    required: true
+tests:
+  positive:
+    - quiero solicitar la asignacion familiar
+    - necesito pedir asignacion para mi familia
+  negative:
+    - necesito reclamar por una compra

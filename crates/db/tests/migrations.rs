@@ -371,6 +371,89 @@ async fn generation_projections_have_generation_scoped_unique_slugs_and_a_surfac
 }
 
 #[tokio::test]
+async fn migration_renames_casarse_without_changing_event_id_or_relations() {
+    let (pool, name) = common::fresh_migrated_db().await;
+
+    let category_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO categories (slug, name, order_index) \
+         VALUES ('familia', 'Familia', 1) \
+         RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("seed family category");
+    let event_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO life_events (slug, name, category_id, updated_at) \
+         VALUES ('casarse', 'Casarse', $1, TIMESTAMPTZ '2000-01-01 00:00:00+00') \
+         RETURNING id",
+    )
+    .bind(category_id)
+    .fetch_one(&pool)
+    .await
+    .expect("seed pre-0016 marriage event");
+    let procedure_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO procedures (external_id, name, status) \
+         VALUES ('4594', 'Inscripción de matrimonio', 'active') \
+         RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("seed official marriage registration procedure");
+    sqlx::query(
+        "INSERT INTO life_event_procedures (life_event_id, procedure_id, order_index, required) \
+         VALUES ($1, $2, 1, TRUE)",
+    )
+    .bind(event_id)
+    .bind(procedure_id)
+    .execute(&pool)
+    .await
+    .expect("seed event-procedure relation");
+
+    // Fresh setup includes every embedded migration, so make 0016 pending
+    // after introducing the pre-0016 row it must transform.
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 16")
+        .execute(&pool)
+        .await
+        .expect("make the rename migration pending");
+    sqlx::migrate!("../../migrations")
+        .run(&pool)
+        .await
+        .expect("apply pending 0016 rename migration");
+
+    let (renamed_id, updated_at_changed): (sqlx::types::Uuid, bool) = sqlx::query_as(
+        "SELECT id, updated_at > TIMESTAMPTZ '2000-01-01 00:00:00+00' \
+         FROM life_events WHERE slug = 'inscribir-matrimonio'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("0016 renames the existing marriage event");
+    assert_eq!(renamed_id, event_id, "the rename must preserve the event UUID");
+    assert!(updated_at_changed, "the rename must refresh updated_at");
+
+    let relation_event_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "SELECT life_event_id FROM life_event_procedures WHERE procedure_id = $1",
+    )
+    .bind(procedure_id)
+    .fetch_one(&pool)
+    .await
+    .expect("event-procedure relation remains after the rename");
+    assert_eq!(
+        relation_event_id, event_id,
+        "the rename must preserve foreign-key relations"
+    );
+
+    let old_slug_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM life_events WHERE slug = 'casarse'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("count old slug rows");
+    assert_eq!(old_slug_count, 0, "the old slug must no longer be present");
+
+    common::drop_test_db(&name).await;
+}
+
+#[tokio::test]
 async fn migrations_create_no_extensions() {
     let (pool, name) = common::fresh_provisioned_db().await;
     let before: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_extension")

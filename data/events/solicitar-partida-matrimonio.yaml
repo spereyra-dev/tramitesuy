@@ -1,0 +1,42 @@
+slug: solicitar-partida-matrimonio
+name: Solicitar partida de matrimonio
+description: Solicitud de una partida o certificado de matrimonio.
+category: familia
+keywords:
+  - term: solicitar
+    type: ACTION
+    weight: 10
+  - term: pedir
+    type: ACTION
+    weight: 10
+  - term: partida
+    type: ENTITY
+    weight: 8
+  - term: matrimonio
+    type: ENTITY
+    weight: 8
+  - term: casar
+    type: ACTION
+    weight: 15
+    negative: true
+  - term: inscribir
+    type: ACTION
+    weight: 15
+    negative: true
+rules:
+  - action: solicitar
+    entity: partida
+    bonus: 15
+  - action: pedir
+    entity: matrimonio
+    bonus: 15
+relations:
+  - external_id: "231-3"
+    order: 1
+    required: true
+tests:
+  positive:
+    - solicitar partida de matrimonio
+    - pedir certificado de matrimonio
+  negative:
+    - quiero inscribir mi matrimonio

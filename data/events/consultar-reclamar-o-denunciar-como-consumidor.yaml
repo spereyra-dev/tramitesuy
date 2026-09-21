@@ -1,0 +1,122 @@
+# Citizen event: consumer consultation, complaint, and report/denuncia.
+# The official catalog procedure (external id 2629) covers all three
+# supported actions — consultar, reclamar, denunciar — under one consumer
+# event; the seed's keywords/rules/tests must keep all three separable
+# from the vehicle events' own complaint/consultation vocabulary.
+#
+# Tuning contract (strict TDD, per-event RED observed on the minimal v0):
+# every action keyword pairs with the `consumidor` entity through a rule so
+# a lone action verb never carries the event alone, and the vehicle-vocabulary
+# negatives (`vehiculo`, `robo`, `deuda`, `patente`, ...) keep the consumer
+# event from matching broad unrelated actions like `denunciar un vehiculo
+# robado` or `consultar la deuda de mi vehiculo`.
+slug: consultar-reclamar-o-denunciar-como-consumidor
+name: Consultar, reclamar o denunciar como consumidor
+description: Consulta de derechos del consumidor y presentación de reclamos o denuncias por problemas con productos o servicios.
+category: consumo
+keywords:
+  - term: reclamar
+    type: ACTION
+    weight: 10
+  - term: consultar
+    type: ACTION
+    weight: 10
+  - term: denunciar
+    type: ACTION
+    weight: 10
+  - term: consumidor
+    type: ENTITY
+    weight: 8
+  - term: consumo
+    type: ENTITY
+    weight: 8
+  - term: producto
+    type: MODIFIER
+    weight: 4
+  - term: defensa
+    type: MODIFIER
+    weight: 4
+  # Vehicle/debt vocabulary penalties: the three consumer actions must not
+  # win queries that belong to the vehiculos events' complaint surfaces.
+  - term: vehiculo
+    type: ENTITY
+    weight: 10
+    negative: true
+  - term: deuda
+    type: ENTITY
+    weight: 10
+    negative: true
+  - term: patente
+    type: ENTITY
+    weight: 10
+    negative: true
+  - term: matricula
+    type: ENTITY
+    weight: 10
+    negative: true
+  - term: multa
+    type: ENTITY
+    weight: 10
+    negative: true
+  - term: licencia
+    type: ENTITY
+    weight: 10
+    negative: true
+  - term: robo
+    type: ENTITY
+    weight: 10
+    negative: true
+  - term: accidente
+    type: ENTITY
+    weight: 10
+    negative: true
+  - term: pagar
+    type: ACTION
+    weight: 15
+    negative: true
+  - term: comprar
+    type: ACTION
+    weight: 15
+    negative: true
+  - term: vender
+    type: ACTION
+    weight: 15
+    negative: true
+  - term: transferir
+    type: ACTION
+    weight: 15
+    negative: true
+  - term: perder
+    type: ACTION
+    weight: 15
+    negative: true
+rules:
+  - action: reclamar
+    entity: consumidor
+    bonus: 15
+  - action: denunciar
+    entity: consumidor
+    bonus: 15
+  - action: consultar
+    entity: consumidor
+    bonus: 15
+  - action: reclamar
+    entity: producto
+    bonus: 15
+relations:
+  - external_id: "2629"
+    order: 1
+    required: true
+tests:
+  positive:
+    - hacer un reclamo de consumidor contra la empresa
+    - denunciar un abuso contra un consumidor
+    - consultar los derechos del consumidor
+    - donde reclamo por un producto defectuoso
+    - tengo una queja contra la empresa
+  negative:
+    - denunciar un vehiculo robado
+    - consultar la deuda de mi vehiculo
+    - pagar la patente de mi auto
+    - compre un auto usado
+    - denunciar un robo de mi auto

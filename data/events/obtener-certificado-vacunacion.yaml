@@ -1,0 +1,28 @@
+slug: obtener-certificado-vacunacion
+name: Obtener certificado de vacunación
+description: Obtención del certificado de vacunación.
+category: salud
+keywords:
+  - term: obtener
+    type: ACTION
+    weight: 10
+  - term: certificado
+    type: ENTITY
+    weight: 8
+  - term: vacunacion
+    type: ENTITY
+    weight: 8
+rules:
+  - action: obtener
+    entity: vacunacion
+    bonus: 15
+relations:
+  - external_id: "3874"
+    order: 1
+    required: true
+tests:
+  positive:
+    - quiero obtener mi certificado de vacunacion
+    - obtener certificado de vacunacion
+  negative:
+    - solicitar una jubilacion

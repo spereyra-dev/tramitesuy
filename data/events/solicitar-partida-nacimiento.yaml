@@ -1,0 +1,38 @@
+slug: solicitar-partida-nacimiento
+name: Solicitar partida de nacimiento
+description: Solicitud de una partida o certificado de nacimiento.
+category: familia
+keywords:
+  - term: solicitar
+    type: ACTION
+    weight: 10
+  - term: pedir
+    type: ACTION
+    weight: 10
+  - term: partida
+    type: ENTITY
+    weight: 8
+  - term: nacimiento
+    type: ENTITY
+    weight: 8
+  - term: inscribir
+    type: ACTION
+    weight: 15
+    negative: true
+rules:
+  - action: solicitar
+    entity: partida
+    bonus: 15
+  - action: pedir
+    entity: nacimiento
+    bonus: 15
+relations:
+  - external_id: "231-1"
+    order: 1
+    required: true
+tests:
+  positive:
+    - solicitar partida de nacimiento
+    - pedir certificado de nacimiento
+  negative:
+    - inscribir un nacimiento

@@ -1,0 +1,28 @@
+slug: obtener-historia-laboral
+name: Obtener historia laboral
+description: Obtención de la historia laboral ante el Banco de Previsión Social.
+category: trabajo
+keywords:
+  - term: obtener
+    type: ACTION
+    weight: 10
+  - term: historia
+    type: ENTITY
+    weight: 8
+  - term: laboral
+    type: ENTITY
+    weight: 8
+rules:
+  - action: obtener
+    entity: historia
+    bonus: 15
+relations:
+  - external_id: "3868"
+    order: 1
+    required: true
+tests:
+  positive:
+    - quiero obtener mi historia laboral
+    - consultar mi historia laboral del BPS
+  negative:
+    - solicitar subsidio por desempleo

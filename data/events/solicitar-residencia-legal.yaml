@@ -1,0 +1,28 @@
+slug: solicitar-residencia-legal
+name: Solicitar residencia legal
+description: Solicitud de residencia legal.
+category: migracion
+keywords:
+  - term: solicitar
+    type: ACTION
+    weight: 10
+  - term: residencia
+    type: ENTITY
+    weight: 8
+  - term: legal
+    type: MODIFIER
+    weight: 3
+rules:
+  - action: solicitar
+    entity: residencia
+    bonus: 15
+relations:
+  - external_id: "2599"
+    order: 1
+    required: true
+tests:
+  positive:
+    - solicitar residencia legal
+    - quiero solicitar residencia
+  negative:
+    - solicitar una jubilacion

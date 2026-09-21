@@ -1,0 +1,29 @@
+slug: solicitar-jubilacion
+name: Solicitar jubilación
+description: Solicitud de jubilación.
+category: jubilaciones
+keywords:
+  - term: solicitar
+    type: ACTION
+    weight: 10
+  - term: jubilacion
+    type: ENTITY
+    weight: 8
+  - term: subsidio
+    type: ENTITY
+    weight: 15
+    negative: true
+rules:
+  - action: solicitar
+    entity: jubilacion
+    bonus: 15
+relations:
+  - external_id: "7458"
+    order: 1
+    required: true
+tests:
+  positive:
+    - solicitar una jubilacion
+    - quiero solicitar mi jubilacion
+  negative:
+    - solicitar subsidio por desempleo

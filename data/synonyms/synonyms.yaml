@@ -37,3 +37,31 @@ synonyms:
     canonical: patente
   - term: placas
     canonical: patente
+  # Housing vocabulary → canonical `alquiler`
+  - term: arrendamiento
+    canonical: alquiler
+  - term: arrendamientos
+    canonical: alquiler
+  # Civil-registry document surfaces → canonical `partida`
+  - term: certificado
+    canonical: partida
+  - term: certificados
+    canonical: partida
+  # Marriage vocabulary → canonical `matrimonio`
+  - term: boda
+    canonical: matrimonio
+  - term: bodas
+    canonical: matrimonio
+  - term: casamiento
+    canonical: matrimonio
+  - term: casamientos
+    canonical: matrimonio
+  # Consumer-complaint surfaces → canonical action `reclamar` (the stem
+  # rule already folds reclamo/reclamos/denuncia/denuncias; the queja
+  # family is an irregular surface the stem rule cannot reach).
+  - term: queja
+    canonical: reclamar
+  - term: quejas
+    canonical: reclamar
+  - term: quejarse
+    canonical: reclamar

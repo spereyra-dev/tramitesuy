@@ -1,0 +1,38 @@
+slug: sacar-pasaporte
+name: Sacar o renovar el pasaporte
+description: Trámites para la primera expedición o renovación del pasaporte uruguayo.
+category: documentos
+keywords:
+  - term: sacar
+    type: ACTION
+    weight: 10
+  - term: renovar
+    type: ACTION
+    weight: 10
+  - term: pasaporte
+    type: ENTITY
+    weight: 8
+  - term: partida
+    type: ENTITY
+    weight: 15
+    negative: true
+rules:
+  - action: sacar
+    entity: pasaporte
+    bonus: 15
+  - action: renovar
+    entity: pasaporte
+    bonus: 15
+relations:
+  - external_id: "606"
+    order: 1
+    required: true
+  - external_id: "6889"
+    order: 2
+    required: false
+tests:
+  positive:
+    - quiero sacar mi pasaporte
+    - necesito renovar el pasaporte
+  negative:
+    - solicitar una partida de nacimiento
