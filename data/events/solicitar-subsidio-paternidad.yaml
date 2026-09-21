@@ -1,0 +1,42 @@
+slug: solicitar-subsidio-paternidad
+name: Solicitar el subsidio por paternidad
+description: Prestación económica del BPS para el trabajador durante su licencia por paternidad.
+category: trabajo
+keywords:
+  - term: paternidad
+    type: ENTITY
+    weight: 15
+  - term: subsidio
+    type: ENTITY
+    weight: 15
+  - term: licencia
+    type: ENTITY
+    weight: 6
+  - term: bps
+    type: ENTITY
+    weight: 6
+  - term: maternidad
+    type: ENTITY
+    weight: 12
+    negative: true
+  - term: desempleo
+    type: ENTITY
+    weight: 12
+    negative: true
+rules:
+  - action: solicitar
+    entity: paternidad
+    bonus: 15
+relations:
+  - external_id: "3889"
+    order: 1
+    required: true
+tests:
+  positive:
+    - subsidio por paternidad del bps
+    - subsidio por la licencia de paternidad
+    - nació mi hijo y quiero el subsidio por paternidad
+  negative:
+    - subsidio por maternidad
+    - solicitar el subsidio de desempleo
+    - dar de alta a un trabajador

@@ -1,0 +1,49 @@
+slug: regularizar-trabajo-domestico
+name: Regularizar el trabajo doméstico
+description: 'Regularización del servicio doméstico ante el BPS y el MTSS: inscribir al empleador, regularizar la actividad, bajas retroactivas y situaciones especiales.'
+category: trabajo
+keywords:
+  - term: domestico
+    type: ENTITY
+    weight: 15
+  - term: regularizar
+    type: ACTION
+    weight: 12
+  - term: empleador
+    type: ENTITY
+    weight: 10
+  - term: inscribir
+    type: ACTION
+    weight: 6
+  - term: baja
+    type: ENTITY
+    weight: 8
+  - term: servicio
+    type: MODIFIER
+    weight: 4
+rules:
+  - action: regularizar
+    entity: domestico
+    bonus: 15
+relations:
+  - external_id: "7568"
+    order: 1
+    required: true
+  - external_id: "7647"
+    order: 2
+    required: true
+  - external_id: "7618"
+    order: 3
+    required: false
+  - external_id: "7479"
+    order: 4
+    required: false
+tests:
+  positive:
+    - regularizar a mi empleada domestica
+    - inscribirme como empleador de trabajo domestico
+    - solicitar la baja retroactiva del servicio domestico
+  negative:
+    - dar de alta a un trabajador en el bps
+    - regularizar la morosidad de mi cooperativa
+    - solicitar el permiso de construccion
