@@ -1,0 +1,38 @@
+slug: cesar-aportes-jubilatorios
+name: Cesar los aportes jubilatorios
+description: Declaración de opción de no realizar aportes jubilatorios para trabajadores no dependientes, al amparo del art. 199 de la Ley 20.130.
+category: jubilaciones
+keywords:
+  - term: aportes
+    type: ENTITY
+    weight: 15
+  - term: cesar
+    type: ACTION
+    weight: 12
+  - term: jubilatorios
+    type: ENTITY
+    weight: 10
+  - term: aportar
+    type: ACTION
+    weight: 10
+  - term: jubilacion
+    type: ENTITY
+    weight: 10
+    negative: true
+rules:
+  - action: cesar
+    entity: aportes
+    bonus: 15
+relations:
+  - external_id: "7572"
+    order: 1
+    required: true
+tests:
+  positive:
+    - cesar mis aportes jubilatorios
+    - no quiero aportar mas al bps
+    - dejar de aportar al bps
+  negative:
+    - solicitar mi jubilacion
+    - estadias vacacionales para jubilados
+    - dar de alta a un trabajador

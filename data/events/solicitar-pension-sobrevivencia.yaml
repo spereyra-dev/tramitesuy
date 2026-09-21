@@ -1,0 +1,42 @@
+slug: solicitar-pension-sobrevivencia
+name: Solicitar la pensión por sobrevivencia
+description: Prestación económica mensual del BPS que se genera a partir del fallecimiento o desaparición forzada de la persona trabajadora o jubilada.
+category: jubilaciones
+keywords:
+  - term: pension
+    type: ENTITY
+    weight: 15
+  - term: sobrevivencia
+    type: ENTITY
+    weight: 12
+  - term: fallecer
+    type: ACTION
+    weight: 8
+  - term: viuda
+    type: ENTITY
+    weight: 6
+  - term: jubilacion
+    type: ENTITY
+    weight: 12
+    negative: true
+  - term: desempleo
+    type: ENTITY
+    weight: 12
+    negative: true
+rules:
+  - action: solicitar
+    entity: pension
+    bonus: 15
+relations:
+  - external_id: "3575"
+    order: 1
+    required: true
+tests:
+  positive:
+    - pension por sobrevivencia del bps
+    - pensión por el fallecimiento de mi conyuge
+    - solicitar la pension de sobrevivencia
+  negative:
+    - solicitar mi jubilacion
+    - solicitar el subsidio de desempleo
+    - estadias vacacionales para jubilados

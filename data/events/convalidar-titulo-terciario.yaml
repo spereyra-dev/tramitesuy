@@ -1,0 +1,43 @@
+slug: convalidar-titulo-terciario
+name: Convalidar o revalidar un título terciario
+description: Reconocimientos y reválidas de títulos terciarios y registro temporario de títulos extranjeros de especialidades médicas.
+category: educacion
+keywords:
+  - term: titulo
+    type: ENTITY
+    weight: 12
+  - term: convalidar
+    type: ACTION
+    weight: 12
+  - term: revalidar
+    type: ACTION
+    weight: 10
+  - term: terciario
+    type: ENTITY
+    weight: 10
+  - term: universitario
+    type: MODIFIER
+    weight: 6
+  - term: extranjero
+    type: MODIFIER
+    weight: 6
+rules:
+  - action: convalidar
+    entity: titulo
+    bonus: 15
+relations:
+  - external_id: "6174"
+    order: 1
+    required: true
+  - external_id: "4095"
+    order: 2
+    required: false
+tests:
+  positive:
+    - convalidar mi titulo universitario
+    - revalidar el titulo terciario en uruguay
+    - registro de mi titulo medico extranjero
+  negative:
+    - revalidar la licencia de conducir
+    - beca carlos quijano
+    - inscripcion a los llamados de vivienda

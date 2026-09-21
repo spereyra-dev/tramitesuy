@@ -1,0 +1,37 @@
+slug: estadias-vacacionales-jubilados
+name: Estadías vacacionales para jubilados
+description: Estadías vacacionales para jubilados y pensionistas mayores de 55 años, afiliados o no a gremios.
+category: jubilaciones
+keywords:
+  - term: jubilados
+    type: ENTITY
+    weight: 15
+  - term: pensionistas
+    type: ENTITY
+    weight: 10
+  - term: vacaciones
+    type: ENTITY
+    weight: 10
+  - term: estadia
+    type: ENTITY
+    weight: 8
+  - term: solicito
+    type: ACTION
+    weight: 6
+rules:
+  - action: solicito
+    entity: estadia
+    bonus: 15
+relations:
+  - external_id: "3574"
+    order: 1
+    required: true
+tests:
+  positive:
+    - estadias vacacionales para jubilados
+    - vacaciones para pensionistas
+    - quiero la estadia vacacional para mayores de 55
+  negative:
+    - solicitar el subsidio de desempleo
+    - solicitar mi jubilacion
+    - licencia por maternidad

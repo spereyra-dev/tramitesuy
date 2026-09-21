@@ -274,4 +274,13 @@ cases:
     expect_top1: escriturar-vivienda-anv
   - query: "refinanciar el saldo de la cooperativa de vivienda"
     expect_top1: cooperativas-vivienda
+  # ── lote-8 bps/jubilaciones and educacion positives ────────────────
+  - query: "pension por sobrevivencia del bps"
+    expect_top1: solicitar-pension-sobrevivencia
+  - query: "estadias vacacionales para jubilados"
+    expect_top1: estadias-vacacionales-jubilados
+  - query: "convalidar mi titulo universitario"
+    expect_top1: convalidar-titulo-terciario
+  - query: "cesar mis aportes jubilatorios"
+    expect_top1: cesar-aportes-jubilatorios
 
