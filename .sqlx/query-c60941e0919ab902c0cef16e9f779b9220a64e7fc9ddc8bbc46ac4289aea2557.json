@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE catalog_generations SET published_at = now() WHERE generation_id = $1 AND status = 'published' RETURNING published_at AS \"published_at!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "published_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "published_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "c60941e0919ab902c0cef16e9f779b9220a64e7fc9ddc8bbc46ac4289aea2557"
+}

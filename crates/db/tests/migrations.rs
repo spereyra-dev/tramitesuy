@@ -88,6 +88,7 @@ async fn catalog_generation_manifest_has_required_columns_and_status_constraint(
         "projection_status",
         "active_generation_id",
         "adopted_at",
+        "inflight_generation_ids",
     ];
     expected.sort();
     assert_eq!(

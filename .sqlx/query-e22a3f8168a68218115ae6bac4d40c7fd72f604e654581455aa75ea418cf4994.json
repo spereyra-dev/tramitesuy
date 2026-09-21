@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE catalog_generations SET active_generation_id = $1, adopted_at = now(), inflight_generation_ids = $2 WHERE generation_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e22a3f8168a68218115ae6bac4d40c7fd72f604e654581455aa75ea418cf4994"
+}

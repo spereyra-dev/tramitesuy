@@ -3,6 +3,7 @@
 //! immutable per-generation projections, plus the publication validation
 //! gate. The API-side snapshot loading is stage 3's later slice (S7).
 
+pub mod adopt;
 pub mod build;
 pub mod validate;
 
