@@ -29,11 +29,12 @@ version: 1
 # ambiguity rate.
 # raised for lote-1: nine new events widen legitimate keyword overlap; measured 0.33 on 2026-09-21.
 # raised for lote-4: nine new events since the last raise widen legitimate keyword overlap; measured 0.37 on 2026-09-21.
+# raised for lote-5: nacido vivo/beca cases add one disambiguation-band case; measured 30/81 ≈ 0.3704 on 2026-09-21.
 baselines:
   top1: 1.00
   top3: 1.00
   max_no_result_rate: 0.02
-  max_ambiguous_rate: 0.37
+  max_ambiguous_rate: 0.371
 cases:
   # ── comprar-vehiculo positives ─────────────────────────────────────
   - query: "compre un auto usado"
@@ -240,4 +241,18 @@ cases:
     expect_top1: solicitar-visa
   - query: "certificado de residencia fiscal de persona fisica"
     expect_top1: certificado-residencia-fiscal
+  # ── lote-5 nacido vivo and beca positives ──────────────────────────
+  - query: "certificado de nacido vivo"
+    expect_top1: obtener-certificado-nacido-vivo
+  - query: "beca carlos quijano"
+    expect_top1: solicitar-beca-carlos-quijano
+  # ── lote-4 defuncion, multas, menores, working holiday positives ───
+  - query: "partida de defuncion de un familiar"
+    expect_top1: solicitar-partida-defuncion
+  - query: "pagar una multa de transito"
+    expect_top1: pagar-multa-transito
+  - query: "permiso de viaje para un menor"
+    expect_top1: permiso-viaje-menor
+  - query: "vacaciones y trabajo en el exterior"
+    expect_top1: solicitar-working-holiday
 

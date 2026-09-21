@@ -1,0 +1,38 @@
+slug: solicitar-beca-carlos-quijano
+name: Solicitar la Beca Carlos Quijano
+description: Beca Carlos Quijano (Ley 18.046), subvención de gastos para estudios en Uruguay y el exterior.
+category: educacion
+keywords:
+  - term: beca
+    type: ENTITY
+    weight: 15
+  - term: quijano
+    type: ENTITY
+    weight: 12
+  - term: estudio
+    type: ENTITY
+    weight: 8
+    negative: true
+  - term: posgrado
+    type: ENTITY
+    weight: 6
+  - term: subsidiar
+    type: MODIFIER
+    weight: 4
+rules:
+  - action: solicitar
+    entity: beca
+    bonus: 15
+relations:
+  - external_id: "7695"
+    order: 1
+    required: true
+tests:
+  positive:
+    - beca carlos quijano
+    - solicitar la beca de estudios
+    - beca de posgrado
+  negative:
+    - becas para estudiar en el exterior
+    - sacar el pasaporte
+    - dar de alta a un trabajador

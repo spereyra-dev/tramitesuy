@@ -30,6 +30,9 @@ relations:
   - external_id: "6889"
     order: 2
     required: false
+  - external_id: "4678"
+    order: 3
+    required: false
 tests:
   positive:
     - quiero sacar mi pasaporte

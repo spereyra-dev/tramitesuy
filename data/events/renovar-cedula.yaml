@@ -69,6 +69,9 @@ relations:
   - external_id: "5800"
     order: 13
     required: false
+  - external_id: "5167"
+    order: 14
+    required: false
 tests:
   positive:
     - renovar la cedula de identidad

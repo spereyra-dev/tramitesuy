@@ -32,3 +32,5 @@ Continue the nonstop taxonomy expansion with four catalog-verified events.
   - 2026-09-21: resolved menor/cedula collision (negative cedula in permiso-viaje-menor; sacar-cedula primera MODIFIER 6).
   - 2026-09-21: full workspace green after recorded-count updates (fixture/seed 47 events).
 - [ ] T4: seed, end-to-end check, gga-reviewed commit.
+
+2026-09-21: the four lote-4 golden cases appended late (85 total, at cap); previous T3 evidence missed them.

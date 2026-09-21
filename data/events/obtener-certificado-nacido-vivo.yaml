@@ -1,0 +1,42 @@
+slug: obtener-certificado-nacido-vivo
+name: Obtener el certificado de nacido vivo
+description: Solicitud de fotocopia de la Constancia de Inscripción del Nacimiento (nacido vivo) en el Registro Civil, con originales en el Ministerio de Salud Pública.
+category: documentos
+keywords:
+  - term: certificado
+    type: ENTITY
+    weight: 12
+    canonical: partida
+  - term: nacido
+    type: ENTITY
+    weight: 10
+  - term: vivo
+    type: ENTITY
+    weight: 10
+  - term: constancia
+    type: ENTITY
+    weight: 8
+  - term: fotocopia
+    type: MODIFIER
+    weight: 4
+  - term: partida
+    type: ENTITY
+    weight: 15
+    negative: true
+rules:
+  - action: obtener
+    entity: vivo
+    bonus: 12
+relations:
+  - external_id: "3885"
+    order: 1
+    required: true
+tests:
+  positive:
+    - certificado de nacido vivo
+    - fotocopia de la constancia de nacimiento del msp
+    - necesito la constancia de nacido vivo
+  negative:
+    - partida de nacimiento
+    - sacar la cedula de identidad
+    - certificado de defuncion
