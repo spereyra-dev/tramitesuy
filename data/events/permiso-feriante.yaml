@@ -1,0 +1,55 @@
+slug: permiso-feriante
+name: Permiso de feriante
+description: Calidad de feriante, traspaso de puestos, cambio de feria y permisos de ferias ante las intendencias.
+category: trabajo
+keywords:
+  - term: feria
+    type: ENTITY
+    weight: 15
+  - term: feriante
+    type: ENTITY
+    weight: 12
+  - term: permiso
+    type: ENTITY
+    weight: 10
+  - term: puesto
+    type: ENTITY
+    weight: 8
+  - term: traspasar
+    type: ACTION
+    weight: 6
+  - term: cambiar
+    type: ACTION
+    weight: 6
+rules:
+  - action: obtener
+    entity: permiso
+    bonus: 15
+  - action: cambiar
+    entity: feria
+    bonus: 12
+relations:
+  - external_id: "2695"
+    order: 1
+    required: true
+  - external_id: "2693"
+    order: 2
+    required: false
+  - external_id: "2684"
+    order: 3
+    required: false
+  - external_id: "5164"
+    order: 4
+    required: false
+  - external_id: "6229"
+    order: 5
+    required: false
+tests:
+  positive:
+    - sacar el permiso de feriante
+    - cambiar de feria
+    - traspasar mi puesto de feria
+  negative:
+    - solicitar el permiso de construccion
+    - dar de alta a un trabajador
+    - pagar la factura de la ute

@@ -1,0 +1,56 @@
+slug: pagar-factura-ute-ose
+name: Pagar facturas de UTE y OSE
+description: Pago de facturas de UTE y OSE por internet, modalidades de pago y cambio de fecha de vencimiento elegida.
+category: impuestos
+keywords:
+  - term: factura
+    type: ENTITY
+    weight: 15
+  - term: pagar
+    type: ACTION
+    weight: 10
+  - term: ute
+    type: ENTITY
+    weight: 10
+  - term: ose
+    type: ENTITY
+    weight: 10
+  - term: vencimiento
+    type: ENTITY
+    weight: 8
+  - term: patente
+    type: ENTITY
+    weight: 8
+    negative: true
+  - term: internet
+    type: MODIFIER
+    weight: 4
+rules:
+  - action: pagar
+    entity: factura
+    bonus: 15
+relations:
+  - external_id: "1380"
+    order: 1
+    required: true
+  - external_id: "1386"
+    order: 2
+    required: false
+  - external_id: "1404"
+    order: 3
+    required: false
+  - external_id: "1400"
+    order: 4
+    required: false
+  - external_id: "1619"
+    order: 5
+    required: false
+tests:
+  positive:
+    - pagar la factura de la ute online
+    - cambiar el vencimiento de la factura de ose
+    - modalidades de pago de la factura ute
+  negative:
+    - pagar la patente de mi auto
+    - pagar una multa de transito
+    - convenio de pago de los adeudos de patente

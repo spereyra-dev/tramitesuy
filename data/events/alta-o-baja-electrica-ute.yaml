@@ -1,0 +1,49 @@
+slug: alta-o-baja-electrica-ute
+name: Alta o baja del servicio eléctrico (UTE)
+description: Alta del suministro eléctrico, baja provisoria o definitiva y verificación de instalaciones ante UTE.
+category: consumo
+keywords:
+  - term: alta
+    type: ENTITY
+    weight: 12
+  - term: baja
+    type: ENTITY
+    weight: 12
+  - term: electrico
+    type: ENTITY
+    weight: 10
+  - term: luz
+    type: ENTITY
+    weight: 8
+  - term: ute
+    type: ENTITY
+    weight: 6
+  - term: servicio
+    type: MODIFIER
+    weight: 4
+rules:
+  - action: alta
+    entity: electrico
+    bonus: 15
+  - action: baja
+    entity: electrico
+    bonus: 15
+relations:
+  - external_id: "1408"
+    order: 1
+    required: true
+  - external_id: "1387"
+    order: 2
+    required: true
+  - external_id: "1418"
+    order: 3
+    required: false
+tests:
+  positive:
+    - dar de alta la luz de mi casa
+    - solicitar la baja del servicio electrico
+    - alta de suministro ute
+  negative:
+    - pagar la factura de la ute
+    - solicitar el subsidio de desempleo
+    - cambiar el local de cobro del bps
