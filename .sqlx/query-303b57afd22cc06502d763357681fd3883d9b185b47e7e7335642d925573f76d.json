@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT e.slug AS \"event_slug!\",\n                  (jsonb_array_elements(c.cards) ->> 'slug') AS \"procedure_slug!\"\n           FROM generation_event_cards c\n           JOIN generation_life_events e\n             ON e.generation_id = c.generation_id AND e.slug = c.slug\n           WHERE c.generation_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "event_slug!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "generation_life_events",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "procedure_slug!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "303b57afd22cc06502d763357681fd3883d9b185b47e7e7335642d925573f76d"
+}

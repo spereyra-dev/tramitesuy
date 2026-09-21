@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE catalog_generations SET status = 'validated' WHERE generation_id = $1 AND status = 'building'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1e69b83e4622d3dfade1fdcf5066ac6b5a420a556f708050e7f38f4f933443a8"
+}

@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status, projection_status, event_count, procedure_count FROM catalog_generations WHERE generation_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "projection_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "projection_status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "event_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "event_count"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "procedure_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "procedure_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1d3f214fa53a026818d35b7fa63be78f50b31be3354d70662d49a5652a79a5e1"
+}
