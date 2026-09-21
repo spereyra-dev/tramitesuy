@@ -99,8 +99,8 @@ async fn seed_taxonomy_writes_every_projection_and_is_idempotent() {
     );
     assert!(keyword_count > 0, "typed keywords must be projected");
     assert_eq!(
-        synonym_count, 28,
-        "the synonyms projection must match the YAML seed (lote-2: 28 total synonyms)"
+        synonym_count, 37,
+        "the synonyms projection must match the YAML seed (misspellings batch: 37 total synonyms)"
     );
     assert!(
         relation_count > 0,

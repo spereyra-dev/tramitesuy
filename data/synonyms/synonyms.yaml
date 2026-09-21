@@ -87,3 +87,11 @@ synonyms:
     canonical: jubilacion
   - term: madricula
     canonical: matricula
+  - term: behiculo
+    canonical: vehiculo
+  - term: veiculo
+    canonical: vehiculo
+  - term: lisencia
+    canonical: licencia
+  - term: vivenda
+    canonical: vivienda
