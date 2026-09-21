@@ -1,0 +1,61 @@
+slug: solicitar-permiso-construccion
+name: Solicitar el permiso de construcción
+description: "Trámites de permiso de construcción y edificación ante las intendencias: obras nuevas, regularizaciones y edificaciones."
+category: vivienda
+keywords:
+  - term: permiso
+    type: ENTITY
+    weight: 15
+  - term: construccion
+    type: ENTITY
+    weight: 15
+  - term: construir
+    type: ACTION
+    weight: 10
+  - term: obra
+    type: ENTITY
+    weight: 10
+  - term: edificar
+    type: ACTION
+    weight: 8
+  - term: edificacion
+    type: ENTITY
+    weight: 10
+  - term: regularizar
+    type: MODIFIER
+    weight: 5
+rules:
+  - action: construir
+    entity: construccion
+    bonus: 15
+relations:
+  - external_id: "3498"
+    order: 1
+    required: true
+  - external_id: "6135"
+    order: 2
+    required: false
+  - external_id: "6493"
+    order: 3
+    required: false
+  - external_id: "6600"
+    order: 4
+    required: false
+  - external_id: "4984"
+    order: 5
+    required: false
+  - external_id: "4861"
+    order: 6
+    required: false
+  - external_id: "7179"
+    order: 7
+    required: false
+tests:
+  positive:
+    - solicitar el permiso de construccion
+    - quiero construir una casa y necesito el permiso
+    - regularizar una obra construida
+  negative:
+    - comprar una vivienda del mvot
+    - solicitar la garantia de alquiler
+    - escriturar mi vivienda anv
