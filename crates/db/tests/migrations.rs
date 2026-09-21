@@ -455,6 +455,199 @@ async fn migration_renames_casarse_without_changing_event_id_or_relations() {
     common::drop_test_db(&name).await;
 }
 
+// Verified real-world divergence: the dev DB seeded the post-rename slug
+// ('inscribir-matrimonio') BEFORE 0016 ran, so life_events briefly carries
+// BOTH slugs and 0016's plain UPDATE violates life_events_slug_key at boot.
+// A hardened 0016 must absorb the duplicate's children into the canonical
+// 'casarse' row (keeping its UUID), drop the duplicate, then rename —
+// leaving one 'inscribir-matrimonio' event with the union of keywords and
+// procedure relations and no duplicated (event, term) keyword rows.
+#[tokio::test]
+async fn migration_reconciles_seeded_duplicate_before_the_rename() {
+    let (pool, name) = common::fresh_migrated_db().await;
+
+    let category_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO categories (slug, name, order_index) \
+         VALUES ('familia', 'Familia', 1) \
+         RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("seed family category");
+    let canonical_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO life_events (slug, name, category_id, updated_at) \
+         VALUES ('casarse', 'Casarse', $1, TIMESTAMPTZ '2000-01-01 00:00:00+00') \
+         RETURNING id",
+    )
+    .bind(category_id)
+    .fetch_one(&pool)
+    .await
+    .expect("seed canonical pre-0016 marriage event");
+    // Keywords of the divergent real-world projection: casarse kept its
+    // original rows while inscribir-matrimonio was seeded from the renamed
+    // YAML, overlapping on inscribir/matrimonio/partida.
+    for (term, kind, weight) in [
+        ("casar", "ACTION", 3),
+        ("inscribir", "ACTION", 3),
+        ("matrimonio", "ENTITY", 2),
+        ("partida", "ENTITY", 2),
+    ] {
+        sqlx::query(
+            "INSERT INTO life_event_keywords (life_event_id, term, type, weight) \
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(canonical_id)
+        .bind(term)
+        .bind(kind)
+        .bind(weight)
+        .execute(&pool)
+        .await
+        .expect("seed canonical event keyword");
+    }
+    let marriage_procedure_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO procedures (external_id, name, status) \
+         VALUES ('4594', 'Inscripción de matrimonio', 'active') \
+         RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("seed official marriage registration procedure");
+    sqlx::query(
+        "INSERT INTO life_event_procedures (life_event_id, procedure_id, order_index, required) \
+         VALUES ($1, $2, 1, TRUE)",
+    )
+    .bind(canonical_id)
+    .bind(marriage_procedure_id)
+    .execute(&pool)
+    .await
+    .expect("seed canonical event-procedure relation");
+
+    let duplicate_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO life_events (slug, name, category_id, updated_at) \
+         VALUES ('inscribir-matrimonio', 'Inscribir matrimonio', $1, TIMESTAMPTZ '2000-01-01 00:00:00+00') \
+         RETURNING id",
+    )
+    .bind(category_id)
+    .fetch_one(&pool)
+    .await
+    .expect("seed divergent post-rename duplicate event");
+    for (term, kind, weight) in [
+        ("inscribir", "ACTION", 3),
+        ("matrimonio", "ENTITY", 2),
+        ("partida", "ENTITY", 2),
+        ("registrar", "ACTION", 3),
+    ] {
+        sqlx::query(
+            "INSERT INTO life_event_keywords (life_event_id, term, type, weight) \
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(duplicate_id)
+        .bind(term)
+        .bind(kind)
+        .bind(weight)
+        .execute(&pool)
+        .await
+        .expect("seed duplicate event keyword");
+    }
+    let second_procedure_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO procedures (external_id, name, status) \
+         VALUES ('231-3', 'Anotación de matrimonio', 'active') \
+         RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("seed second marriage procedure");
+    sqlx::query(
+        "INSERT INTO life_event_procedures (life_event_id, procedure_id, order_index, required) \
+         VALUES ($1, $2, 2, FALSE)",
+    )
+    .bind(duplicate_id)
+    .bind(second_procedure_id)
+    .execute(&pool)
+    .await
+    .expect("seed duplicate event-procedure relation");
+
+    // Fresh setup already recorded 0016 as applied, so make it pending again
+    // after introducing the divergent both-slugs state (the verified dev-DB
+    // history: 0016 recorded, old slug re-seeded afterwards).
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 16")
+        .execute(&pool)
+        .await
+        .expect("make the rename migration pending");
+
+    // RED expectation before the hardening: the plain rename UPDATE hits
+    // life_events_slug_key (23505) while the duplicate row still exists.
+    sqlx::migrate!("../../migrations")
+        .run(&pool)
+        .await
+        .expect("0016 must reconcile the divergent seed before renaming");
+
+    // The canonical row survives under the new slug, keeping its UUID.
+    let (surviving_id, updated_at_changed): (sqlx::types::Uuid, bool) = sqlx::query_as(
+        "SELECT id, updated_at > TIMESTAMPTZ '2000-01-01 00:00:00+00' \
+         FROM life_events WHERE slug = 'inscribir-matrimonio'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("exactly one inscribir-matrimonio row after reconciliation");
+    assert_eq!(
+        surviving_id, canonical_id,
+        "the canonical casarse UUID must survive the reconciliation"
+    );
+    assert!(updated_at_changed, "the rename must refresh updated_at");
+
+    let old_slug_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM life_events WHERE slug = 'casarse'")
+            .fetch_one(&pool)
+            .await
+            .expect("count old slug rows");
+    assert_eq!(old_slug_count, 0, "the old slug must no longer be present");
+
+    // The duplicate's non-conflicting relation now points at the canonical row.
+    let moved_relation_event_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "SELECT life_event_id FROM life_event_procedures WHERE procedure_id = $1",
+    )
+    .bind(second_procedure_id)
+    .fetch_one(&pool)
+    .await
+    .expect("absorbed relation points somewhere after reconciliation");
+    assert_eq!(
+        moved_relation_event_id, canonical_id,
+        "the duplicate's non-conflicting relation must move to the canonical event"
+    );
+    let kept_relation_event_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "SELECT life_event_id FROM life_event_procedures WHERE procedure_id = $1",
+    )
+    .bind(marriage_procedure_id)
+    .fetch_one(&pool)
+    .await
+    .expect("canonical relation remains after reconciliation");
+    assert_eq!(
+        kept_relation_event_id, canonical_id,
+        "the canonical event's own relation must remain"
+    );
+
+    // Keywords merge: the canonical event holds every distinct term from both
+    // rows, with no duplicated (event, term) pairs.
+    let mut terms: Vec<String> = sqlx::query_scalar(
+        "SELECT term FROM life_event_keywords WHERE life_event_id = $1 ORDER BY term",
+    )
+    .bind(canonical_id)
+    .fetch_all(&pool)
+    .await
+    .expect("list canonical event keywords")
+    .into_iter()
+    .collect();
+    terms.dedup();
+    assert_eq!(
+        terms,
+        vec!["casar", "inscribir", "matrimonio", "partida", "registrar"],
+        "the canonical event must hold the merged, deduplicated keyword set"
+    );
+
+    common::drop_test_db(&name).await;
+}
+
 #[tokio::test]
 async fn migrations_create_no_extensions() {
     let (pool, name) = common::fresh_provisioned_db().await;
