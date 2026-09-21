@@ -756,3 +756,13 @@ No S7 task remains unchecked (49 total, 22 complete).
 2. `5567a82 feat(api): active-generation holder with atomic ArcSwap swap and per-request capture (S7 task 20)`
 3. `be85ecb feat(api): search path serves the captured generation's providers and snapshot cards (S7 task 21)`
 4. `658233c feat(api): internal /ready probe with cold-start semantics outside the /api/v1 inventory (S7 task 22)`
+5. `424d283 fix(api): bounded retry on the scratch-database connect in the shared test support`
+
+### Boundary flake observed and hardened
+
+The first full `cargo test --workspace` sweep after the slice landed hit
+the scratch-database connect panic in `fresh_migrated_db` once (run 4 of
+5; the support file already documents the same class of parallelism flake
+for name collisions). The shared helper now retries the first connect
+three times with 100 ms spacing; three consecutive full-workspace runs
+then stayed green. Attribution also ran green standalone (22.96 s).
