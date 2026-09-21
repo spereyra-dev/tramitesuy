@@ -22,8 +22,8 @@
   --focus: #d85b00;
   --amber: #7a4b00;
   --amber-soft: #fff8eb;
-  --font-ui: var(--font-sora), 'Sora', 'Open Sans', system-ui, sans-serif;
-  --font-body: var(--font-open-sans), 'Open Sans', system-ui, sans-serif;
+  --font-ui: var(--font-sora, 'Sora'), 'Open Sans', system-ui, sans-serif;
+  --font-body: var(--font-open-sans, 'Open Sans'), system-ui, sans-serif;
 }
 
 * {
@@ -33,7 +33,7 @@
 body {
   margin: 0;
   background: var(--surface);
-  font-family: var(--font-body);
+  font-family: var(--font-body, 'Open Sans', system-ui, sans-serif);
   color: var(--text);
   /* Citizen-first base size (task 6): at least 17px for older readers. */
   font-size: 1.0625rem;
@@ -44,7 +44,7 @@ h1,
 h2,
 h3,
 h4 {
-  font-family: var(--font-ui);
+  font-family: var(--font-ui, 'Sora', system-ui, sans-serif);
   letter-spacing: -0.01em;
 }
 
@@ -190,19 +190,22 @@ a:hover {
 
 /* Home hero: solid institutional blue band with white text and the search
    box inside, mirroring the gub.uy "Trámites y servicios" front block. */
+/* Home hero: full-container institutional blue band, centered heading and
+   a full-width search row, mirroring the gub.uy "Trámites y servicios"
+   front block. */
 .home-hero {
-  max-width: 48rem;
   margin: 0 0 2.5rem;
-  padding: clamp(2rem, 6vw, 3.5rem) clamp(1.25rem, 4vw, 2.5rem);
+  padding: clamp(2.5rem, 7vw, 4.5rem) clamp(1.25rem, 4vw, 3rem);
   border-radius: 0.25rem;
   background: var(--blue);
   color: #fff;
+  text-align: center;
 }
 
 .home-eyebrow {
   margin: 0 0 0.6rem;
   color: #c9d3ee;
-  font-family: var(--font-ui);
+  font-family: var(--font-ui, 'Sora', system-ui, sans-serif);
   font-size: 0.85rem;
   font-weight: 500;
   letter-spacing: 0.06em;
@@ -217,36 +220,33 @@ a:hover {
 }
 
 .home-hero h1 {
-  max-width: 20ch;
-  margin: 0;
-  font-size: clamp(1.75rem, 5vw, 2.5rem);
+  max-width: 28ch;
+  margin: 0 auto;
+  font-size: clamp(1.9rem, 4.5vw, 2.75rem);
   font-weight: 600;
   letter-spacing: -0.02em;
   text-wrap: balance;
 }
 
 .home-intro {
-  max-width: 42rem;
-  margin: 0.9rem 0 0;
+  max-width: 46rem;
+  margin: 0.9rem auto 0;
   color: #e3e8f6;
   font-size: 1.05rem;
 }
 
-/* Search form: white field + blue action, like the gub.uy hero search. */
+/* Search: one composite white field with the blue action inside, like the
+   gub.uy hero search. The visible label/guidance stay for accessibility. */
 .search-form {
-  max-width: 46rem;
-  margin: 1.5rem 0 0;
-  padding: 1.1rem;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 0.25rem;
-  background: rgba(4, 47, 98, 0.55);
+  max-width: 60rem;
+  margin: 2rem auto 0;
 }
 
 .search-label {
   display: block;
   margin-bottom: 0.25rem;
   color: #fff;
-  font-family: var(--font-ui);
+  font-family: var(--font-ui, 'Sora', system-ui, sans-serif);
   font-size: 1.05rem;
   font-weight: 600;
 }
@@ -259,33 +259,40 @@ a:hover {
 
 .search-controls {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.25rem;
   margin-top: 0.8rem;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  background: var(--surface);
 }
 
 .search-controls input,
 .search-controls button {
-  border-radius: 0.25rem;
+  border-radius: 0.2rem;
   font: inherit;
 }
 
 .search-controls input {
   width: 100%;
   min-height: 3.5rem;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  padding: 0.65rem 0.9rem;
+  border: 0;
+  background: transparent;
   color: var(--text);
   font-size: 1.1rem;
 }
 
+.search-controls input::placeholder {
+  color: var(--muted);
+}
+
 .search-controls button {
   min-height: 3.5rem;
-  padding: 0.65rem 1.5rem;
-  border: 1px solid var(--blue-dark);
+  padding: 0.65rem 1.75rem;
+  border: 0;
   background: var(--blue);
   color: #fff;
-  font-family: var(--font-ui);
+  font-family: var(--font-ui, 'Sora', system-ui, sans-serif);
   font-size: 1.05rem;
   font-weight: 600;
   cursor: pointer;
@@ -301,10 +308,11 @@ a:hover {
 }
 
 .home-reassurance {
-  max-width: 42rem;
-  margin: 0.85rem 0 0;
+  max-width: 60rem;
+  margin: 0.85rem auto 0;
   color: #c9d3ee;
   font-size: 0.9rem;
+  text-align: left;
 }
 
 .search-results,
@@ -665,6 +673,8 @@ a:hover {
 
 @media (min-width: 40rem) {
   .search-controls {
+    /* Composite field: input and action side by side inside the white
+       wrapper; the wrapper padding doubles as the visual gap. */
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
