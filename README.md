@@ -133,6 +133,15 @@ npm run dev              # serves http://localhost:3000; expects the API on :808
 npm test                 # hermetic vitest suite (fixtures, no live API/DB)
 ```
 
+### Original design and reuse boundary
+
+The web UI uses an original TrámitesUY design system: mobile-first plain CSS,
+semantic landmarks, visible keyboard focus, and direct Spanish citizen-facing
+copy. AGESIC public interfaces may inform interaction research only. No AGESIC
+source code, CSS, markup, logos, fonts, SVGs, or other assets were copied or
+reused. Official procedure data, attribution, and official destination links
+remain the catalog-backed content described above.
+
 ### `API_BASE_URL` contract
 
 All API access is same-origin: the browser only ever requests relative
