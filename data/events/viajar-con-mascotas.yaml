@@ -1,0 +1,37 @@
+slug: viajar-con-mascotas
+name: Viajar con mascotas
+description: Solicitud de ingreso con mascotas al Uruguay y de egreso de mascotas del Uruguay.
+category: migracion
+keywords:
+  - term: mascota
+    type: ENTITY
+    weight: 8
+  - term: viajar
+    type: ACTION
+    weight: 10
+  - term: ingreso
+    type: ENTITY
+    weight: 8
+  - term: egreso
+    type: ENTITY
+    weight: 6
+rules:
+  - action: viajar
+    entity: mascota
+    bonus: 15
+relations:
+  - external_id: "4695"
+    order: 1
+    required: true
+  - external_id: "4696"
+    order: 2
+    required: true
+tests:
+  positive:
+    - viajar con mi mascota al exterior
+    - ingreso con mascotas a uruguay
+    - egreso de mascotas del pais
+  negative:
+    - solicitar una visa de turismo
+    - sacar el pasaporte
+    - permiso de viaje para un menor

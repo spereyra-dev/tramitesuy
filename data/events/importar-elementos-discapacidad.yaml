@@ -1,0 +1,47 @@
+slug: importar-elementos-discapacidad
+name: Importar vehículos y elementos por discapacidad
+description: Exoneraciones para la importación de vehículos e importación de elementos auxiliares para personas con discapacidad.
+category: vehiculos
+keywords:
+  - term: importar
+    type: ENTITY
+    weight: 15
+  - term: importacion
+    type: ENTITY
+    weight: 12
+  - term: elementos
+    type: ENTITY
+    weight: 10
+  - term: discapacidad
+    type: ENTITY
+    weight: 12
+  - term: exoneracion
+    type: ENTITY
+    weight: 10
+  - term: adaptado
+    type: ENTITY
+    weight: 12
+  - term: mascota
+    type: ENTITY
+    weight: 15
+    negative: true
+rules:
+  - action: importar
+    entity: discapacidad
+    bonus: 15
+relations:
+  - external_id: "1809"
+    order: 1
+    required: true
+  - external_id: "1811"
+    order: 2
+    required: true
+tests:
+  positive:
+    - importar un vehiculo para una persona con discapacidad
+    - importacion de elementos auxiliares para discapacidad
+    - exoneracion para importar mi vehiculo adaptado
+  negative:
+    - exoneracion de patente por discapacidad
+    - importar mascotas
+    - sacar la licencia de conducir

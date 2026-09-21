@@ -1,0 +1,41 @@
+slug: carnet-perro-asistencia
+name: Carné para usuarios de perro de asistencia
+description: Registro y solicitud del carné para usuarios de perro de asistencia y perro guía.
+category: salud
+keywords:
+  - term: perro
+    type: ENTITY
+    weight: 15
+  - term: asistencia
+    type: ENTITY
+    weight: 12
+  - term: guia
+    type: ENTITY
+    weight: 12
+  - term: carnet
+    type: ENTITY
+    weight: 12
+  - term: solicitar
+    type: ACTION
+    weight: 8
+  - term: conducir
+    type: ENTITY
+    weight: 12
+    negative: true
+rules:
+  - action: solicitar
+    entity: carnet
+    bonus: 15
+relations:
+  - external_id: "5412"
+    order: 1
+    required: true
+tests:
+  positive:
+    - carnet para perro de asistencia
+    - solicitar el carnet de perro guia
+    - registro de perro de asistencia
+  negative:
+    - sacar el carnet de salud
+    - carnet de conducir
+    - viajar con mi mascota

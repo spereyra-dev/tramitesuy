@@ -1,0 +1,50 @@
+slug: exoneracion-vehiculo-discapacidad
+name: Exoneraciones de patente y vehículo por discapacidad
+description: Exoneración de patente de rodados e importación de vehículos para personas con discapacidad, autorización de choferes y pase libre departamental.
+category: vehiculos
+keywords:
+  - term: exoneracion
+    type: ENTITY
+    weight: 18
+  - term: exonerar
+    type: ACTION
+    weight: 12
+  - term: discapacidad
+    type: ENTITY
+    weight: 12
+  - term: patente
+    type: ENTITY
+    weight: 6
+    negative: true
+  - term: chofer
+    type: ENTITY
+    weight: 6
+rules:
+  - action: exonerar
+    entity: patente
+    bonus: 15
+relations:
+  - external_id: "7073"
+    order: 1
+    required: true
+  - external_id: "1809"
+    order: 2
+    required: false
+  - external_id: "1812"
+    order: 3
+    required: false
+  - external_id: "6546"
+    order: 4
+    required: false
+  - external_id: "7858"
+    order: 5
+    required: false
+tests:
+  positive:
+    - exoneracion de patente por discapacidad
+    - exonerar el vehiculo importado para discapacidad
+    - autorizacion de chofer para trasladar a una persona con discapacidad
+  negative:
+    - importar elementos auxiliares para discapacidad
+    - pagar la patente de mi auto
+    - pagar una multa de transito

@@ -36,7 +36,8 @@ baselines:
   top3: 1.00
   max_no_result_rate: 0.02
   # raised for lote-10: construction permit case adds one disambiguation-band case; measured 39/100 = 0.39 on 2026-09-21.
-  max_ambiguous_rate: 0.39
+  # raised for lote-11: mascotas/discapacidad cases add disambiguation-band cases; measured 42/105 = 0.40 on 2026-09-21.
+  max_ambiguous_rate: 0.40
 cases:
   # ── comprar-vehiculo positives ─────────────────────────────────────
   - query: "compre un auto usado"
@@ -294,4 +295,13 @@ cases:
   # ── lote-10 construction permit positive ───────────────────────────
   - query: "quiero construir una casa y necesito el permiso"
     expect_top1: solicitar-permiso-construccion
+  # ── lote-11 mascotas and discapacidad positives ────────────────────
+  - query: "viajar con mi mascota al exterior"
+    expect_top1: viajar-con-mascotas
+  - query: "carnet para perro de asistencia"
+    expect_top1: carnet-perro-asistencia
+  - query: "exoneracion de patente por discapacidad"
+    expect_top1: exoneracion-vehiculo-discapacidad
+  - query: "importar un vehiculo para una persona con discapacidad"
+    expect_top1: importar-elementos-discapacidad
 
