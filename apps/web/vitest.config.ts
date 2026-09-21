@@ -12,6 +12,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
+      // next/font/google self-hosts fonts at Next build time and is not
+      // runnable under vitest's node environment; tests use this stub so the
+      // layout's font-variable classes stay assertable without the toolchain.
+      'next/font/google': path.resolve(__dirname, 'tests/mocks/next-font-google.ts'),
     },
   },
   test: {

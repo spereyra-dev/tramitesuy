@@ -1,6 +1,24 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { Open_Sans, Sora } from 'next/font/google';
 import './globals.css';
+
+/* Institutional typography (gub.uy visual identity): Sora for headings/UI
+   and Open Sans for body text. Loaded with next/font for self-hosted,
+   swap-display fonts exposed as CSS variables. */
+const sora = Sora({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-sora',
+  display: 'swap',
+});
+
+const openSans = Open_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-open-sans',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'TrámitesUY',
@@ -17,7 +35,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es">
-      <body>
+      <body className={`${sora.variable} ${openSans.variable}`}>
         <a className="skip-link" href="#main-content">
           Saltar al contenido principal
         </a>
