@@ -172,8 +172,11 @@ a:hover {
 }
 
 /* Search-first home and procedure cards: original, mobile-first presentation. */
+/* The home spans the full .site-main container so the hero band runs
+   edge to edge like the gub.uy front block; inner elements (search row)
+   cap their own width and center themselves. */
 .home-page {
-  max-width: 62rem;
+  max-width: 100%;
 }
 
 /* Standalone kicker for section eyebrows outside the hero (e.g. result
