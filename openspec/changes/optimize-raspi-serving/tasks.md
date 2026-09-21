@@ -147,26 +147,26 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: a test asserts an update/delete attempt against a published generation's projection is treated as a defect by the data-access layer contract (no code path mutates them).
   - Satisfies: data-model delta, catalog-generations deltas, OPT-04/OPT-07.
 
-- [ ] 15. [S6] Implement the generation build: `crates/db/src/generations/build.rs` computing `content_hash` (SHA-256 over a canonical, ordered serialization of the full observable payload **including** `last_seen_at`/`source.last_synced_at`), `taxonomy_version` (hash of the YAML content used) and `engine_version`, then writing all `generation_*` projections idempotently per `(generation_id, slug)`.
+- [x] 15. [S6] Implement the generation build: `crates/db/src/generations/build.rs` computing `content_hash` (SHA-256 over a canonical, ordered serialization of the full observable payload **including** `last_seen_at`/`source.last_synced_at`), `taxonomy_version` (hash of the YAML content used) and `engine_version`, then writing all `generation_*` projections idempotently per `(generation_id, slug)`.
   - RED: `cargo test -p db --test generation_build` — building the same input twice yields the same `generation_id`/`content_hash` and no duplicate projection rows; changing only sync dates changes the hash; writing a projection row twice is idempotent.
   - GREEN: build reads from the same source ingestion uses today, after the ingestion exclusion is held, so no partial update is captured.
   - TRIANGULATE: an interrupted build leaves `status = building` with incomplete projections and is not a publication candidate.
   - Satisfies: OPT-02/OPT-03, catalog-generations delta (interrupted build not promotable).
 
-- [ ] 16. [S6] Precompute the trigram surface at build time and use it in the generation-scoped provider, replicating today's canonical-term rules, negative-keyword exclusion, `round(similarity * 10)` scaling and the strict `>` threshold, with `SET LOCAL pg_trgm.similarity_threshold = MIN_TRIGRAM_SIMILARITY/10` inside the provider transaction and the index-compatible `surface_text % $1` predicate plus the explicit `similarity(...) > $2` belt.
+- [x] 16. [S6] Precompute the trigram surface at build time and use it in the generation-scoped provider, replicating today's canonical-term rules, negative-keyword exclusion, `round(similarity * 10)` scaling and the strict `>` threshold, with `SET LOCAL pg_trgm.similarity_threshold = MIN_TRIGRAM_SIMILARITY/10` inside the provider transaction and the index-compatible `surface_text % $1` predicate plus the explicit `similarity(...) > $2` belt.
   - RED: `cargo test -p db --test providers` equivalence against the previous per-request `string_agg` computation on the fixture for the same generation (identical similarity values, thresholds, and exclusions); `cargo test -p db --test explain_trigram` captures `EXPLAIN (ANALYZE, BUFFERS)` output as evidence.
   - GREEN: build writes `surface_text`; provider reads `generation_trigram_surface` with `generation_id = $3`.
   - TRIANGULATE: an event with a negative keyword is excluded identically; the threshold no longer depends on pool session state (two different pool connections produce the same result).
   - Verify: `.sqlx/` regenerated; index usage is **not** asserted as a success criterion on small tables.
   - Satisfies: OPT-07, search-engine delta ("Precomputed trigram surface").
 
-- [ ] 17. [S6] Add the publication validation gate in `crates/db/src/generations/validate.rs`: relation integrity, schema, taxonomy, search-projection availability, and rejection of an accidentally empty catalog; individual invalid source rows keep the skip-and-report policy.
+- [x] 17. [S6] Add the publication validation gate in `crates/db/src/generations/validate.rs`: relation integrity, schema, taxonomy, search-projection availability, and rejection of an accidentally empty catalog; individual invalid source rows keep the skip-and-report policy.
   - RED: `cargo test -p db --test generation_validate` — zero-procedure catalog rejected; a dangling relation rejected; missing FTS/trigram rows for a declared event rejected; a valid generation passes; `status` never advances past `validated` without complete projections.
   - GREEN: validation runs before promotion; failures are recorded on the matching `ingestion_runs` row.
   - TRIANGULATE: re-validating an already-validated generation is idempotent.
   - Satisfies: OPT-02, OPT-03, R8.
 
-- [ ] 18. [S6] Implement the promotion flow and run records in `apps/ingest/src/commands/publish.rs` (new) + `apps/ingest/src/support.rs`: build → validate → persist complete artifacts → mark `validated` → promote the reference; retryable and idempotent, never leaving working tables as the only copy of the live version.
+- [x] 18. [S6] Implement the promotion flow and run records in `apps/ingest/src/commands/publish.rs` (new) + `apps/ingest/src/support.rs`: build → validate → persist complete artifacts → mark `validated` → promote the reference; retryable and idempotent, never leaving working tables as the only copy of the live version.
   - RED: `cargo test -p ingest --test publish` — a restart between build and promotion completes promotion idempotently without duplicating artifacts; run records capture start/end/status/counts/candidate+published generation; a failure after working-table updates never makes those tables the sole source of the live version.
   - GREEN: dual-write to legacy tables stays in place during stages 2–3.
   - TRIANGULATE: interrupting after `validated` and re-running produces no second generation for identical content.

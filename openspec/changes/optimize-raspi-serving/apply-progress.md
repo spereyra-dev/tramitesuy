@@ -495,3 +495,123 @@ SQLx's compile-time embedded `sqlx::migrate!` migration set after adding files.
 - gga pre-commit hook: explicitly waived with `--no-verify` because the Codex
   CLI is unavailable locally; gga was not reported as successfully run.
 - Native review: **pending** on the resulting work-unit candidates.
+
+## Slice S6 — Generation build, provider, validation gate, promotion (tasks 15–18)
+
+Status: **complete; slice gates green; gga review passed on all work-unit
+commits (one review run ended ambiguous due to a tool-permission rejection —
+re-run passed)**. Delivery: auto-chain, stacked-to-main, branch
+`opt/s6-generations` from fresh `master`. Structured status consumed before
+work: `gentle-ai.sdd-status` v2, change `optimize-raspi-serving`,
+`applyState: ready`, `nextRecommended: apply`, repo-local mode, whole
+workspace as allowed edit root, no native blockers (the future-edit-roots
+note concerns a later work unit, not S6).
+
+### Completed tasks and proof
+
+| Task | Proof (exact commands, results) |
+|---|---|
+| 15 generation build | `cargo test -p db --test generation_build` → 5 passed (same input twice → same `generation_id`/`content_hash`, no duplicate projection rows; touching only `last_seen_at` changes the hash and mints a new id; projection rewrite idempotent; TRIANGULATE: `begin_build` alone leaves `status='building'`, `projection_status='building'`, zero projection rows). `build_generation` computes SHA-256 `content_hash` over the canonical ordered observable payload (categories, organizations, events, keywords with types/weights/canonicals, ordered relations, cards, procedure payload incl. `last_seen_at` served as `source.last_synced_at`), `taxonomy_version` from the YAML bytes (computed in `apps/ingest/src/support.rs::compute_taxonomy_version`), and `engine_version` (`db::generations::ENGINE_VERSION`). |
+| 16 precomputed trigram surface | Build writes `surface_text` (name + positive keywords with canonical terms, trailing-space composition replicated); `db::providers::generation_trigram::GenerationTrigramProvider` reads `generation_trigram_surface` with `generation_id` scope, `SET LOCAL pg_trgm.similarity_threshold = MIN_TRIGRAM_SIMILARITY/10` inside its transaction (via parameterizable `set_config(..., is_local=true)`), index-compatible `surface_text % $1` plus explicit `similarity(...) > $2` belt. `cargo test -p db --test providers` → 13 passed (equivalence vs the legacy per-request `string_agg` and the pre-async reference on task 3's fixture: identical values, thresholds, negative-keyword exclusions; TRIANGULATE: session-state taint `SET pg_trgm.similarity_threshold = 0.9` does not leak — two connections see the same result). `cargo test -p db --test explain_trigram` → 1 passed, capturing `EXPLAIN (ANALYZE, BUFFERS)` output as evidence (index usage not asserted on small tables; plan shows bitmap index scans at fixture scale). |
+| 17 publication validation gate | `cargo test -p db --test generation_validate` → 8 passed (zero-procedure catalog rejected as `empty_catalog` and never published/validated; dangling card→procedure relation rejected as `relation_integrity`; missing FTS/trigram rows for a declared event rejected as `search_projection`; valid generation passes and advances `building`→`validated`; incomplete projections fail the gate and `status` never advances; re-validating a validated generation is idempotent; taxonomy drift (empty taxonomy vs projected catalog) rejected as `taxonomy`; a source row with NULL description keeps the skip-and-report policy — no validation failure). Failures are recorded on the matching `ingestion_runs` row by the publish flow (task 18). |
+| 18 promotion flow + run records | `cargo test -p ingest --test publish` → 5 passed (full flow: manifest `published` + run record with start/end/status/counts/candidate+published references, legacy tables untouched; restart between build and promotion: retry promotes the same id, no duplicated artifacts, exactly one `catalog_generations` row; re-publish of identical content → `already_published`, no second generation; validation failure records `validation_failed` on the run row and never publishes — legacy tables intact; a run blocked by the exclusion records `skipped` and is not queued, then a retry succeeds). Idempotent by content; the working tables are never the sole copy of the live version (dual-write retained; manifest governs). |
+
+### TDD Cycle Evidence (strict TDD, runner `cargo test`)
+
+| Task | RED (failing test first) | GREEN (minimal implementation) | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| 15 | `cargo test -p db --test generation_build` → E0433 `db::generations` unresolved | `crates/db/src/generations/{mod,build}.rs`: payload reader, canonical SHA-256 hash, UUIDv7 identity reuse (`uuid` `v7` feature), manifest upsert, five idempotent projection writes, finalize | interrupted-build test (manifest `building`, zero projections) + surface-composition rules test green | typed error surface kept minimal (`sqlx::Error` propagation); fmt + clippy clean |
+| 16 | `cargo test -p db --test providers generation_trigram` → E0433 unresolved module; `explain_trigram` evidence test in place | `crates/db/src/providers/generation_trigram.rs`: transaction-scoped GUC + `%` predicate + `similarity` belt + `round(sim*10)` scale; `MIN_TRIGRAM_SIMILARITY=3` / threshold `0.3` strict `>`; active-status join | negative-keyword exclusion identical; pool-session-state independence test green; explain plan captured | legacy `TrigramProvider` untouched (rollback path); fmt + clippy green |
+| 17 | `cargo test -p db --test generation_validate` → unresolved `validate_generation` | `crates/db/src/generations/validate.rs`: manifest/incomplete check, empty-catalog rejection, relation integrity, projection schema keys, search-projection availability, taxonomy alignment | re-validation idempotence + skip-and-report tests green | early returns so a rejected candidate never advances `status`; fmt + clippy green |
+| 18 | `cargo test -p ingest --test publish` → unresolved `publish` (RED confirmed) | `apps/ingest/src/commands/publish.rs` + `support.rs` (exclusion, taxonomy-version hash) + `errors.rs` (typed `PublishError`); CLI `publish` subcommand wired; lib exposes commands/support | restart/re-run/no-second-generation + exclusion-skip tests green | gga review findings fixed (typed errors instead of `Result<_, String>`; `record_terminal_run` takes a `RunStart` struct removing the 8-arg clippy flag); `cargo fmt` applied at the boundary |
+
+### Files changed (S6)
+
+- `crates/db/src/generations/{mod.rs,build.rs,validate.rs}` (new)
+- `crates/db/src/providers/{generation_trigram.rs (new),mod.rs,trigram.rs}` (pub `VALUE_SCALE`)
+- `crates/db/src/lib.rs`, `crates/db/Cargo.toml` (`sha2`, `chrono`, `uuid` `v7`)
+- `crates/db/tests/{generation_build.rs,generation_validate.rs,explain_trigram.rs,providers.rs}` (new/extended)
+- `apps/ingest/src/{commands/publish.rs (new),commands/mod.rs,support.rs,errors.rs (new),lib.rs,main.rs}`
+- `apps/ingest/Cargo.toml` (`sha2`, `serde_json`, `thiserror`, `uuid` `v7`)
+- `apps/ingest/tests/{publish.rs (new),cli.rs}`
+- `.sqlx/` regenerated (`cargo sqlx prepare --workspace`; offline build verified)
+- `Cargo.lock`
+
+### Test commands run (slice boundary)
+
+- `cargo test --workspace` → all suites green, 0 FAILED
+- `cargo test -p search --test golden` → 6 passed (golden gate green)
+- `cargo test -p db` → all db suites green (incl. `migrations`, `providers`, `orchestrator`, new S6 suites)
+- `cargo test -p ingest` / `cargo test -p api` → green
+- `SQLX_OFFLINE=true cargo check --workspace --all-targets` → green against the committed `.sqlx` cache
+- `make lint` → `cargo fmt --check` + `cargo clippy --workspace --all-targets -- -D warnings` green
+
+### Deviations from design/tasks (recorded)
+
+1. **`engine_version` pinned in `crates/db`, not `crates/search`**: the task
+   and design §1.2 want "versión de crates/search + revisión de algoritmo",
+   but `crates/search` is outside this slice's allowed edit surfaces (the
+   pure engine carries no version constant). `db::generations::ENGINE_VERSION`
+   pins the current ranking-rules revision and is documented to be bumped
+   whenever engine semantics change; it is part of the cache key design §3.2
+   requires.
+2. **`SET LOCAL` implemented via `set_config(..., is_local=true)`**: identical
+   transaction-scoped semantics to `SET LOCAL`, but parameterizable — `SET`
+   cannot take bind parameters. Both the GUC read by `surface_text % $1` and
+   the explicit `similarity(...) > $2` belt are governed by
+   `MIN_TRIGRAM_SIMILARITY/10 = 0.3`, strict `>`.
+3. **Inactive-event exclusion in the generation provider**: today's legacy
+   provider filters `e.status = 'active'`; the precomputed surface carries no
+   status, so the generation-scoped query joins `generation_life_events` and
+   keeps the same active-only rule (fixture events are all active; the
+   equivalence tests hold either way).
+4. **`generation_procedure_details` keyed by external id**: the projection's
+   `slug` column holds the procedure `external_id` with the same active-row-
+   wins selection `by_external_id` uses, so `GET /procedures/:id` can resolve
+   from the snapshot in stage 3's later slice.
+5. **Taxonomy validation is part of the gate, not the build**: the build
+   projects from the DB; the taxonomy delta gate (events + keyword
+   alignment vs the YAML actually used) runs in `validate_generation` when
+   the caller passes the loaded taxonomy (the publish flow always does).
+6. **Retry-run terminal status**: error paths after the run record is opened
+   mark it `failed` (not `running`) before propagating; the exclusion-blocked
+   run records `skipped` with a finished timestamp and is not queued (S11's
+   task 35 wires the same lock into `daemon`/`ingest`).
+
+### Remaining tasks (unchecked at the tasks locator)
+
+All tasks 19–49 (stages 3–6) remain unchecked, starting with:
+
+- `- [ ] 19. [S7] Build the in-memory snapshot: new apps/api/src/generation/mod.rs ...`
+
+No S6 task remains unchecked (49 total, 18 complete).
+
+### Workload / PR boundary
+
+- Slice S6 = PR 7 of the 15-PR stacked chain (branch `opt/s6-generations`,
+  targets the S1–S5 chain tip; merge/stack at the gate). Authored changed
+  lines across the four work-unit commits + boundary fmt commit: **~1,556
+  additions / 44 deletions** — above the 400-line budget, as tasks.md
+  forecasts for S6 (High risk, ~470 est. before test coverage). Per the
+  delivery contract: `auto-chain` with `stacked-to-main` was the resolved
+  delivery path, so this slice lands as one chained work unit; all content
+  is test/doc-bearing and no comments, blank lines, docs, or tests were
+  compressed to reach it.
+- Rollback boundary: revert the S6 commits — additive modules only; no
+  migrations added (S5's 0013–0015 are untouched), no legacy-table behavior
+  change (dual-write intact), `.sqlx` additions are cache entries for the
+  new compile-time-checked queries.
+
+### Commits (identities)
+
+1. `b771ee3 feat(db): generation build with content/taxonomy hashing and idempotent projections (S6 task 15)`
+2. `45eb2fd feat(db): generation-scoped trigram provider over the precomputed surface (S6 task 16)`
+3. `b9d5425 feat(db): publication validation gate for catalog generations (S6 task 17)`
+4. `38b7bf3 feat(ingest): promotion flow with typed errors, exclusion and run records (S6 task 18)`
+5. `aee94d8 style: cargo fmt formatting at the S6 slice boundary`
+
+Note: the concurrent Gentleman session re-stages its `odd/tasks` projection
+file into the index while commits are built; the task-17 commit carries that
+file's staged content (tracked in `HEAD` elsewhere in the repo's pattern).
+No other divergent copy exists; all Engram-independent persistence was
+verified by re-reading the tasks/apply-progress files after writing.
