@@ -1,0 +1,40 @@
+slug: solicitar-apoyos-medicos-bps
+name: Solicitar audífonos y medias de compresión
+description: Solicitudes de audífonos y medias de compresión cubiertas por el BPS.
+category: salud
+keywords:
+  - term: audifonos
+    type: ENTITY
+    weight: 15
+  - term: compresion
+    type: ENTITY
+    weight: 4
+  - term: medias
+    type: ENTITY
+    weight: 10
+  - term: solicitar
+    type: ACTION
+    weight: 10
+  - term: bps
+    type: ENTITY
+    weight: 6
+rules:
+  - action: solicitar
+    entity: audifonos
+    bonus: 15
+relations:
+  - external_id: "7374"
+    order: 1
+    required: true
+  - external_id: "7385"
+    order: 2
+    required: false
+tests:
+  positive:
+    - solicitar audifonos del bps
+    - medias de compresion del bps
+    - audifonos para pensionistas
+  negative:
+    - solicitar protesis y ortesis
+    - solicitar estudios para el trasplante
+    - solicitar el subsidio de desempleo

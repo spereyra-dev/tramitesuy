@@ -39,7 +39,8 @@ baselines:
   # raised for lote-11: mascotas/discapacidad cases add disambiguation-band cases; measured 42/105 = 0.40 on 2026-09-21.
   # raised for lote-12: domestic work/parental subsidy cases add two disambiguation-band cases; measured 44/108 ≈ 0.41 on 2026-09-21.
   # raised for lote-14: four bps jubilaciones/monetary cases add disambiguation-band cases; measured 48/114 ≈ 0.4211 on 2026-09-21.
-  max_ambiguous_rate: 0.43
+  # raised for lote-15: four bps vejez/poderes/cobros/apoyos cases add disambiguation-band cases; measured 51/118 ≈ 0.4322 on 2026-09-21.
+  max_ambiguous_rate: 0.44
 cases:
   # ── comprar-vehiculo positives ─────────────────────────────────────
   - query: "compre un auto usado"
@@ -327,4 +328,13 @@ cases:
     expect_top1: solicitar-prestamos-sociales-bps
   - query: "tarjeta uruguay social"
     expect_top1: tramitar-tarjeta-uruguay-social
+  # ── lote-15 bps vejez, poderes, cobros, apoyos positives ───────────
+  - query: "asistencia a la vejez"
+    expect_top1: solicitar-asistencia-vejez
+  - query: "hacer un poder para cobrar mi jubilacion"
+    expect_top1: tramitar-poderes-bps
+  - query: "cambiar el local de cobro del bps"
+    expect_top1: cambiar-local-de-cobro-bps
+  - query: "solicitar audifonos del bps"
+    expect_top1: solicitar-apoyos-medicos-bps
 

@@ -1,0 +1,63 @@
+slug: cambiar-local-de-cobro-bps
+name: Cambiar el local de cobro BPS
+description: Cambio del local de cobro de prestaciones, asesoramiento, pagos a domicilio y obtención o actualización de recibos.
+category: jubilaciones
+keywords:
+  - term: cobro
+    type: ENTITY
+    weight: 15
+  - term: local
+    type: ENTITY
+    weight: 10
+  - term: recibo
+    type: ENTITY
+    weight: 12
+  - term: cambiar
+    type: ACTION
+    weight: 6
+  - term: bps
+    type: ENTITY
+    weight: 6
+  - term: domicilio
+    type: ENTITY
+    weight: 6
+  - term: pago
+    type: ENTITY
+    weight: 10
+  - term: matricula
+    type: ENTITY
+    weight: 15
+    negative: true
+  - term: patente
+    type: ENTITY
+    weight: 8
+    negative: true
+rules:
+  - action: cambiar
+    entity: cobro
+    bonus: 15
+relations:
+  - external_id: "7387"
+    order: 1
+    required: true
+  - external_id: "7376"
+    order: 2
+    required: false
+  - external_id: "7386"
+    order: 3
+    required: false
+  - external_id: "7378"
+    order: 4
+    required: false
+  - external_id: "7377"
+    order: 5
+    required: false
+tests:
+  positive:
+    - cambiar el local de cobro del bps
+    - obtener el recibo de cobro
+    - pagos a domicilio de mi jubilacion
+  negative:
+    - consultar el estado de mi tramite jubilatorio
+    - solicitar mi jubilacion
+    - cambiar la matricula de mi auto

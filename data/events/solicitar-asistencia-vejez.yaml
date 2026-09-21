@@ -1,0 +1,37 @@
+slug: solicitar-asistencia-vejez
+name: Asistencia a la vejez
+description: Programa de asistencia a la vejez para personas mayores en situación de vulnerabilidad socioeconómica.
+category: jubilaciones
+keywords:
+  - term: vejez
+    type: ENTITY
+    weight: 15
+  - term: asistencia
+    type: ENTITY
+    weight: 10
+  - term: mayores
+    type: MODIFIER
+    weight: 6
+  - term: solicitar
+    type: ACTION
+    weight: 10
+  - term: jubilados
+    type: ENTITY
+    weight: 6
+rules:
+  - action: solicitar
+    entity: vejez
+    bonus: 15
+relations:
+  - external_id: "7360"
+    order: 1
+    required: true
+tests:
+  positive:
+    - asistencia a la vejez
+    - programa de asistencia para personas mayores
+    - solicitar la asistencia a la vejez
+  negative:
+    - estadias vacacionales para jubilados
+    - solicitar la pension de sobrevivencia
+    - tramitar la tarjeta uruguay social
