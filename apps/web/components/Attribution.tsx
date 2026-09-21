@@ -14,9 +14,14 @@ export function Attribution({ source }: { source: SourceAttribution }) {
   const link = sourceLinkState(source.official_url);
   return (
     <p className="attribution">
-      {source.official ? 'Fuente oficial' : 'Fuente'}: {source.name} ·{' '}
+      <span className="attribution__label">
+        {source.official ? 'Fuente oficial' : 'Fuente'}:
+      </span>{' '}
+      {source.name} ·{' '}
       {link.kind === 'linked' ? (
-        <a href={link.href}>Ver fuente oficial</a>
+        <a href={link.href} aria-label={`Ver fuente oficial: ${source.name}`}>
+          Ver fuente oficial
+        </a>
       ) : (
         link.copy
       )}{' '}

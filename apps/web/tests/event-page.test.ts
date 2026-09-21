@@ -60,6 +60,10 @@ describe('event page: full payload (event-page.json)', () => {
       'Requisitos y trámites para comprar un vehículo nuevo o usado en Uruguay.',
     );
     expect(html).toContain('vehiculos');
+    expect(html).toContain('<article class="event-page">');
+    expect(html).toContain('<header class="event-page__header">');
+    expect(html).toContain('href="/categories/vehiculos"');
+    expect(html).toContain('aria-labelledby="event-procedures-heading"');
   });
 
   it('renders the procedure cards in API order, not array order', async () => {
@@ -107,9 +111,9 @@ describe('event page: pinned empty state (event-page-empty.json)', () => {
 });
 
 describe('event page: null official_url (event-page-null-url.json)', () => {
-  it('renders no link element at all', async () => {
+  it('renders no external link when both official URLs are unavailable', async () => {
     const html = await renderEvent('fixture-sin-url', eventPageNullUrl);
-    expect(html).not.toContain('<a ');
+    expect(html).not.toContain('<a href="https://');
   });
 
   it('shows the explicit source-link-unavailable state', async () => {
