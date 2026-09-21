@@ -1,0 +1,53 @@
+slug: pagar-multa-transito
+name: Pagar multas de tránsito
+description: Pago, convenio y reclamo de multas de tránsito aplicadas por la Dirección Nacional de Policía Caminera y las intendencias.
+category: vehiculos
+keywords:
+  - term: pagar
+    type: ACTION
+    weight: 10
+  - term: multa
+    type: ENTITY
+    weight: 15
+  - term: transito
+    type: ENTITY
+    weight: 10
+  - term: convenio
+    type: MODIFIER
+    weight: 5
+  - term: caminera
+    type: ENTITY
+    weight: 6
+  - term: patente
+    type: ENTITY
+    weight: 8
+    negative: true
+  - term: reclamar
+    type: ACTION
+    weight: 6
+rules:
+  - action: pagar
+    entity: multa
+    bonus: 15
+relations:
+  - external_id: "21"
+    order: 1
+    required: true
+  - external_id: "6155"
+    order: 2
+    required: false
+  - external_id: "6199"
+    order: 3
+    required: false
+  - external_id: "6994"
+    order: 4
+    required: false
+tests:
+  positive:
+    - pagar una multa de transito
+    - convenio de pago de multas
+    - multas de caminera
+  negative:
+    - pagar la patente de mi auto
+    - consultar la deuda vehicular
+    - compre un auto usado

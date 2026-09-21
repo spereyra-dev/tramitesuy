@@ -1,0 +1,43 @@
+slug: solicitar-partida-defuncion
+name: Solicitar la partida de defunción
+description: Trámites para solicitar partidas y certificados de defunción e inscripción de defunciones en el Registro de Estado Civil.
+category: familia
+keywords:
+  - term: defuncion
+    type: ENTITY
+    weight: 15
+  - term: fallecer
+    type: ACTION
+    weight: 10
+  - term: partida
+    type: ENTITY
+    weight: 10
+  - term: fallecido
+    type: MODIFIER
+    weight: 5
+rules:
+  - action: solicitar
+    entity: defuncion
+    bonus: 15
+relations:
+  - external_id: "1827"
+    order: 1
+    required: true
+  - external_id: "231-4"
+    order: 2
+    required: false
+  - external_id: "4591"
+    order: 3
+    required: false
+  - external_id: "5169"
+    order: 4
+    required: false
+tests:
+  positive:
+    - partida de defuncion de un familiar
+    - certificado de defuncion
+    - solicitar la partida de defuncion
+  negative:
+    - partida de nacimiento
+    - inscribir un matrimonio
+    - permiso de viaje para un menor

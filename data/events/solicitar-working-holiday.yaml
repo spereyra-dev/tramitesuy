@@ -1,0 +1,43 @@
+slug: solicitar-working-holiday
+name: Solicitar Vacaciones y Trabajo (Working Holiday)
+description: Programa de Vacaciones y Trabajo (Working Holiday) para uruguayos y extranjeros, con visados para estadías temporales.
+category: migracion
+keywords:
+  - term: vacaciones
+    type: ENTITY
+    weight: 10
+  - term: trabajo
+    type: ENTITY
+    weight: 10
+  - term: working
+    type: MODIFIER
+    weight: 8
+  - term: holiday
+    type: MODIFIER
+    weight: 8
+  - term: visa
+    type: ENTITY
+    weight: 8
+  - term: joven
+    type: MODIFIER
+    weight: 3
+rules:
+  - action: solicitar
+    entity: trabajo
+    bonus: 15
+relations:
+  - external_id: "7936"
+    order: 1
+    required: true
+  - external_id: "7936-1"
+    order: 2
+    required: false
+tests:
+  positive:
+    - vacaciones y trabajo en el exterior
+    - working holiday para uruguayos
+    - programa de trabajo y vacaciones para jovenes
+  negative:
+    - solicitar una visa de turismo
+    - dar de alta a un trabajador
+    - solicitar el seguro de desempleo

@@ -1,0 +1,56 @@
+slug: permiso-viaje-menor
+name: Permiso de viaje para menores
+description: Permiso para el viaje de menores de edad, solo o acompañados, con las variantes de autorización ante la Dirección Nacional de Migración.
+category: migracion
+keywords:
+  - term: permiso
+    type: ENTITY
+    weight: 12
+  - term: viajar
+    type: ACTION
+    weight: 10
+  - term: viaje
+    type: ENTITY
+    weight: 8
+  - term: menor
+    type: ENTITY
+    weight: 12
+  - term: autorizacion
+    type: MODIFIER
+    weight: 5
+  - term: solo
+    type: MODIFIER
+    weight: 3
+  - term: cedula
+    type: ENTITY
+    weight: 12
+    negative: true
+rules:
+  - action: viajar
+    entity: menor
+    bonus: 15
+relations:
+  - external_id: "261"
+    order: 1
+    required: true
+  - external_id: "261-1"
+    order: 2
+    required: false
+  - external_id: "261-2"
+    order: 3
+    required: false
+  - external_id: "261-4"
+    order: 4
+    required: false
+  - external_id: "261-11"
+    order: 5
+    required: false
+tests:
+  positive:
+    - permiso de viaje para un menor
+    - mi hijo viaja solo al exterior
+    - autorizacion de viaje para menores
+  negative:
+    - reconocer a mi hijo
+    - inscribir una adopcion
+    - sacar el dni de mi hijo
