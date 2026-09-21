@@ -2,7 +2,7 @@
 //! and projects it into the database tables — categories, events, keywords,
 //! synonyms, and relations with `order_index` preserved — idempotent per
 //! slug on a second run. Integration against the compose Postgres via a
-//! scratch database. The real `data/` seed (39 events over 13 categories,
+//! scratch database. The real `data/` seed (43 events over 14 categories,
 //! including the consumer event over official procedure 2629) is used end
 //! to end, with procedures seeded from the committed snapshot so every
 //! relation finds its FK target.
@@ -90,12 +90,12 @@ async fn seed_taxonomy_writes_every_projection_and_is_idempotent() {
         .expect("count");
 
     assert_eq!(
-        category_count, 13,
-        "all thirteen taxonomy categories must be seeded (Vehículos + the twelve expansion categories)"
+        category_count, 14,
+        "all fourteen taxonomy categories must be seeded (Vehículos + the thirteen expansion categories)"
     );
     assert_eq!(
-        event_count, 39,
-        "all thirty-nine taxonomy events must be seeded (TX-5, including the consumer event)"
+        event_count, 43,
+        "all forty-three taxonomy events must be seeded (TX-5, including the consumer event)"
     );
     assert!(keyword_count > 0, "typed keywords must be projected");
     assert_eq!(

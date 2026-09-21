@@ -1,0 +1,41 @@
+slug: reconocer-un-hijo
+name: Reconocer a un hijo
+description: Inscripción del reconocimiento de hijos naturales en el Registro de Estado Civil.
+category: familia
+keywords:
+  - term: reconocer
+    type: ACTION
+    weight: 10
+  - term: hijo
+    type: ENTITY
+    weight: 12
+  - term: natural
+    type: MODIFIER
+    weight: 5
+  - term: inscribir
+    type: ACTION
+    weight: 6
+  - term: adoptar
+    type: ACTION
+    weight: 12
+    negative: true
+rules:
+  - action: reconocer
+    entity: hijo
+    bonus: 15
+relations:
+  - external_id: "4593"
+    order: 1
+    required: true
+  - external_id: "6235"
+    order: 2
+    required: false
+tests:
+  positive:
+    - reconocer a mi hijo
+    - inscripcion del reconocimiento de mi hija
+    - reconocer hijos naturales
+  negative:
+    - inscribir un nacimiento
+    - inscribir una adopcion
+    - solicitar una partida de nacimiento

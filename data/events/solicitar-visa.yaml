@@ -1,0 +1,37 @@
+slug: solicitar-visa
+name: Solicitar una visa de ingreso
+description: Inicio de la solicitud de visa previa de ingreso al Uruguay ante la Dirección Nacional de Migración, según la nacionalidad.
+category: migracion
+keywords:
+  - term: visa
+    type: ENTITY
+    weight: 15
+  - term: solicitar
+    type: ACTION
+    weight: 8
+  - term: ingresar
+    type: ACTION
+    weight: 6
+  - term: turismo
+    type: MODIFIER
+    weight: 4
+  - term: uruguay
+    type: MODIFIER
+    weight: 3
+rules:
+  - action: solicitar
+    entity: visa
+    bonus: 15
+relations:
+  - external_id: "4679"
+    order: 1
+    required: true
+tests:
+  positive:
+    - necesito la visa para entrar a uruguay
+    - solicitar una visa de turismo
+    - tramitar la visa para mi visita
+  negative:
+    - solicitar la residencia legal
+    - sacar el pasaporte
+    - sacar la carta de ciudadania

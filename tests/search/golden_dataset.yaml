@@ -230,4 +230,13 @@ cases:
     expect_top1: obtener-carta-de-ciudadania
   - query: "casarme en el registro civil"
     expect_top1: inscribir-matrimonio
+  # ── lote-3 familia, migracion, impuestos positives ─────────────────
+  - query: "reconocer a mi hijo natural"
+    expect_top1: reconocer-un-hijo
+  - query: "inscribir la adopcion plena"
+    expect_top1: inscribir-adopcion
+  - query: "necesito la visa para entrar a uruguay"
+    expect_top1: solicitar-visa
+  - query: "certificado de residencia fiscal de persona fisica"
+    expect_top1: certificado-residencia-fiscal
 

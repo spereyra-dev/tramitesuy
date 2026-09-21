@@ -1,0 +1,46 @@
+slug: certificado-residencia-fiscal
+name: Certificado de residencia fiscal
+description: Comprobante que extiende la DGI para certificar la residencia fiscal de personas físicas o jurídicas, para presentación ante autoridades nacionales o extranjeras.
+category: impuestos
+keywords:
+  - term: certificado
+    type: ENTITY
+    weight: 10
+  - term: residencia
+    type: ENTITY
+    weight: 10
+  - term: fiscal
+    type: ENTITY
+    weight: 12
+  - term: impuestos
+    type: ENTITY
+    weight: 8
+  - term: dgi
+    type: ENTITY
+    weight: 6
+  - term: persona
+    type: MODIFIER
+    weight: 3
+rules:
+  - action: solicitar
+    entity: fiscal
+    bonus: 15
+relations:
+  - external_id: "2067"
+    order: 1
+    required: true
+  - external_id: "7118"
+    order: 2
+    required: true
+  - external_id: "2635"
+    order: 3
+    required: false
+tests:
+  positive:
+    - certificado de residencia fiscal de persona fisica
+    - comprobante de residencia fiscal de la empresa
+    - solicitar la constancia de residencia fiscal
+  negative:
+    - solicitar la residencia legal
+    - certificado de antecedentes de licencia de conducir
+    - sacar el carnet de salud

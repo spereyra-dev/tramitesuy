@@ -140,6 +140,7 @@ async fn zero_match_query_falls_back_to_categories() {
             serde_json::json!({"slug": "documentos", "name": "Documentos"}),
             serde_json::json!({"slug": "educacion", "name": "Educación"}),
             serde_json::json!({"slug": "familia", "name": "Familia"}),
+            serde_json::json!({"slug": "impuestos", "name": "Impuestos"}),
             serde_json::json!({"slug": "jubilaciones", "name": "Jubilaciones"}),
             serde_json::json!({"slug": "justicia", "name": "Justicia"}),
             serde_json::json!({"slug": "migracion", "name": "Migración"}),

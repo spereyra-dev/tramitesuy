@@ -1,0 +1,40 @@
+slug: inscribir-adopcion
+name: Inscribir una adopción
+description: Inscripción de la adopción plena en el Registro de Estado Civil y agendamiento de la primera entrevista de adopciones.
+category: familia
+keywords:
+  - term: adopcion
+    type: ENTITY
+    weight: 15
+  - term: adoptar
+    type: ACTION
+    weight: 10
+  - term: inscribir
+    type: ACTION
+    weight: 8
+  - term: entrevista
+    type: MODIFIER
+    weight: 4
+  - term: hijo
+    type: MODIFIER
+    weight: 8
+rules:
+  - action: inscribir
+    entity: adopcion
+    bonus: 15
+relations:
+  - external_id: "4590"
+    order: 1
+    required: true
+  - external_id: "4149"
+    order: 2
+    required: false
+tests:
+  positive:
+    - inscribir una adopcion plena
+    - quiero adoptar un hijo
+    - sacar turno para la entrevista de adopcion
+  negative:
+    - reconocer a mi hijo natural
+    - subsidio por maternidad
+    - solicitar una partida de nacimiento
