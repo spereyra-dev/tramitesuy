@@ -73,3 +73,17 @@ synonyms:
   # Tax regime noun surface → canonical `monotributo`
   - term: monotax
     canonical: monotributo
+  # Common misspellings (SE-3): deterministic corrections for frequent
+  # typos of catalog keyword terms. Each maps to the canonical term of
+  # the intended event so low-literacy queries still land; rare
+  # misspellings stay covered by the pg_trgm fuzzy provider.
+  - term: sedula
+    canonical: documento
+  - term: enpadronamiento
+    canonical: empadronar
+  - term: enpadronar
+    canonical: empadronar
+  - term: jubilasion
+    canonical: jubilacion
+  - term: madricula
+    canonical: matricula
