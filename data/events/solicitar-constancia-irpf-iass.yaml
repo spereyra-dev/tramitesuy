@@ -1,0 +1,46 @@
+slug: solicitar-constancia-irpf-iass
+name: Constancias IRPF e IASS
+description: Constancias IRPF e IASS para construcción y jubilados, declaración jurada por mínimo no imponible y constancia de pasividad.
+category: impuestos
+keywords:
+  - term: constancia
+    type: ENTITY
+    weight: 8
+  - term: irpf
+    type: ENTITY
+    weight: 12
+  - term: iass
+    type: ENTITY
+    weight: 12
+  - term: imponible
+    type: ENTITY
+    weight: 8
+  - term: pasividad
+    type: ENTITY
+    weight: 10
+  - term: impuesto
+    type: ENTITY
+    weight: 8
+rules:
+  - action: solicitar
+    entity: constancia
+    bonus: 15
+relations:
+  - external_id: "7353"
+    order: 1
+    required: true
+  - external_id: "7394"
+    order: 2
+    required: false
+  - external_id: "7355"
+    order: 3
+    required: false
+tests:
+  positive:
+    - constancia de irpf e iass
+    - declaracion jurada por minimo no imponible iass
+    - constancia de pasividad del bps
+  negative:
+    - sacar el certificado de nacido vivo
+    - tramitar la firma digital
+    - certificado de antecedentes de licencia de conducir

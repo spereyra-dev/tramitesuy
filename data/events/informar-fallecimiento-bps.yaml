@@ -1,0 +1,40 @@
+slug: informar-fallecimiento-bps
+name: Informar el fallecimiento al BPS
+description: Informe de fallecimiento ocurrido en el exterior y haberes sucesorios ante el BPS.
+category: jubilaciones
+keywords:
+  - term: fallecimiento
+    type: ENTITY
+    weight: 12
+  - term: informar
+    type: ACTION
+    weight: 12
+  - term: sucesorio
+    type: ENTITY
+    weight: 10
+  - term: bps
+    type: ENTITY
+    weight: 6
+  - term: exterior
+    type: MODIFIER
+    weight: 4
+rules:
+  - action: informar
+    entity: fallecimiento
+    bonus: 15
+relations:
+  - external_id: "7383"
+    order: 1
+    required: true
+  - external_id: "7327"
+    order: 2
+    required: false
+tests:
+  positive:
+    - informar el fallecimiento de un jubilado
+    - haberes sucesorios del bps
+    - informar un fallecimiento ocurrido en el exterior
+  negative:
+    - partida de defuncion de un familiar
+    - pension por sobrevivencia del bps
+    - apostillar un documento

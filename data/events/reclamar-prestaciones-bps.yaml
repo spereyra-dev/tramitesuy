@@ -1,0 +1,46 @@
+slug: reclamar-prestaciones-bps
+name: Reclamar prestaciones y deudas del BPS
+description: Reclamos de no cobro de prestaciones, reclamos del subsidio por desempleo, asesoramiento por préstamos impagos y anulación de fallecimiento registrado por error.
+category: jubilaciones
+keywords:
+  - term: reclamar
+    type: ACTION
+    weight: 8
+  - term: prestaciones
+    type: ENTITY
+    weight: 15
+  - term: cobro
+    type: ENTITY
+    weight: 8
+  - term: bps
+    type: ENTITY
+    weight: 8
+  - term: desempleo
+    type: ENTITY
+    weight: 10
+rules:
+  - action: reclamar
+    entity: prestaciones
+    bonus: 15
+relations:
+  - external_id: "7382"
+    order: 1
+    required: true
+  - external_id: "7390"
+    order: 2
+    required: false
+  - external_id: "7381"
+    order: 3
+    required: false
+  - external_id: "7384"
+    order: 4
+    required: false
+tests:
+  positive:
+    - reclamar el no cobro de mis prestaciones del bps
+    - reclamo del subsidio por desempleo
+    - prestaciones que no cobro del bps
+  negative:
+    - reclamar como consumidor
+    - cobrar mi jubilacion en otro local
+    - solicitar el subsidio de desempleo

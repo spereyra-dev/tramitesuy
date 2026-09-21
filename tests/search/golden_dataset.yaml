@@ -337,4 +337,11 @@ cases:
     expect_top1: cambiar-local-de-cobro-bps
   - query: "solicitar audifonos del bps"
     expect_top1: solicitar-apoyos-medicos-bps
+  # ── lote-16 bps claims, death report and certificates positives ────
+  - query: "reclamar el no cobro de mis prestaciones del bps"
+    expect_top1: reclamar-prestaciones-bps
+  - query: "informar el fallecimiento de un jubilado"
+    expect_top1: informar-fallecimiento-bps
+  - query: "constancia de irpf e iass"
+    expect_top1: solicitar-constancia-irpf-iass
 
