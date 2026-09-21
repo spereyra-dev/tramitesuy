@@ -406,3 +406,77 @@ pub async fn by_external_id(
         last_seen_at: r.last_seen_at,
     }))
 }
+
+/// One transition card (task 7, OPT-06): the fields the search payload uses
+/// for its event-procedure summary (slug, name, order, required, official
+/// URL, last-seen attribution stamp, reported-cost text) plus the projection
+/// fields the stage-3 generation card table will store (importance,
+/// organization short name, status). No `raw_data` is transported: the
+/// missing-cost rule (API-3) is evaluated once here in SQL, exactly matching
+/// the API's `cost_fields_from_raw` — reported only when BOTH source columns
+/// are non-empty JSON strings, in which case `cost` is the verbatim `valor`.
+#[derive(Debug)]
+pub struct EventCard {
+    pub slug: String,
+    pub name: String,
+    pub order_index: i32,
+    pub importance: Option<String>,
+    pub required: bool,
+    pub organization_short_name: Option<String>,
+    pub cost: Option<String>,
+    pub status: String,
+    pub official_url: Option<String>,
+    pub last_seen_at: DateTime<Utc>,
+}
+
+/// Loads the transition cards for one slug in a SINGLE statement, or None
+/// for an unknown slug or an event with no relations (the search payload
+/// serves an empty procedures summary for both, exactly like today's
+/// `by_event` path, which stays intact for rollback). Relations are ordered
+/// by `order_index` then external id (TX-6); deactivated procedures keep
+/// their card with their current status (IN-7).
+pub async fn cards_by_event(
+    pool: &PgPool,
+    slug: &str,
+) -> Result<Option<Vec<EventCard>>, sqlx::Error> {
+    let rows = sqlx::query!(
+        "SELECT r.order_index, r.importance, r.required, \
+                p.external_id AS \"slug\", p.name, p.status, p.official_url, p.last_seen_at, \
+                o.short_name AS \"organization_short_name\", \
+                CASE \
+                    WHEN jsonb_typeof(p.raw_data -> 'tiene_costo') = 'string' \
+                         AND btrim(p.raw_data ->> 'tiene_costo') <> '' \
+                         AND jsonb_typeof(p.raw_data -> 'valor') = 'string' \
+                         AND btrim(p.raw_data ->> 'valor') <> '' \
+                    THEN p.raw_data ->> 'valor' \
+                END AS \"cost\" \
+         FROM life_event_procedures r \
+         JOIN procedures p ON p.id = r.procedure_id \
+         JOIN life_events e ON e.id = r.life_event_id \
+         LEFT JOIN organizations o ON o.id = p.organization_id \
+         WHERE e.slug = $1 \
+         ORDER BY r.order_index, p.external_id",
+        slug,
+    )
+    .fetch_all(pool)
+    .await?;
+    if rows.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(
+        rows.into_iter()
+            .map(|r| EventCard {
+                slug: r.slug,
+                name: r.name,
+                order_index: r.order_index,
+                importance: r.importance,
+                required: r.required,
+                organization_short_name: r.organization_short_name,
+                cost: r.cost,
+                status: r.status,
+                official_url: r.official_url,
+                last_seen_at: r.last_seen_at,
+            })
+            .collect(),
+    ))
+}

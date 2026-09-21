@@ -88,6 +88,41 @@ jobs:
       - name: cargo test -p search --test golden
         run: cargo test -p search --test golden
 
+  baseline:
+    name: baseline instruments (non-gating)
+    # optimize-raspi-serving task 5 (OPT-11): the measurement instruments
+    # (SQL-statement counter, synthetic PII-free fixture, recorded baselines)
+    # stay reproducible outside a developer shell. Non-gating: the load
+    # harness itself lands in stage 6; failures here surface without
+    # blocking PRs.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tramitesuy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TRAMITESUY_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.94.1
+      - name: recorded SQL-ops baselines
+        run: cargo test -p api --test sql_ops_baseline
+      - name: synthetic fixture
+        run: cargo test -p db --test fixture_catalog
+      - name: SQL-statement counter
+        run: cargo test -p db --test sql_counter
+
   integration:
     name: compose integration (non-gating)
     # Isolated compose-based job (task 90, D-6/D-7): boots the dev stack and

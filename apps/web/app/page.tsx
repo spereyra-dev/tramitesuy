@@ -1,18 +1,14 @@
 /**
- * Home (task 15 GREEN): the search box plus the three-mode inline rendering
- * on /?q= (spec "Three-mode search rendering" ×3, proposal R5). A server
- * component: it reads searchParams.q, calls search() through the same-origin
- * proxy, and renders the matching arm of the response here — no redirect to
- * the event page, no client-side data fetching.
+ * Search-first home: it reads searchParams.q, calls search() through the
+ * same-origin proxy, and renders the matching response on this page. It does
+ * not redirect, fetch in the browser, or alter the API view-model contract.
  */
 import Link from 'next/link';
 
 import { ProcedureCard } from '@/components/ProcedureCard';
 import { SearchForm } from '@/components/SearchForm';
-import { search } from '@/lib/api';
-import {
-  EMPTY_PROCEDURES_COPY,
-} from '@/lib/display';
+import { getCategories, search } from '@/lib/api';
+import { EMPTY_PROCEDURES_COPY } from '@/lib/display';
 import { searchView } from '@/lib/search-view';
 import type { SearchView } from '@/lib/search-view';
 
@@ -26,55 +22,146 @@ export default async function HomePage({
   const query = rawQuery?.trim();
 
   return (
-    <div>
-      <h1>¿Qué trámite necesitás hacer?</h1>
-      <p>
-        Contanos tu situación (por ejemplo: “compré un auto usado”) y te
-        mostramos los trámites oficiales que aplican.
-      </p>
-      <SearchForm initialQuery={query ?? ''} />
-      {query ? <SearchResults query={query} /> : null}
+    <div className="home-page">
+      <header className="home-hero">
+        <p className="home-eyebrow">Orientación para trámites del Estado</p>
+        <h1>¿Qué trámite necesitás hacer?</h1>
+        <p className="home-intro">
+          Contanos tu situación y te mostramos los trámites oficiales que pueden
+          aplicar.
+        </p>
+        <SearchForm initialQuery={query ?? ''} />
+        <p className="home-reassurance">
+          Buscá con tus palabras. Siempre vas a ver la fuente oficial de cada
+          trámite.
+        </p>
+      </header>
+      {query ? <SearchResults query={query} /> : <CategoryTiles />}
     </div>
+  );
+}
+
+/**
+ * Citizen-first category tiles for the no-query home. getCategories() throws
+ * on API failure, so the fetch is wrapped: the home must never 500, it falls
+ * back to the simple explore prompt instead.
+ */
+async function CategoryTiles() {
+  let categories: Awaited<ReturnType<typeof getCategories>>['categories'] = [];
+  let failed = false;
+  try {
+    categories = (await getCategories()).categories;
+  } catch {
+    failed = true;
+  }
+  if (failed || categories.length === 0) return <BrowseCategoriesPrompt />;
+
+  const tiles = [...categories].sort((a, b) => a.order_index - b.order_index);
+
+  return (
+    <section className="home-categories" aria-labelledby="home-categories-heading">
+      <p className="section-kicker">También podés explorar</p>
+      <h2 id="home-categories-heading">Trámites por tema</h2>
+      <p>
+        Si no sabés qué buscar, elegí un tema y mirá los trámites oficiales.
+      </p>
+      <ul className="home-categories__grid">
+        {tiles.map((category) => (
+          <li key={category.slug}>
+            <Link className="home-categories__tile" href={`/categories/${category.slug}`}>
+              <span className="home-categories__name">{category.name}</span>
+              <span className="home-categories__hint">Ver trámites</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <p className="home-categories__all">
+        <Link className="text-link" href="/categories">
+          Ver todos los temas
+        </Link>
+      </p>
+    </section>
+  );
+}
+
+function BrowseCategoriesPrompt() {
+  return (
+    <section className="browse-prompt" aria-labelledby="browse-heading">
+      <p className="section-kicker">También podés explorar</p>
+      <h2 id="browse-heading">Empezá por una categoría</h2>
+      <p>
+        Si todavía no sabés qué buscar, recorré los trámites agrupados por tema.
+      </p>
+      <Link className="text-link" href="/categories">
+        Explorar categorías
+      </Link>
+    </section>
   );
 }
 
 async function SearchResults({ query }: { query: string }) {
   const view = searchView(await search(query));
 
-  if (view.kind === 'open') return <OpenResult view={view} />;
-  if (view.kind === 'disambiguation') return <Disambiguation view={view} />;
-  return <Categories view={view} />;
+  if (view.kind === 'open') return <OpenResult query={query} view={view} />;
+  if (view.kind === 'disambiguation') {
+    return <Disambiguation query={query} view={view} />;
+  }
+  return <Categories query={query} view={view} />;
 }
 
-function OpenResult({ view }: { view: Extract<SearchView, { kind: 'open' }> }) {
+function OpenResult({
+  query,
+  view,
+}: {
+  query: string;
+  view: Extract<SearchView, { kind: 'open' }>;
+}) {
   return (
-    <section aria-label="Resultado">
-      <h2>
-        <Link href={view.eventHref}>{view.eventName}</Link>
-      </h2>
-      <p className="confidence">
-        Coincidencia: {Math.round(view.confidence * 100)}%
-      </p>
-      {view.procedures.length === 0 ? (
-        <p>{EMPTY_PROCEDURES_COPY}</p>
-      ) : (
-        view.procedures.map((procedure) => (
-          <ProcedureCard key={procedure.external_id} procedure={procedure} />
-        ))
-      )}
+    <section
+      className="search-results search-results--direct"
+      aria-labelledby="search-results-heading"
+    >
+      <div className="result-heading">
+        <p className="section-kicker">Resultado para “{query}”</p>
+        <h2 id="search-results-heading">Encontramos una situación relacionada</h2>
+        <p>
+          <Link href={view.eventHref}>{view.eventName}</Link>
+        </p>
+        <p className="confidence">
+          Coincidencia: {Math.round(view.confidence * 100)}%
+        </p>
+      </div>
+      <div className="procedure-results" aria-label="Trámites oficiales sugeridos">
+        {view.procedures.length === 0 ? (
+          <p className="empty-results">{EMPTY_PROCEDURES_COPY}</p>
+        ) : (
+          view.procedures.map((procedure) => (
+            <ProcedureCard key={procedure.external_id} procedure={procedure} />
+          ))
+        )}
+      </div>
     </section>
   );
 }
 
 function Disambiguation({
+  query,
   view,
 }: {
+  query: string;
   view: Extract<SearchView, { kind: 'disambiguation' }>;
 }) {
   return (
-    <section aria-label="Opciones">
-      <h2>{view.heading}</h2>
-      <ul className="option-list">
+    <section
+      className="search-results search-results--disambiguation"
+      aria-labelledby="search-results-heading"
+    >
+      <p className="section-kicker">Resultados para “{query}”</p>
+      <h2 id="search-results-heading">{view.heading}</h2>
+      <p className="result-description">
+        Elegí la situación que mejor describa lo que necesitás resolver.
+      </p>
+      <ul className="option-list option-list--choices">
         {view.options.map((option) => (
           <li key={option.href}>
             <Link href={option.href}>{option.name}</Link>
@@ -86,20 +173,34 @@ function Disambiguation({
 }
 
 function Categories({
+  query,
   view,
 }: {
+  query: string;
   view: Extract<SearchView, { kind: 'categories' }>;
 }) {
   return (
-    <section aria-label="Categorías">
-      <h2>Explorá por categoría</h2>
-      <ul className="option-list">
+    <section
+      className="search-results search-results--categories"
+      aria-labelledby="search-results-heading"
+    >
+      <p className="section-kicker">No encontramos una coincidencia directa para “{query}”</p>
+      <h2 id="search-results-heading">Explorá por categoría</h2>
+      <p className="result-description">
+        Elegí un tema para seguir descubriendo trámites oficiales.
+      </p>
+      <ul className="option-list option-list--categories">
         {view.categories.map((category) => (
           <li key={category.href}>
             <Link href={category.href}>{category.name}</Link>
           </li>
         ))}
       </ul>
+      <p className="search-results__all">
+        <Link className="text-link" href="/categories">
+          Ver todos los temas
+        </Link>
+      </p>
     </section>
   );
 }

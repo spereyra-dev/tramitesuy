@@ -42,13 +42,32 @@ fn unique_db_name() -> String {
 }
 
 /// Creates a uniquely named scratch database and connects a pool to it.
+/// The name is retried on a collision: parallel test binaries share the
+/// process id space and the wall clock, so two `pid+nanos` draws can
+/// theoretically coincide (same retry the c1/c2 support modules gained
+/// after observing the collision under full-workspace parallelism).
 pub async fn create_test_db() -> (PgPool, String) {
-    let name = unique_db_name();
     let admin = admin_pool().await;
-    sqlx::query(audited(format!("CREATE DATABASE {name}")))
-        .execute(&admin)
-        .await
-        .expect("create scratch test database");
+    let mut name = unique_db_name();
+    loop {
+        let result = sqlx::query(audited(format!("CREATE DATABASE {name}")))
+            .execute(&admin)
+            .await;
+        match result {
+            Ok(_) => break,
+            // SQLSTATE 23505 on pg_database.datname = a concurrent parallel
+            // test binary drew the same pid+nanos name; redraw and retry.
+            Err(err)
+                if matches!(
+                    &err,
+                    sqlx::Error::Database(db) if db.code().as_deref() == Some("23505")
+                ) =>
+            {
+                name = unique_db_name();
+            }
+            Err(err) => panic!("create scratch test database: {err:?}"),
+        }
+    }
     let url = format!("{}/{}", admin_url().trim_end_matches("/postgres"), name);
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -89,6 +108,31 @@ pub async fn fresh_migrated_db() -> (PgPool, String) {
     let (pool, name) = fresh_provisioned_db().await;
     apply_migrations(&pool).await;
     (pool, name)
+}
+
+/// Scratch database plus a pool whose connections log every executed
+/// statement to the shared SQL counter (task 7): the same `b1_` scratch
+/// lifecycle, reconnected through `SqlCounter::counting_pool` after the
+/// migrations. The measurement section spans the counting-pool setup (same
+/// discipline as `apps/api/tests/support::fresh_counting_db_section`), so
+/// connection-establishment statements land inside the held section and the
+/// test's `reset()` clears them before the measured work.
+pub async fn fresh_migrated_counting_db() -> (
+    PgPool,
+    String,
+    db::test_support::sql_counter::SqlCounter,
+    db::test_support::sql_counter::SqlSection,
+) {
+    let (pool, name) = fresh_migrated_db().await;
+    pool.close().await;
+    let counter = db::test_support::sql_counter::SqlCounter::new();
+    let section = counter.section().await;
+    let url = format!("{}/{}", admin_url().trim_end_matches("/postgres"), name);
+    let counting = counter
+        .counting_pool(&url)
+        .await
+        .expect("counting pool connects to the same scratch database");
+    (counting, name, counter, section)
 }
 
 /// Best-effort cleanup; called explicitly at the end of each test.

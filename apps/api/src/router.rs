@@ -5,6 +5,9 @@
 //! until C3.
 
 use axum::Router;
+use axum::extract::{MatchedPath, Request};
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use axum::routing::{get, post};
 
 use crate::handlers;
@@ -23,5 +26,31 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/v1/procedures/{id}", get(handlers::procedure::get))
         .fallback(|| async { crate::error::ApiError::NotFound })
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            observe_request,
+        ))
         .with_state(state)
+}
+
+/// Task 1 wiring: times every served request and reports route pattern +
+/// status + wall latency to the metrics seam. The route label is the axum
+/// route pattern (low cardinality, request-independent) — never the query.
+async fn observe_request(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    path: Option<MatchedPath>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let route = path
+        .map(|matched| matched.as_str().to_string())
+        .unwrap_or_else(|| "unmatched".to_string());
+    let started = std::time::Instant::now();
+    let response = next.run(request).await;
+    state.metrics.observe_request(
+        &route,
+        response.status().as_u16(),
+        started.elapsed().as_micros(),
+    );
+    response
 }

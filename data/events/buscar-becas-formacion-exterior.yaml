@@ -1,0 +1,31 @@
+slug: buscar-becas-formacion-exterior
+name: Buscar becas de formación en el exterior
+description: Búsqueda de becas de formación en el exterior.
+category: educacion
+keywords:
+  - term: buscar
+    type: ACTION
+    weight: 10
+  - term: becas
+    type: ENTITY
+    weight: 8
+  - term: formacion
+    type: ENTITY
+    weight: 5
+  - term: exterior
+    type: MODIFIER
+    weight: 5
+rules:
+  - action: buscar
+    entity: becas
+    bonus: 15
+relations:
+  - external_id: "159"
+    order: 1
+    required: true
+tests:
+  positive:
+    - busco becas para formarme en el exterior
+    - quiero buscar una beca de formacion fuera del pais
+  negative:
+    - necesito subsidio de desempleo

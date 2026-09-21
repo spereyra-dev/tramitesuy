@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO search_logs (query, normalized_query, selected_event_id, top_event_id, top_score) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+  "query": "INSERT INTO search_logs (query, normalized_query, selected_event_id, top_event_id, top_score) SELECT $1, $2, (SELECT id FROM life_events WHERE slug = $3), (SELECT id FROM life_events WHERE slug = $4), $5 RETURNING id",
   "describe": {
     "columns": [
       {
@@ -19,8 +19,8 @@
       "Left": [
         "Text",
         "Text",
-        "Uuid",
-        "Uuid",
+        "Text",
+        "Text",
         "Float8"
       ]
     },
@@ -28,5 +28,5 @@
       false
     ]
   },
-  "hash": "a0d77ea1327504660f847f84ed8c65c3a77fac36451c9263d167ec102468c694"
+  "hash": "b2e3fab81b36772cea10d8c6748d21e9191475f5496236856c79c595b9422571"
 }

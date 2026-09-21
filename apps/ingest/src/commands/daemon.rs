@@ -9,17 +9,34 @@ use std::time::Duration;
 use crate::support;
 use db::pool;
 use ingest::daily_loop;
+use ingest::pool_config;
 
 /// The daemon loop body. Runs migrations once (self-bootstrapping so the
 /// compose service works on a fresh database), then loops: ingest → sleep
 /// until the next 03:00 UTC.
 pub fn run() {
+    let limits = pool_config::PoolLimits::from_env().unwrap_or_else(|error| {
+        // Panic justification: boot composition root of the daemon; an
+        // invalid environment is a fatal boot failure (compose restarts it)
+        // rather than looping forever on a broken configuration.
+        panic!("daemon pool config: {error}")
+    });
     let pool = support::block_on(async {
-        db::connect(&support::database_url(None))
-            .await
-            .expect("connect to Postgres")
+        db::connect(
+            &support::database_url(None),
+            limits.pool_max,
+            limits.acquire_timeout,
+        )
+        .await
+        // Panic justification: boot composition root of the daemon; a
+        // usable database is part of the daemon's environment contract and
+        // a failed boot aborts the process (compose restarts it) rather
+        // than looping forever on a broken pool.
+        .expect("connect to Postgres")
     });
     support::block_on(async {
+        // Panic justification: same boot contract as above — migrations
+        // must apply before the daemon can do any work.
         pool::run_migrations(&pool)
             .await
             .expect("embedded migrations apply cleanly");

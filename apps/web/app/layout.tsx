@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import './globals.css';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'TrámitesUY',
   description:
     'Descubrí qué trámites oficiales aplican a tu situación, con resultados audibles y atribuidos al Catálogo de trámites y servicios del Estado — AGESIC.',
@@ -18,23 +18,35 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body>
+        <a className="skip-link" href="#main-content">
+          Saltar al contenido principal
+        </a>
         <header className="site-header">
-          <Link href="/" className="site-title">
-            TrámitesUY
-          </Link>
-          <p className="site-tagline">
-            Trámites del Estado uruguayo, explicados por situación de vida.
-          </p>
+          <div className="site-header__content">
+            <Link href="/" className="site-title" aria-label="TrámitesUY, inicio">
+              TrámitesUY
+            </Link>
+            <p className="site-tagline">
+              Trámites del Estado uruguayo, explicados por situación de vida.
+            </p>
+            <nav className="site-nav" aria-label="Navegación principal">
+              <Link href="/categories">Explorar categorías</Link>
+            </nav>
+          </div>
         </header>
-        <main className="site-main">{children}</main>
+        <main id="main-content" className="site-main" tabIndex={-1}>
+          {children}
+        </main>
         <footer className="site-footer">
-          <p>
-            Fuente oficial:{' '}
-            <a href="https://catalogodatos.gub.uy/dataset/agesic-guia-de-tramites">
-              Catálogo de trámites y servicios del Estado — AGESIC
-            </a>{' '}
-            · licencia odc-uy
-          </p>
+          <div className="site-footer__content">
+            <p>
+              Fuente oficial:{' '}
+              <a href="https://catalogodatos.gub.uy/dataset/agesic-guia-de-tramites">
+                Catálogo de trámites y servicios del Estado — AGESIC
+              </a>{' '}
+              · licencia odc-uy
+            </p>
+          </div>
         </footer>
       </body>
     </html>

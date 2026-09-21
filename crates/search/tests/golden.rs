@@ -1,7 +1,7 @@
 //! Golden-dataset evaluation harness tests (SE-12, D-7, tasks 34–38).
 //!
 //! The harness runs every `tests/search/golden_dataset.yaml` case over the
-//! real nine-event seed with a deterministic DB-free `StubProvider`, reports
+//! real taxonomy seed with a deterministic DB-free `StubProvider`, reports
 //! the Top1 / Top3 / no-result / ambiguous metrics table, and gates the
 //! recorded baselines: a ranking regression fails the suite naming the
 //! regressing query. The dataset file is read here (tests may touch the
@@ -29,7 +29,7 @@ fn load_dataset() -> search::golden::GoldenDataset {
     parse_dataset(&raw).expect("golden dataset parses against the v1 schema")
 }
 
-/// Real nine-event seed loaded exactly as the per-event tests do (task 32):
+/// Real taxonomy seed loaded exactly as the per-event tests do (task 32):
 /// validated against the committed external-id snapshot, then projected
 /// into the engine lexicons.
 fn seed_engine() -> SearchEngine {
@@ -102,7 +102,7 @@ fn golden_gate_passes_over_the_real_seed() {
         contributions: Vec::new(),
     };
 
-    match gate(&engine, &[&stub], &dataset) {
+    match support::block_on(gate(&engine, support::STUB_GENERATION, &[&stub], &dataset)) {
         Ok(metrics) => println!("{}", metrics.metrics_table()),
         Err(report) => panic!("golden gate failed over the real seed:\n{report}"),
     }
@@ -132,12 +132,12 @@ fn degrading_a_keyword_weight_fails_the_gate_naming_the_query() {
 
     let healthy = harness_fixture(8);
     assert!(
-        gate(&healthy, &[], &dataset).is_ok(),
+        support::block_on(gate(&healthy, support::STUB_GENERATION, &[], &dataset)).is_ok(),
         "the healthy harness fixture must pass its own gate"
     );
 
     let degraded = harness_fixture(4);
-    let report = gate(&degraded, &[], &dataset)
+    let report = support::block_on(gate(&degraded, support::STUB_GENERATION, &[], &dataset))
         .expect_err("degrading one keyword weight must regress the case");
     assert!(
         report.contains("auto usado"),
@@ -188,7 +188,12 @@ fn zero_match_and_ambiguous_cases_are_visible_in_the_metrics_table() {
         contributions: Vec::new(),
     };
 
-    let outcomes = run_cases(&engine, &[&stub], &dataset);
+    let outcomes = support::block_on(run_cases(
+        &engine,
+        support::STUB_GENERATION,
+        &[&stub],
+        &dataset,
+    ));
     assert_eq!(outcomes.len(), 3, "every dataset case produces one outcome");
     assert_eq!(
         outcomes[1].mode,
@@ -233,7 +238,7 @@ fn zero_match_and_ambiguous_cases_are_visible_in_the_metrics_table() {
 
     // The harness reports the table on every run, including gate runs.
     assert!(
-        gate(&engine, &[&stub], &dataset).is_ok(),
+        support::block_on(gate(&engine, support::STUB_GENERATION, &[&stub], &dataset)).is_ok(),
         "the accounting fixture satisfies its own baselines"
     );
 }
@@ -254,9 +259,49 @@ fn dataset_parser_rejects_an_unknown_version() {
 #[test]
 fn real_seed_loads_synonym_surfaces() {
     let (_, synonyms) = support::real_seed();
-    assert_eq!(
-        synonyms.get("auto").map(String::as_str),
-        Some("vehiculo"),
-        "the real seed must map auto -> vehiculo"
-    );
+    for (surface, canonical) in [
+        ("auto", "vehiculo"),
+        ("arrendamiento", "alquiler"),
+        ("certificado", "partida"),
+    ] {
+        assert_eq!(
+            synonyms.get(surface).map(String::as_str),
+            Some(canonical),
+            "the real seed must map {surface} -> {canonical}"
+        );
+    }
+}
+
+/// T3/T4: the global regression suite covers verified Documents, Housing,
+/// and Family actions with citizen vocabulary, rather than only exercising
+/// their YAML-local query cases. Consumer coverage lives in the event's
+/// embedded cases plus the golden dataset's consumer positives.
+#[test]
+fn golden_dataset_covers_verified_taxonomy_events() {
+    let dataset = load_dataset();
+    for (query, slug) in [
+        ("quiero sacar mi pasaporte", "sacar-pasaporte"),
+        (
+            "solicitar garantia de arrendamiento",
+            "solicitar-garantia-alquiler",
+        ),
+        ("registrar el nacimiento de mi hija", "inscribir-nacimiento"),
+        (
+            "pedir certificado de nacimiento",
+            "solicitar-partida-nacimiento",
+        ),
+        ("quiero inscribir mi matrimonio", "inscribir-matrimonio"),
+        (
+            "pedir certificado de matrimonio",
+            "solicitar-partida-matrimonio",
+        ),
+    ] {
+        assert!(
+            dataset
+                .cases
+                .iter()
+                .any(|case| case.query == query && case.expect_top1.as_deref() == Some(slug)),
+            "golden dataset must cover {slug} with {query:?}"
+        );
+    }
 }

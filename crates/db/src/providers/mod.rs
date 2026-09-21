@@ -3,39 +3,24 @@
 //! and the pg_trgm similarity provider (`TRIGRAM`, over name+keywords).
 //! Implementations live in `crates/db` per the design dependency arrow
 //! `db → search`; the pure engine only sees the trait seam.
+//!
+//! Since S4b (task 11) the providers are async implementations invoked
+//! directly from the async orchestration layer: the synchronous bridge and
+//! its shared runtime are gone from the search path.
 
 pub mod fts;
+pub mod orchestrator;
 pub mod trigram;
 
 use search::engine::EngineError;
-use std::sync::OnceLock;
+use uuid::Uuid;
 
-/// Bridges the synchronous `CandidateProvider` trait into sqlx's async
-/// queries — the same adapter pattern as
-/// `repos::procedures::PostgresProcedureRepository`. Called from within a
-/// multi-thread tokio runtime (the axum worker, the DB-backed tests) it
-/// blocks via `block_in_place`; synchronous callers outside any runtime fall
-/// back to a shared internal runtime. Current-thread runtimes cannot host
-/// the bridge (tokio forbids blocking there); neither the API server nor the
-/// tests use one.
-pub(crate) fn bridge_block_on<F: std::future::Future>(fut: F) -> F::Output {
-    match tokio::runtime::Handle::try_current() {
-        Ok(handle) => tokio::task::block_in_place(|| handle.block_on(fut)),
-        Err(_) => shared_runtime().block_on(fut),
-    }
-}
-
-/// Shared runtime for synchronous callers outside any tokio context.
-fn shared_runtime() -> &'static tokio::runtime::Runtime {
-    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .enable_all()
-            .build()
-            .expect("provider bridge runtime")
-    })
-}
+/// Stage-2 placeholder generation id for the legacy (not yet
+/// generation-scoped) tables: the async provider contract already carries
+/// the request's generation scope, but generation-scoped projections land
+/// in stage 3 (S5–S7); until then the legacy queries ignore the id. The
+/// stage-3 snapshot replaces this with the request's captured generation.
+pub const LEGACY_GENERATION_ID: Uuid = Uuid::nil();
 
 /// Builds the provider-side query text: the canonical token forms joined
 /// with spaces — the same de-accented lowercase alphabet the engine matches

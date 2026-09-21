@@ -1,0 +1,31 @@
+slug: registrar-voluntad-donacion-organos
+name: Registrar voluntad de donación de órganos
+description: Registro de la voluntad de donar órganos ante el Instituto Nacional de Donación y Trasplante.
+category: salud
+keywords:
+  - term: registrar
+    type: ACTION
+    weight: 10
+  - term: voluntad
+    type: ENTITY
+    weight: 8
+  - term: donacion
+    type: ENTITY
+    weight: 8
+  - term: organos
+    type: ENTITY
+    weight: 8
+rules:
+  - action: registrar
+    entity: donacion
+    bonus: 15
+relations:
+  - external_id: "4090"
+    order: 1
+    required: true
+tests:
+  positive:
+    - quiero registrar mi voluntad de donacion de organos
+    - registrar voluntad para donar organos
+  negative:
+    - obtener certificado de vacunacion

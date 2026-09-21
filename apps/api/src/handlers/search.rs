@@ -1,7 +1,7 @@
 //! `GET /search` and `GET /search/debug` (API-2/API-5, tasks 79–80): the
 //! full search pipeline from design §4.2 —
-//! redact (log copy) → `SearchEngine::search` over the YAML-fed engine with
-//! the DB-backed FTS/trigram providers → persist the redacted `search_logs`
+//! redact (log copy) → db-side async orchestrator over the YAML-fed engine
+//! with DB-backed FTS/trigram providers → persist the redacted `search_logs`
 //! row (task 82) → JSON per the mode shape.
 //!
 //! The engine's lexicons come from the YAML taxonomy cached in `AppState`
@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use axum::Json;
 use axum::extract::{Query, State};
 use db::providers::fts::FtsProvider;
+use db::providers::orchestrator;
 use db::providers::trigram::TrigramProvider;
 use db::repos::search_log::{self, NewSearchLog};
 use search::normalizer::normalize;
@@ -28,9 +29,12 @@ pub async fn search(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let query = query_parameter(&params)?;
-    let outcome = run_pipeline(&state, &query)?;
+    let outcome = run_pipeline(&state, &query).await?;
+    // Task 1: the two provider statements are consumed by the pipeline.
+    state.metrics.observe_sql_ops(ROUTE, 2);
 
-    persist_log(&state, &query, &outcome).await?;
+    let log_ops = persist_log(&state, &query, &outcome).await?;
+    state.metrics.observe_sql_ops(ROUTE, log_ops);
 
     let payload = match outcome.selection.mode {
         SelectionMode::Open => open_payload(&state, &outcome).await?,
@@ -40,14 +44,20 @@ pub async fn search(
     Ok(Json(payload))
 }
 
+/// This route's low-cardinality metrics label (task 1): the route pattern,
+/// never the query text (R14).
+const ROUTE: &str = "/api/v1/search";
+
 pub async fn debug(
     State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let query = query_parameter(&params)?;
-    let outcome = run_pipeline(&state, &query)?;
+    let outcome = run_pipeline(&state, &query).await?;
+    state.metrics.observe_sql_ops(ROUTE, 2);
 
-    persist_log(&state, &query, &outcome).await?;
+    let log_ops = persist_log(&state, &query, &outcome).await?;
+    state.metrics.observe_sql_ops(ROUTE, log_ops);
 
     Ok(Json(debug_payload(&state, &outcome)))
 }
@@ -61,15 +71,23 @@ fn query_parameter(params: &HashMap<String, String>) -> Result<String, ApiError>
         .ok_or_else(|| ApiError::BadRequest("missing or empty q parameter".to_string()))
 }
 
-/// Runs the deterministic pipeline: the YAML-fed engine plus the two
-/// DB-backed candidate providers.
-fn run_pipeline(state: &AppState, query: &str) -> Result<SearchOutcome, ApiError> {
+/// Runs the deterministic pipeline through the db-side async orchestration
+/// boundary (S4b task 11): normalize → await FTS/trigram per configuration
+/// → pure `score`. Provider errors stay structural and map to the existing
+/// public 500 path; no partial candidate ranking is produced.
+async fn run_pipeline(state: &AppState, query: &str) -> Result<SearchOutcome, ApiError> {
     let fts = FtsProvider::new(state.pool.clone());
     let trigram = TrigramProvider::new(state.pool.clone());
-    state
-        .engine
-        .search(query, &[&fts, &trigram])
-        .map_err(|error| ApiError::InternalServerError(format!("search pipeline failed: {error}")))
+    orchestrator::run_search(
+        &state.engine,
+        db::providers::LEGACY_GENERATION_ID,
+        query,
+        &fts,
+        &trigram,
+        state.provider_fetch,
+    )
+    .await
+    .map_err(|error| ApiError::InternalServerError(format!("search pipeline failed: {error}")))
 }
 
 /// Persists the redacted log row (API-10, task 82): ONLY the redacted query,
@@ -80,7 +98,7 @@ async fn persist_log(
     state: &AppState,
     query: &str,
     outcome: &SearchOutcome,
-) -> Result<(), ApiError> {
+) -> Result<u64, ApiError> {
     let redacted = redact(query);
     let normalized = normalize(&redacted).normalized;
     let selected_event_slug = match outcome.selection.mode {
@@ -89,6 +107,9 @@ async fn persist_log(
     };
     let top_event_slug = outcome.results.first().map(|event| event.slug.clone());
     let top_score = outcome.results.first().map(|event| event.score);
+    // Task 6: the consolidated insert resolves both slugs inline — the log
+    // path is exactly one statement.
+    let sql_ops = 1;
     search_log::insert(
         &state.pool,
         &NewSearchLog {
@@ -103,7 +124,8 @@ async fn persist_log(
     .map(|_| ())
     .map_err(|error| {
         ApiError::InternalServerError(format!("search log persistence failed: {error}"))
-    })
+    })?;
+    Ok(sql_ops)
 }
 
 /// Open mode (API-2): `results` carries exactly the selected event — slug,
@@ -124,8 +146,13 @@ async fn open_payload(
         .first()
         .expect("open selection implies a top result");
 
-    let procedures = match db::repos::procedures::by_event(&state.pool, &slug).await {
-        Ok(Some(projection)) => dto::procedure_cards(projection.procedures),
+    let procedures = match db::repos::procedures::cards_by_event(&state.pool, &slug).await {
+        Ok(Some(cards)) => {
+            // Task 7: the transition cards query issues exactly 1 statement
+            // (no event metadata, no raw_data transport).
+            state.metrics.observe_sql_ops(ROUTE, 1);
+            dto::procedure_cards_from_event_cards(cards)
+        }
         Ok(None) => Vec::new(),
         Err(error) => {
             return Err(ApiError::InternalServerError(format!(

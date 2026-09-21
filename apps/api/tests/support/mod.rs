@@ -108,6 +108,17 @@ pub fn spawn_app(pool: PgPool) -> Router {
     api::build_router(state)
 }
 
+/// Boots the router with an injected metrics sink (task 1 seam): same boot
+/// path as `spawn_app`, but the counters surface becomes test-readable.
+pub fn spawn_app_with_metrics(
+    pool: PgPool,
+    metrics: std::sync::Arc<dyn api::metrics::Metrics>,
+) -> Router {
+    let state = api::state::AppState::build_with_metrics(pool, &repo_root().join("data"), metrics)
+        .expect("boot AppState from the real data seed");
+    api::build_router(state)
+}
+
 /// Sends one request to the in-process router and returns the status plus
 /// the parsed JSON body (Null for empty bodies).
 pub async fn request(app: &Router, method: &str, uri: &str) -> (StatusCode, Value) {
@@ -366,4 +377,102 @@ pub async fn last_seen_of(pool: &PgPool, external_id: &str) -> String {
             .await
             .expect("procedure row readable");
     row.0.to_rfc3339()
+}
+
+pub use db::test_support::sql_counter::{SqlCounter, SqlSection};
+
+/// Fresh migrated scratch database plus a statement-counting pool, with
+/// the measurement section already held across setup: the test calls
+/// `section.reset()` before the measured work and reads `section.count()`
+/// after (task 2 instrument, reused from `crates/db`'s test-support).
+pub async fn fresh_counting_db_section() -> (PgPool, SqlSection) {
+    let counter = SqlCounter::new();
+    // The section spans setup too: parallel tests in this binary cannot
+    // leak statements into the recorded counts.
+    let section = counter.section().await;
+
+    let (pool, name) = fresh_migrated_db().await;
+    let base = std::env::var("TRAMITESUY_TEST_DB_URL")
+        .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/postgres".to_string());
+    let url = format!("{}/{}", base.trim_end_matches("/postgres"), name);
+    drop(pool);
+
+    let pool = counter
+        .counting_pool(&url)
+        .await
+        .expect("counting pool over the migrated scratch database");
+    (pool, section)
+}
+/// Seeds the projection rows for the open-mode contract: one category, one
+/// event (name/description deliberately disjoint from the fixture query's
+/// lexemes so FTS/trigram stay silent), one organization, two procedures
+/// (empty cost and populated cost), and relations in declared order.
+pub async fn seed_search_fixture(pool: &sqlx::PgPool) {
+    sqlx::query(
+        "INSERT INTO categories (slug, name, icon, order_index) \
+         VALUES ('vehiculos', 'Vehículos', 'car', 1)",
+    )
+    .execute(pool)
+    .await
+    .expect("seed category");
+
+    sqlx::query(
+        "INSERT INTO life_events (slug, name, description, category_id) \
+         SELECT 'comprar-vehiculo', 'Adquisición de rodados', \
+                'Pasos para adquirir un rodado en Uruguay.', id \
+         FROM categories WHERE slug = 'vehiculos'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed event");
+
+    sqlx::query(
+        "INSERT INTO organizations (external_id, name, short_name, official_url) \
+         VALUES ('org-1', 'Ministerio de Transporte', 'MTOP', 'https://www.gub.uy/mtop')",
+    )
+    .execute(pool)
+    .await
+    .expect("seed organization");
+
+    sqlx::query(
+        "INSERT INTO procedures (external_id, name, description, organization_id, official_url, \
+         status, raw_data, first_seen_at, last_seen_at) \
+         SELECT '4551', 'Solicitud de empadronamientos', 'Empadronamiento ante la DNT.', \
+                o.id, 'https://www.gub.uy/tramite/4551', 'active', \
+                '{\"tiene_costo\": \"\", \"valor\": \"\"}'::jsonb, \
+                '2026-09-18T03:00:00Z', '2026-09-18T03:00:00Z' \
+         FROM organizations o WHERE o.external_id = 'org-1'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed procedure 4551");
+    sqlx::query(
+        "INSERT INTO procedures (external_id, name, description, organization_id, official_url, \
+         status, raw_data, first_seen_at, last_seen_at) \
+         SELECT '2368', 'Alta de vehículos ante la DNT', 'Alta inicial del vehículo.', \
+                o.id, 'https://www.gub.uy/tramite/2368', 'active', \
+                '{\"tiene_costo\": \"1\", \"valor\": \"55.70\"}'::jsonb, \
+                '2026-09-18T04:00:00Z', '2026-09-18T04:00:00Z' \
+         FROM organizations o WHERE o.external_id = 'org-1'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed procedure 2368");
+
+    sqlx::query(
+        "INSERT INTO life_event_procedures (life_event_id, procedure_id, order_index, required) \
+         SELECT e.id, p.id, 1, TRUE FROM life_events e, procedures p \
+         WHERE e.slug = 'comprar-vehiculo' AND p.external_id = '4551'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed relation order 1");
+    sqlx::query(
+        "INSERT INTO life_event_procedures (life_event_id, procedure_id, order_index, required) \
+         SELECT e.id, p.id, 2, FALSE FROM life_events e, procedures p \
+         WHERE e.slug = 'comprar-vehiculo' AND p.external_id = '2368'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed relation order 2");
 }

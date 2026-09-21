@@ -25,16 +25,21 @@ export function SearchForm({ initialQuery = '' }: { initialQuery?: string }) {
       <label className="search-label" htmlFor="situacion">
         Describí tu situación
       </label>
+      <p className="search-guidance" id="search-guidance">
+        Escribí qué pasó o qué necesitás hacer. Por ejemplo: “compré un auto usado”.
+      </p>
       <div className="search-controls">
         <input
           id="situacion"
           name="q"
           type="search"
+          required
+          aria-describedby="search-guidance"
           placeholder="Ej.: compré un auto usado"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <button type="submit">Buscar</button>
+        <button type="submit">Buscar trámites</button>
       </div>
     </form>
   );

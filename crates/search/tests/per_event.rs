@@ -16,6 +16,8 @@ use search::types::{EventLexicon, SearchOutcome};
 use taxonomy::model::{Event, Taxonomy};
 use taxonomy::validator::validate_dir_against_snapshot;
 
+mod support;
+
 /// Repo root: the per-event tests run against the real committed seed.
 fn repo_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -87,7 +89,8 @@ fn synonym_map(taxonomy: &Taxonomy) -> SynonymMap {
 /// Runs the full engine over one query with no providers (the seed's own
 /// keyword/rules layer must decide; provider entries come later, in slice c).
 fn run_query(engine: &SearchEngine, query: &str) -> SearchOutcome {
-    engine.search(query, &[]).expect("engine search succeeds")
+    support::block_on(engine.search(support::STUB_GENERATION, query, &[]))
+        .expect("engine search succeeds")
 }
 
 /// SE-13: every `tests.positive` query ranks its own event TOP1.
@@ -163,6 +166,97 @@ fn every_negative_query_does_not_rank_its_event_top1() {
         }
     }
     assert!(checked > 0, "the seed must declare negative tests");
+}
+
+/// T2 taxonomy coverage: each Documents, Housing, and Family event must
+/// declare both positive and negative citizen-query examples. Their actual
+/// ranking is exercised by the generic per-event query contract above.
+#[test]
+fn coverage_events_have_embedded_query_cases() {
+    let taxonomy = load_validated_taxonomy();
+    const COVERAGE_SLUGS: [&str; 6] = [
+        "sacar-pasaporte",
+        "solicitar-garantia-alquiler",
+        "inscribir-nacimiento",
+        "solicitar-partida-nacimiento",
+        "inscribir-matrimonio",
+        "solicitar-partida-matrimonio",
+    ];
+
+    for slug in COVERAGE_SLUGS {
+        let event = taxonomy
+            .events
+            .iter()
+            .find(|source| source.event.slug == slug)
+            .unwrap_or_else(|| panic!("missing T2 coverage event {slug}"));
+        assert!(
+            !event.event.tests.positive.is_empty(),
+            "T2 coverage event {slug} needs positive query cases"
+        );
+        assert!(
+            !event.event.tests.negative.is_empty(),
+            "T2 coverage event {slug} needs negative query cases"
+        );
+    }
+}
+
+/// This verified taxonomy slice declares embedded citizen-query cases for
+/// every new event; their ranking contract is exercised above.
+#[test]
+fn verified_taxonomy_slice_events_have_embedded_query_cases() {
+    let taxonomy = load_validated_taxonomy();
+    const SLUGS: [&str; 6] = [
+        "obtener-certificado-vacunacion",
+        "solicitar-subsidio-desempleo",
+        "solicitar-jubilacion",
+        "solicitar-residencia-legal",
+        "obtener-historia-laboral",
+        "registrar-voluntad-donacion-organos",
+    ];
+
+    for slug in SLUGS {
+        let event = taxonomy
+            .events
+            .iter()
+            .find(|source| source.event.slug == slug)
+            .unwrap_or_else(|| panic!("missing verified taxonomy slice event {slug}"));
+        assert!(
+            !event.event.tests.positive.is_empty(),
+            "verified taxonomy slice event {slug} needs positive query cases"
+        );
+        assert!(
+            !event.event.tests.negative.is_empty(),
+            "verified taxonomy slice event {slug} needs negative query cases"
+        );
+    }
+}
+
+/// This taxonomy slice must declare citizen-query cases for its verified events.
+#[test]
+fn benefits_justice_consumer_education_events_have_embedded_query_cases() {
+    let taxonomy = load_validated_taxonomy();
+    const SLUGS: [&str; 4] = [
+        "solicitar-asignacion-familiar",
+        "solicitar-antecedentes-judiciales",
+        "consultar-reclamar-o-denunciar-como-consumidor",
+        "buscar-becas-formacion-exterior",
+    ];
+
+    for slug in SLUGS {
+        let event = taxonomy
+            .events
+            .iter()
+            .find(|source| source.event.slug == slug)
+            .unwrap_or_else(|| panic!("missing taxonomy slice event {slug}"));
+        assert!(
+            !event.event.tests.positive.is_empty(),
+            "taxonomy slice event {slug} needs positive query cases"
+        );
+        assert!(
+            !event.event.tests.negative.is_empty(),
+            "taxonomy slice event {slug} needs negative query cases"
+        );
+    }
 }
 
 /// TX-5 scenario "near-duplicate events are separable" (task 30):

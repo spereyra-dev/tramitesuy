@@ -2,11 +2,14 @@
    .module.css files may be added later; global styles here stay small. */
 
 :root {
-  --text: #1c2733;
-  --muted: #5b6b7b;
-  --accent: #0b57a4;
-  --border: #d8dfe6;
-  --bg-soft: #f5f7f9;
+  --text: #18222d;
+  --muted: #4d5d6c;
+  --accent: #075a9c;
+  --accent-dark: #004576;
+  --border: #c8d2dc;
+  --bg-soft: #f2f6f8;
+  --surface: #ffffff;
+  --focus: #d85b00;
 }
 
 * {
@@ -15,78 +18,334 @@
 
 body {
   margin: 0;
+  background: var(--surface);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--text);
+  /* Citizen-first base size (task 6): at least 17px for older readers. */
+  font-size: 1.0625rem;
   line-height: 1.55;
 }
 
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 1;
+  padding: 0.6rem 0.85rem;
+  background: var(--text);
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
 .site-header {
-  padding: 1.25rem 1rem;
   border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+.site-header__content,
+.site-footer__content {
+  max-width: 70rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem;
 }
 
 .site-title {
-  font-size: 1.35rem;
-  font-weight: 700;
-  color: var(--accent);
+  display: inline-block;
+  color: var(--accent-dark);
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   text-decoration: none;
 }
 
 .site-tagline {
-  margin: 0.25rem 0 0;
+  max-width: 38rem;
+  margin: 0.3rem 0 0;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+}
+
+.site-nav {
+  margin-top: 1rem;
+}
+
+.site-nav a {
+  /* Comfortable tap target: >=48px total height on mobile. */
+  display: inline-block;
+  padding: 0.7rem 0;
+  color: var(--accent-dark);
+  font-weight: 700;
 }
 
 .site-main {
-  max-width: 46rem;
+  max-width: 70rem;
+  min-height: 55vh;
   margin: 0 auto;
-  padding: 1.25rem 1rem 2.5rem;
+  padding: 1.5rem 1rem 3rem;
 }
 
 .site-footer {
   border-top: 1px solid var(--border);
-  padding: 1rem;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
+}
+
+.site-footer p {
+  margin: 0;
 }
 
 a {
   color: var(--accent);
 }
 
-/* Search (W2) and procedure cards (minimal plain CSS, P3). */
+a:hover {
+  color: var(--accent-dark);
+}
+
+@media (min-width: 48rem) {
+  .site-header__content {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    column-gap: 2rem;
+    align-items: end;
+    padding-block: 1.5rem;
+  }
+
+  .site-tagline {
+    grid-column: 1;
+  }
+
+  .site-nav {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    margin: 0;
+  }
+
+  .site-main {
+    padding-top: 2.5rem;
+  }
+}
+
+/* Search-first home and procedure cards: original, mobile-first presentation. */
+.home-page {
+  max-width: 62rem;
+}
+
+.home-hero {
+  max-width: 48rem;
+  padding: 0.5rem 0 2.5rem;
+}
+
+.home-eyebrow,
+.section-kicker {
+  margin: 0 0 0.45rem;
+  color: var(--accent-dark);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.home-hero h1,
+.search-results h2,
+.browse-prompt h2,
+.home-categories h2 {
+  line-height: 1.15;
+}
+
+.home-hero h1 {
+  max-width: 15ch;
+  margin: 0;
+  font-size: clamp(2rem, 7vw, 3.5rem);
+  letter-spacing: -0.04em;
+}
+
+.home-intro {
+  max-width: 42rem;
+  margin: 1rem 0 0;
+  color: var(--muted);
+  font-size: 1.1rem;
+}
+
 .search-form {
-  margin: 1.25rem 0;
+  max-width: 46rem;
+  margin: 1.75rem 0 0;
+  padding: 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--bg-soft);
 }
 
 .search-label {
   display: block;
-  font-weight: 600;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.25rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.search-guidance {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
 }
 
 .search-controls {
-  display: flex;
-  gap: 0.5rem;
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.8rem;
+}
+
+.search-controls input,
+.search-controls button {
+  border-radius: 0.35rem;
+  font: inherit;
 }
 
 .search-controls input {
-  flex: 1;
-  padding: 0.5rem 0.75rem;
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.65rem 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 1rem;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.1rem;
 }
 
 .search-controls button {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 4px;
+  min-height: 3.25rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--accent-dark);
   background: var(--accent);
   color: #fff;
-  font-size: 1rem;
+  font-size: 1.1rem;
+  font-weight: 800;
   cursor: pointer;
+}
+
+.search-controls button:hover {
+  background: var(--accent-dark);
+}
+
+.home-reassurance {
+  max-width: 42rem;
+  margin: 0.85rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.search-results,
+.browse-prompt {
+  padding: clamp(1.25rem, 4vw, 2rem);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.search-results h2,
+.browse-prompt h2,
+.home-categories h2 {
+  margin: 0;
+  font-size: clamp(1.5rem, 4vw, 2rem);
+}
+
+/* Citizen-first category tiles (task 5/6): large plain-text cards, no
+   icons or emoji; grid is one column on mobile, two/three on desktop. */
+.home-categories {
+  margin-top: 2rem;
+  padding: clamp(1.25rem, 4vw, 2rem);
+  border: 1px solid var(--border);
+  border-top: 0.4rem solid #2f6b58;
+  border-radius: 0.75rem;
+  background: #f1f8f4;
+}
+
+.home-categories__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-categories__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-height: 3rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-left: 0.4rem solid var(--accent);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  text-decoration: none;
+}
+
+.home-categories__tile:hover {
+  background: var(--bg-soft);
+  border-left-color: var(--accent-dark);
+}
+
+.home-categories__name {
+  color: var(--text);
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.home-categories__hint {
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+@media (min-width: 40rem) {
+  .home-categories__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 62rem) {
+  .home-categories__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.search-results--direct {
+  border-top: 0.4rem solid var(--accent);
+  background: var(--surface);
+}
+
+.search-results--disambiguation {
+  border-top: 0.4rem solid #7a4b00;
+  background: #fff8eb;
+}
+
+.search-results--categories,
+.browse-prompt {
+  border-top: 0.4rem solid #2f6b58;
+  background: #f1f8f4;
+}
+
+.result-heading > p:not(.section-kicker),
+.result-description {
+  margin: 0.65rem 0 0;
+}
+
+.result-heading a,
+.option-list a,
+.text-link {
+  font-weight: 800;
 }
 
 .confidence {
@@ -94,35 +353,246 @@ a {
   font-size: 0.9rem;
 }
 
+.procedure-results {
+  margin-top: 1.25rem;
+}
+
+.empty-results {
+  margin: 0;
+  padding: 1rem;
+  border-left: 0.25rem solid var(--border);
+  background: var(--bg-soft);
+}
+
 .procedure-card {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.85rem 1rem;
   margin: 0.85rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
   background: var(--bg-soft);
 }
 
 .procedure-name {
-  margin: 0 0 0.35rem;
-  font-size: 1.05rem;
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.3;
 }
 
-.procedure-required,
-.procedure-cost {
-  margin: 0.15rem 0;
+.procedure-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 0;
+}
+
+.procedure-details div {
+  padding-left: 0.65rem;
+  border-left: 0.2rem solid var(--border);
+}
+
+.procedure-details dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.procedure-details dd {
+  margin: 0.15rem 0 0;
+  font-weight: 700;
+}
+
+.procedure-official-link {
+  margin: 1rem 0 0;
+}
+
+.procedure-official-link a {
+  display: inline-block;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--accent-dark);
+  border-radius: 0.35rem;
+  color: var(--accent-dark);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.procedure-official-link a:hover {
+  background: var(--surface);
+}
+
+.procedure-attribution {
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
 }
 
 .attribution {
-  margin: 0.5rem 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 0.85rem;
 }
 
+.attribution__label {
+  font-weight: 800;
+}
+
 .option-list {
-  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.65rem;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.option-list a {
+  display: block;
+  padding: 0.85rem 1rem;
+  border: 1px solid currentColor;
+  border-radius: 0.4rem;
+  text-decoration: none;
+}
+
+.option-list a:hover {
+  background: var(--surface);
+}
+
+.text-link {
+  display: inline-block;
+  margin-top: 0.75rem;
+}
+
+.event-page,
+.discovery-page,
+.status-page {
+  max-width: 56rem;
+}
+
+.event-page__header,
+.discovery-page__header,
+.status-page {
+  padding: clamp(1.25rem, 4vw, 2rem);
+  border: 1px solid var(--border);
+  border-top: 0.4rem solid var(--accent);
+  border-radius: 0.75rem;
+  background: var(--surface);
+}
+
+.event-page__header h1,
+.discovery-page__header h1,
+.status-page h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 6vw, 3rem);
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.event-page__intro,
+.discovery-page__header > p:not(.section-kicker),
+.status-page > p:not(.section-kicker) {
+  max-width: 44rem;
+  margin: 0.85rem 0 0;
+  color: var(--muted);
 }
 
 .event-category {
+  margin: 1rem 0 0;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.event-category a {
+  font-weight: 800;
+}
+
+/* Structural navigation (T7/T9): breadcrumb path, bottom back links, and
+   the "Ver todos los temas" text link. Links keep a padded, >=48px tap
+   height on mobile; no transitions without a reduced-motion guard. */
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.breadcrumb a {
+  color: var(--accent-dark);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.breadcrumb__sep {
+  user-select: none;
+}
+
+.back-link {
+  margin: 1.75rem 0 0;
+}
+
+.back-link a,
+.search-results__all a,
+.home-categories__all a {
+  display: inline-block;
+  min-height: 48px;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.back-link a {
+  color: var(--accent-dark);
+  text-decoration: none;
+}
+
+.back-link a:hover {
+  text-decoration: underline;
+}
+
+.search-results__all {
+  margin: 1.25rem 0 0;
+}
+
+.home-categories__all {
+  margin: 1.25rem 0 0;
+}
+
+.event-procedures {
+  margin-top: 1.75rem;
+}
+
+.event-procedures h2 {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.35rem, 4vw, 1.75rem);
+}
+
+.discovery-page .option-list {
+  margin-top: 1.5rem;
+}
+
+.status-page {
+  max-width: 38rem;
+  border-top-color: #7a4b00;
+  background: #fff8eb;
+}
+
+@media (min-width: 40rem) {
+  .search-controls {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .search-controls button {
+    white-space: nowrap;
+  }
+
+  .option-list--choices,
+  .option-list--categories,
+  .option-list--events {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

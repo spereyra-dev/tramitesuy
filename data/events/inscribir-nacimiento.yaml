@@ -1,0 +1,35 @@
+slug: inscribir-nacimiento
+name: Inscribir un nacimiento
+description: Inscripción de un nacimiento en el Registro de Estado Civil.
+category: familia
+keywords:
+  - term: inscribir
+    type: ACTION
+    weight: 10
+  - term: registrar
+    type: ACTION
+    weight: 10
+  - term: nacimiento
+    type: ENTITY
+    weight: 8
+  - term: partida
+    type: ENTITY
+    weight: 15
+    negative: true
+rules:
+  - action: inscribir
+    entity: nacimiento
+    bonus: 15
+  - action: registrar
+    entity: nacimiento
+    bonus: 15
+relations:
+  - external_id: "4622"
+    order: 1
+    required: true
+tests:
+  positive:
+    - inscribir el nacimiento de mi hijo
+    - registrar un nacimiento
+  negative:
+    - solicitar partida de nacimiento

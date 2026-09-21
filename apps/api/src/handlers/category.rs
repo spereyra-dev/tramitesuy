@@ -14,6 +14,7 @@ pub async fn list(State(state): State<AppState>) -> Result<Json<dto::CategoriesP
     let rows = db::repos::taxonomy_seed::categories(&state.pool)
         .await
         .map_err(|e| ApiError::InternalServerError(format!("categories query failed: {e}")))?;
+    state.metrics.observe_sql_ops("/api/v1/categories", 1);
     Ok(Json(dto::categories_page(rows)))
 }
 
@@ -25,7 +26,12 @@ pub async fn events(
         .await
         .map_err(|e| ApiError::InternalServerError(format!("category events query failed: {e}")))?;
     match rows {
-        Some(rows) => Ok(Json(dto::category_events_page(slug, rows))),
+        Some(rows) => {
+            state
+                .metrics
+                .observe_sql_ops("/api/v1/categories/{slug}/events", 1);
+            Ok(Json(dto::category_events_page(slug, rows)))
+        }
         None => Err(ApiError::NotFound),
     }
 }

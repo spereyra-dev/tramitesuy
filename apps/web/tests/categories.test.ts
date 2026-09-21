@@ -14,6 +14,7 @@ import { createElement, type ReactElement, type ReactNode } from 'react';
 
 import CategoriesPage from '@/app/categories/page';
 import CategoryEventsPage from '@/app/categories/[slug]/page';
+import NotFound from '@/app/not-found';
 
 import categories from './fixtures/categories.json';
 import categoryEvents from './fixtures/category-events.json';
@@ -80,6 +81,18 @@ describe('categories list page (/categories)', () => {
     const html = await renderCategoriesPage(categories);
     expect(html).toContain('Vehículos');
     expect(html).toContain('href="/categories/vehiculos"');
+    expect(html).toContain('<section class="discovery-page" aria-labelledby="categories-heading">');
+    expect(html).toContain('Explorá los trámites según el tema que necesitás resolver.');
+  });
+});
+
+describe('not-found page', () => {
+  it('offers a clear recovery path in a labelled status region', () => {
+    const html = renderToStaticMarkup(createElement(NotFound));
+
+    expect(html).toContain('<section class="status-page" aria-labelledby="not-found-heading">');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('href="/"');
   });
 });
 
@@ -91,6 +104,8 @@ describe('category events page (/categories/[slug])', () => {
     expect(html).toContain('Comprar un vehículo');
     expect(html).toContain('href="/events/vender-vehiculo"');
     expect(html).toContain('Vender un vehículo');
+    expect(html).toContain('<section class="discovery-page" aria-labelledby="category-events-heading">');
+    expect(html).toContain('Volver a categorías');
   });
 
   it('renders every returned event as a link (the categories search mode gets a real destination)', async () => {

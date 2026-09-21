@@ -7,12 +7,13 @@ import Link from 'next/link';
  */
 export default function NotFound() {
   return (
-    <div>
-      <h1>Página no encontrada</h1>
-      <p>El contenido que buscás no existe o cambió de dirección.</p>
-      <p>
-        <Link href="/">Volver al inicio</Link>
-      </p>
-    </div>
+    <section className="status-page" aria-labelledby="not-found-heading">
+      <p className="section-kicker">Error 404</p>
+      <h1 id="not-found-heading">Página no encontrada</h1>
+      <p role="status">El contenido que buscás no existe o cambió de dirección.</p>
+      <Link className="text-link" href="/">
+        Volver al inicio
+      </Link>
+    </section>
   );
 }

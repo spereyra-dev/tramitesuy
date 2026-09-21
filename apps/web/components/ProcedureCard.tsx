@@ -10,17 +10,29 @@ import { requiredFlagCopy } from '@/lib/display';
 import { Attribution } from './Attribution';
 
 export function ProcedureCard({ procedure }: { procedure: ProcedureCardData }) {
+  const headingId = `procedure-${procedure.external_id}`;
+
   return (
-    <article className="procedure-card">
-      <h3 className="procedure-name">{procedure.name}</h3>
-      <p className="procedure-required">{requiredFlagCopy(procedure.required)}</p>
-      <p className="procedure-cost">{procedure.cost_display}</p>
+    <article className="procedure-card" aria-labelledby={headingId}>
+      <h3 id={headingId} className="procedure-name">{procedure.name}</h3>
+      <dl className="procedure-details">
+        <div>
+          <dt>Carácter</dt>
+          <dd className="procedure-required">{requiredFlagCopy(procedure.required)}</dd>
+        </div>
+        <div>
+          <dt>Costo</dt>
+          <dd className="procedure-cost">{procedure.cost_display}</dd>
+        </div>
+      </dl>
       {procedure.official_url !== null && (
         <p className="procedure-official-link">
-          <a href={procedure.official_url}>Ver trámite oficial</a>
+          <a href={procedure.official_url}>Ir al trámite oficial</a>
         </p>
       )}
-      <Attribution source={procedure.source} />
+      <footer className="procedure-attribution">
+        <Attribution source={procedure.source} />
+      </footer>
     </article>
   );
 }

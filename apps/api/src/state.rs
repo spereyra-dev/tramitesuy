@@ -9,6 +9,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::metrics::Metrics;
+use db::providers::orchestrator::ProviderFetch;
 use search::engine::SearchEngine;
 use search::tokenizer::SynonymMap;
 use search::types::{
@@ -26,6 +28,14 @@ pub struct AppState {
     /// resolver for event/category display names.
     pub taxonomy: Arc<taxonomy::model::Taxonomy>,
     pub pool: PgPool,
+    /// FTS/trigram policy consumed by the async db orchestrator (S4b task
+    /// 11). Tests and default boot stay sequential unless configuration
+    /// explicitly opts into concurrent provider fetching.
+    pub provider_fetch: ProviderFetch,
+    /// The privacy-safe metrics sink (task 1): every served request reports
+    /// route/status latency, SQL ops, cache events, and generation state
+    /// through this seam — never query-derived text (R14).
+    pub metrics: Arc<dyn Metrics>,
 }
 
 impl AppState {
@@ -34,6 +44,20 @@ impl AppState {
     /// `synonyms/` subdirectories (the `taxonomy-validate` CLI owns
     /// validation in CI; boot requires only a loadable taxonomy).
     pub fn build(pool: PgPool, data_dir: &Path) -> Result<Self, String> {
+        Self::build_with_metrics(
+            pool,
+            data_dir,
+            Arc::new(crate::metrics::MemoryMetrics::new()),
+        )
+    }
+
+    /// Boots the state with an injected metrics sink (task 1 seam): the
+    /// boot path is identical, but tests can read the counters.
+    pub fn build_with_metrics(
+        pool: PgPool,
+        data_dir: &Path,
+        metrics: Arc<dyn Metrics>,
+    ) -> Result<Self, String> {
         let taxonomy = taxonomy::loader::load_data_dir(data_dir)
             .map_err(|error| format!("taxonomy load failed: {error}"))?;
         let synonyms: SynonymMap = taxonomy
@@ -55,6 +79,8 @@ impl AppState {
             engine: Arc::new(SearchEngine::new(events, synonyms)),
             taxonomy: Arc::new(taxonomy),
             pool,
+            provider_fetch: ProviderFetch::Sequential,
+            metrics,
         })
     }
 

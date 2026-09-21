@@ -328,3 +328,287 @@ async fn touch_last_seen_advances_only_last_seen() {
     );
     drop_test_db(&name).await;
 }
+
+// ---------------------------------------------------------------------------
+// Task 7 (OPT-06 transition row: intermediate `open` ≤4 SQL ops):
+// `cards_by_event` — the search payload's card fields in exactly ONE
+// statement, no unused event metadata, no `raw_data` transport. `by_event`
+// stays intact as the rollback path.
+// ---------------------------------------------------------------------------
+
+use common::fresh_migrated_counting_db;
+use db::repos::procedures;
+
+/// Seeds two events (scoping control) with three relations on the target:
+/// mixed required/optional, importance set/unset, organizations with and
+/// without a short name, one reported cost, one empty-cost pair, and one
+/// NULL `raw_data` (the absent-source case).
+async fn seed_cards_fixture(pool: &sqlx::PgPool) {
+    sqlx::query(
+        "INSERT INTO categories (slug, name, order_index) \
+         VALUES ('vehiculos', 'Vehículos', 1)",
+    )
+    .execute(pool)
+    .await
+    .expect("seed category");
+    sqlx::query(
+        "INSERT INTO organizations (external_id, name, short_name) \
+         VALUES ('O-1', 'Ministerio de Transporte', 'MTOP')",
+    )
+    .execute(pool)
+    .await
+    .expect("seed org with short name");
+    sqlx::query("INSERT INTO organizations (external_id, name) VALUES ('O-2', 'Intendencia')")
+        .execute(pool)
+        .await
+        .expect("seed org without short name");
+
+    sqlx::query(
+        "INSERT INTO life_events (slug, name, description, category_id) \
+         SELECT 'comprar-vehiculo', 'Comprar un vehículo', 'Trámites para comprar.', id \
+         FROM categories WHERE slug = 'vehiculos'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed target event");
+    sqlx::query(
+        "INSERT INTO life_events (slug, name, description, category_id) \
+         SELECT 'vender-vehiculo', 'Vender un vehículo', 'Trámites para vender.', id \
+         FROM categories WHERE slug = 'vehiculos'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed other event");
+
+    sqlx::query(
+        "INSERT INTO procedures (external_id, name, organization_id, official_url, raw_data) \
+         SELECT '2001', 'Trámite 2001', o.id, 'https://www.gub.uy/tramite/2001', \
+                '{\"tiene_costo\": \"1\", \"valor\": \"55.70\"}'::jsonb \
+         FROM organizations o WHERE o.external_id = 'O-1'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed procedure with reported cost");
+    sqlx::query(
+        "INSERT INTO procedures (external_id, name, organization_id, official_url, raw_data) \
+         SELECT '2002', 'Trámite 2002', o.id, 'https://www.gub.uy/tramite/2002', \
+                '{\"tiene_costo\": \"\", \"valor\": \"\"}'::jsonb \
+         FROM organizations o WHERE o.external_id = 'O-2'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed procedure with empty cost pair");
+    sqlx::query(
+        "INSERT INTO procedures (external_id, name, organization_id, official_url) \
+         SELECT '2003', 'Trámite 2003', o.id, 'https://www.gub.uy/tramite/2003' \
+         FROM organizations o WHERE o.external_id = 'O-1'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed procedure with NULL raw_data");
+
+    // Declared order 3/1/2 (insertion order ≠ card order): required,
+    // optional+importance, optional+NULL importance.
+    sqlx::query(
+        "INSERT INTO life_event_procedures \
+             (life_event_id, procedure_id, order_index, importance, required) \
+         SELECT e.id, p.id, 2, NULL, FALSE \
+         FROM life_events e, procedures p \
+         WHERE e.slug = 'comprar-vehiculo' AND p.external_id = '2002'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed relation for 2002");
+    sqlx::query(
+        "INSERT INTO life_event_procedures \
+             (life_event_id, procedure_id, order_index, importance, required) \
+         SELECT e.id, p.id, 1, 'alta', TRUE \
+         FROM life_events e, procedures p \
+         WHERE e.slug = 'comprar-vehiculo' AND p.external_id = '2001'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed relation for 2001");
+    sqlx::query(
+        "INSERT INTO life_event_procedures \
+             (life_event_id, procedure_id, order_index, importance, required) \
+         SELECT e.id, p.id, 3, 'baja', FALSE \
+         FROM life_events e, procedures p \
+         WHERE e.slug = 'comprar-vehiculo' AND p.external_id = '2003'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed relation for 2003");
+
+    // A relation on the OTHER event proves slug scoping (never leaks).
+    sqlx::query(
+        "INSERT INTO life_event_procedures \
+             (life_event_id, procedure_id, order_index, required) \
+         SELECT e.id, p.id, 1, TRUE \
+         FROM life_events e, procedures p \
+         WHERE e.slug = 'vender-vehiculo' AND p.external_id = '2003'",
+    )
+    .execute(pool)
+    .await
+    .expect("seed relation on the other event");
+}
+
+/// The card set equals today's `by_event` composition (slug, name, order,
+/// required, official URL, last-seen attribution stamp) minus the metadata
+/// the payload never uses, with the reported-cost rule intact and ordering
+/// by `order_index` regardless of insertion order.
+#[tokio::test(flavor = "multi_thread")]
+async fn cards_by_event_returns_the_same_card_set_and_ordering_as_by_event() {
+    let (pool, name) = fresh_migrated_db().await;
+    seed_cards_fixture(&pool).await;
+
+    let projection = procedures::by_event(&pool, "comprar-vehiculo")
+        .await
+        .expect("by_event reads")
+        .expect("target event exists");
+    let cards = procedures::cards_by_event(&pool, "comprar-vehiculo")
+        .await
+        .expect("cards_by_event reads")
+        .expect("target event exists");
+
+    assert_eq!(cards.len(), projection.procedures.len(), "same card set");
+    for (card, procedure) in cards.iter().zip(&projection.procedures) {
+        assert_eq!(card.slug, procedure.external_id);
+        assert_eq!(card.name, procedure.name);
+        assert_eq!(card.order_index, procedure.order_index);
+        assert_eq!(card.required, procedure.required);
+        assert_eq!(card.official_url, procedure.official_url);
+        assert_eq!(
+            card.last_seen_at, procedure.last_seen_at,
+            "same attribution timestamp"
+        );
+    }
+
+    // Ordered by order_index (1, 2, 3), not by insertion order.
+    let order: Vec<i32> = cards.iter().map(|c| c.order_index).collect();
+    assert_eq!(order, vec![1, 2, 3], "declared step order");
+
+    // Card-specific projections: importance, organization short name, status
+    // and the missing-cost rule evaluated once here instead of transporting
+    // `raw_data` per request.
+    assert_eq!(cards[0].slug, "2001");
+    assert_eq!(cards[0].importance.as_deref(), Some("alta"));
+    assert_eq!(cards[0].organization_short_name.as_deref(), Some("MTOP"));
+    assert_eq!(cards[0].status, "active");
+    assert_eq!(cards[0].cost.as_deref(), Some("55.70"), "reported cost");
+    assert_eq!(cards[1].slug, "2002");
+    assert_eq!(cards[1].importance, None, "unset importance stays NULL");
+    assert_eq!(
+        cards[1].organization_short_name, None,
+        "org without a short name stays NULL"
+    );
+    assert_eq!(cards[1].cost, None, "empty cost pair → missing cost");
+    assert_eq!(cards[2].slug, "2003");
+    assert_eq!(cards[2].cost, None, "NULL raw_data → missing cost");
+
+    // Scoping control: the other event's relation never leaks in, and an
+    // unknown slug returns nothing.
+    let other = procedures::cards_by_event(&pool, "vender-vehiculo")
+        .await
+        .expect("other event reads")
+        .expect("other event exists");
+    assert_eq!(other.len(), 1, "the other event only carries its own card");
+    assert_eq!(other[0].slug, "2003");
+    assert!(
+        procedures::cards_by_event(&pool, "missing-event")
+            .await
+            .expect("unknown slug reads")
+            .is_none(),
+        "an unknown slug returns None like by_event"
+    );
+
+    drop_test_db(&name).await;
+}
+
+/// Exactly one statement: no event-metadata query, no per-card second trip.
+#[tokio::test(flavor = "multi_thread")]
+async fn cards_by_event_issues_exactly_one_statement() {
+    let (pool, _name, _counter, section) = fresh_migrated_counting_db().await;
+    seed_cards_fixture(&pool).await;
+
+    section.reset();
+    let cards = procedures::cards_by_event(&pool, "comprar-vehiculo")
+        .await
+        .expect("cards_by_event reads");
+    let count = section.count();
+
+    assert!(cards.is_some());
+    assert_eq!(
+        count, 1,
+        "the transition cards query costs exactly one statement (observed {count})"
+    );
+}
+
+/// An event with no relations returns no rows (its search payload serves an
+/// empty procedures summary either way), and the statement still runs once.
+#[tokio::test(flavor = "multi_thread")]
+async fn cards_by_event_returns_no_rows_for_an_empty_event() {
+    let (pool, name) = fresh_migrated_db().await;
+    sqlx::query(
+        "INSERT INTO categories (slug, name, order_index) \
+         VALUES ('vehiculos', 'Vehículos', 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect("seed category");
+    sqlx::query(
+        "INSERT INTO life_events (slug, name, description, category_id) \
+         SELECT 'evento-vacio', 'Evento vacío', 'Sin relaciones.', id \
+         FROM categories WHERE slug = 'vehiculos'",
+    )
+    .execute(&pool)
+    .await
+    .expect("seed card-less event");
+
+    let cards = procedures::cards_by_event(&pool, "evento-vacio")
+        .await
+        .expect("empty event reads");
+    assert!(
+        cards.is_none_or(|cards| cards.is_empty()),
+        "an empty event yields no card rows"
+    );
+
+    drop_test_db(&name).await;
+}
+
+/// TRIANGULATE: a deactivated procedure keeps its relation and its card, with
+/// the current contract's `status` ("inactive") — rows are never deleted.
+#[tokio::test(flavor = "multi_thread")]
+async fn cards_by_event_keeps_an_inactive_procedure_card_with_its_status() {
+    let (pool, name) = fresh_migrated_db().await;
+    seed_cards_fixture(&pool).await;
+    let repo = PostgresProcedureRepository::new(pool.clone());
+    repo.deactivate_missing(
+        &["2001".to_string(), "2002".to_string()]
+            .into_iter()
+            .collect(),
+        RUN_2.to_string(),
+    )
+    .expect("deactivate 2003 (absent from the source)");
+
+    let cards = procedures::cards_by_event(&pool, "comprar-vehiculo")
+        .await
+        .expect("cards_by_event reads")
+        .expect("target event exists");
+
+    assert_eq!(cards.len(), 3, "the inactive card is never dropped");
+    let inactive = cards
+        .iter()
+        .find(|card| card.slug == "2003")
+        .expect("2003 keeps its card");
+    assert_eq!(inactive.status, "inactive", "current status contract");
+    assert_eq!(inactive.name, "Trámite 2003", "attribution fields intact");
+    assert_eq!(inactive.importance.as_deref(), Some("baja"));
+    let still_active = cards
+        .iter()
+        .find(|card| card.slug == "2001")
+        .expect("2001 untouched");
+    assert_eq!(still_active.status, "active", "only the absent row flips");
+
+    drop_test_db(&name).await;
+}

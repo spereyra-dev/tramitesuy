@@ -3,6 +3,7 @@
 //! together. Each constructor keeps its seam so tests can substitute parts.
 
 use db::repos::procedures::PostgresProcedureRepository;
+use ingest::pool_config;
 use ingestion::ports::ProcedureRepository;
 use std::sync::OnceLock;
 
@@ -17,9 +18,26 @@ pub fn database_url(explicit: Option<&str>) -> String {
 
 /// Blocking sync path onto the sqlx pool: the repository bridges async sqlx
 /// with the synchronous ingestion port internally (B4 adapter), so the
-/// worker just needs a connected pool.
+/// worker just needs a connected pool. Pool limits come from
+/// `INGEST_POOL_MAX` / `INGEST_ACQUIRE_TIMEOUT_MS` (design §7.1: a small
+/// configurable worker pool, default 2 / 30 s).
 pub fn connect_pool(url: &str) -> sqlx::PgPool {
-    block_on(async { db::connect(url).await.expect("database pool connects") })
+    let limits = pool_config::PoolLimits::from_env().unwrap_or_else(|error| {
+        // Panic justification: composition helper for the CLI/daemon entry
+        // points; an invalid environment is a fatal boot failure for every
+        // caller, so fail-fast is the documented contract here.
+        panic!("ingest pool config: {error}")
+    });
+    block_on(async {
+        db::connect(url, limits.pool_max, limits.acquire_timeout)
+            .await
+            // Panic justification: composition helper for the CLI/daemon entry
+            // points; every caller treats an unusable database as a fatal
+            // environment failure at boot, so fail-fast is the documented
+            // contract here rather than a typed error threaded through callers
+            // that would abort anyway.
+            .expect("database pool connects")
+    })
 }
 
 /// Runs a future to completion on the shared worker runtime (or via
@@ -43,6 +61,10 @@ fn shared_runtime() -> &'static tokio::runtime::Runtime {
             .worker_threads(1)
             .enable_all()
             .build()
+            // Panic justification: the runtime has fixed, dependency-free
+            // options; construction failure means the process environment
+            // itself is unusable (no threads/IO driver), so there is no
+            // meaningful typed-error caller to propagate to.
             .expect("worker runtime")
     })
 }
@@ -53,5 +75,9 @@ pub fn repository_for(explicit_url: Option<&str>) -> PostgresProcedureRepository
 }
 
 /// Marker use so the port trait stays referenced in this module's docs.
+/// Suppression justification: this marker exists only to keep the
+/// `ProcedureRepository` port type referenced for documentation; runtime
+/// code deliberately depends on the concrete adapter, never the trait, so
+/// the marker is intentionally never called.
 #[allow(dead_code)]
 fn _port_in_scope(_repo: &dyn ProcedureRepository) {}

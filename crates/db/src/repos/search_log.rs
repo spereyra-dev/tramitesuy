@@ -4,9 +4,10 @@
 //! (`created_at` defaults to `now()`). No IP, user agent, name, or contact
 //! data exists in the schema (allowlist-tested in `tests/search_log.rs`).
 //!
-//! Event slugs are resolved to `life_events` ids here; an event absent from
-//! the DB projection (e.g. a test-only YAML event) stores NULL ids rather
-//! than failing the search.
+//! Event slugs are resolved to `life_events` ids INSIDE the insert statement
+//! (task 6, OPT-06/OPT-09: the whole log path costs exactly one statement);
+//! an event absent from the DB projection (e.g. a test-only YAML event)
+//! stores NULL ids rather than failing the search.
 
 use sqlx::PgPool;
 use sqlx::types::Uuid;
@@ -23,36 +24,27 @@ pub struct NewSearchLog {
     pub top_score: Option<i64>,
 }
 
-/// Inserts one log row and returns its generated id.
+/// Inserts one log row and returns its generated id. Both event slugs
+/// resolve through scalar subqueries inside the single statement (task 6):
+/// a present slug resolves its `life_events` id, an absent slug (or a NULL
+/// slug) yields NULL — exactly the behavior of the previous per-slug
+/// lookups, in one statement instead of three.
 pub async fn insert(pool: &PgPool, log: &NewSearchLog) -> Result<Uuid, sqlx::Error> {
-    let selected = event_id(pool, log.selected_event_slug.as_deref()).await?;
-    let top = event_id(pool, log.top_event_slug.as_deref()).await?;
     let row = sqlx::query!(
         "INSERT INTO search_logs \
              (query, normalized_query, selected_event_id, top_event_id, top_score) \
-         VALUES ($1, $2, $3, $4, $5) \
+         SELECT $1, $2, \
+                (SELECT id FROM life_events WHERE slug = $3), \
+                (SELECT id FROM life_events WHERE slug = $4), \
+                $5 \
          RETURNING id",
         log.query,
         log.normalized_query,
-        selected,
-        top,
+        log.selected_event_slug,
+        log.top_event_slug,
         log.top_score.map(|score| score as f64),
     )
     .fetch_one(pool)
     .await?;
     Ok(row.id)
-}
-
-/// Resolves an event slug to its `life_events` id, or `None` when the event
-/// is absent from the DB projection.
-async fn event_id(pool: &PgPool, slug: Option<&str>) -> Result<Option<Uuid>, sqlx::Error> {
-    match slug {
-        None => Ok(None),
-        Some(slug) => Ok(
-            sqlx::query!("SELECT id FROM life_events WHERE slug = $1", slug)
-                .fetch_optional(pool)
-                .await?
-                .map(|row| row.id),
-        ),
-    }
 }

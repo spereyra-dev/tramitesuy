@@ -1,0 +1,35 @@
+slug: inscribir-matrimonio
+name: Inscribir matrimonio
+description: Inscripción de matrimonio en el Registro de Estado Civil.
+category: familia
+keywords:
+  - term: inscribir
+    type: ACTION
+    weight: 10
+  - term: registrar
+    type: ACTION
+    weight: 10
+  - term: matrimonio
+    type: ENTITY
+    weight: 8
+  - term: partida
+    type: ENTITY
+    weight: 15
+    negative: true
+rules:
+  - action: inscribir
+    entity: matrimonio
+    bonus: 15
+  - action: registrar
+    entity: matrimonio
+    bonus: 15
+relations:
+  - external_id: "4594"
+    order: 1
+    required: true
+tests:
+  positive:
+    - quiero inscribir mi matrimonio
+    - registrar un matrimonio en el Registro Civil
+  negative:
+    - solicitar partida de matrimonio

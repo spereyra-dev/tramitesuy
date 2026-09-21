@@ -9,6 +9,7 @@
 //! recorded baselines so a ranking regression fails `cargo test`.
 
 use serde::Deserialize;
+use uuid::Uuid;
 
 use crate::engine::{CandidateProvider, SearchEngine};
 use crate::types::{SearchOutcome, SelectionMode};
@@ -91,25 +92,29 @@ pub fn parse_dataset(yaml: &str) -> Result<GoldenDataset, String> {
 }
 
 /// Runs every dataset case over the engine and collects per-case
-/// expectation failures naming the regressing query.
-pub fn run_cases(
+/// expectation failures naming the regressing query. The provider seam is
+/// async (S4b task 10), so the run awaits it; the caller drives the
+/// returned future (the pure crate stays runtime-free).
+pub async fn run_cases(
     engine: &SearchEngine,
+    generation_id: Uuid,
     providers: &[&dyn CandidateProvider],
     dataset: &GoldenDataset,
 ) -> Vec<CaseOutcome> {
-    dataset
-        .cases
-        .iter()
-        .map(|case| run_case(engine, providers, case))
-        .collect()
+    let mut outcomes = Vec::with_capacity(dataset.cases.len());
+    for case in &dataset.cases {
+        outcomes.push(run_case(engine, generation_id, providers, case).await);
+    }
+    outcomes
 }
 
-fn run_case(
+async fn run_case(
     engine: &SearchEngine,
+    generation_id: Uuid,
     providers: &[&dyn CandidateProvider],
     case: &GoldenCase,
 ) -> CaseOutcome {
-    let outcome = match engine.search(&case.query, providers) {
+    let outcome = match engine.search(generation_id, &case.query, providers).await {
         Ok(outcome) => outcome,
         Err(error) => {
             return CaseOutcome {
@@ -263,12 +268,13 @@ fn rate(hits: usize, cases: usize) -> f64 {
 /// The golden gate (SE-12, D-7): runs every case, reports the metrics
 /// table, and fails — naming the regressing query — when any case breaks
 /// its expectations or a metric crosses its recorded baseline.
-pub fn gate(
+pub async fn gate(
     engine: &SearchEngine,
+    generation_id: Uuid,
     providers: &[&dyn CandidateProvider],
     dataset: &GoldenDataset,
 ) -> Result<Metrics, String> {
-    let outcomes = run_cases(engine, providers, dataset);
+    let outcomes = run_cases(engine, generation_id, providers, dataset).await;
     let metrics = compute_metrics(&outcomes);
 
     let mut failures: Vec<String> = Vec::new();

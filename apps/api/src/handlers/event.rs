@@ -14,6 +14,9 @@ use crate::dto;
 use crate::error::ApiError;
 use crate::state::AppState;
 
+/// This route's low-cardinality metrics label (task 1).
+const ROUTE: &str = "/api/v1/events/{slug}";
+
 pub async fn get(
     State(state): State<AppState>,
     Path(slug): Path<String>,
@@ -22,7 +25,11 @@ pub async fn get(
         .await
         .map_err(|e| ApiError::InternalServerError(format!("event query failed: {e}")))?;
     match projection {
-        Some(projection) => Ok(Json(dto::event_page(projection))),
+        Some(projection) => {
+            // Task 1: by_event issues 2 statements (metadata + rows).
+            state.metrics.observe_sql_ops(ROUTE, 2);
+            Ok(Json(dto::event_page(projection)))
+        }
         None => Err(ApiError::NotFound),
     }
 }
