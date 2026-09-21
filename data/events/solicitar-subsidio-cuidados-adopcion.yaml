@@ -1,0 +1,44 @@
+slug: solicitar-subsidio-cuidados-adopcion
+name: Subsidio de cuidados por adopción
+description: Subsidio para cuidados por adopción y licencia adopciva del BPS.
+category: beneficios-familiares
+keywords:
+  - term: adopcion
+    type: ENTITY
+    weight: 12
+  - term: subsidio
+    type: ENTITY
+    weight: 15
+  - term: cuidados
+    type: ENTITY
+    weight: 12
+  - term: licencia
+    type: ENTITY
+    weight: 10
+  - term: jornada
+    type: ENTITY
+    weight: 8
+  - term: inscribir
+    type: ENTITY
+    weight: 8
+    negative: true
+rules:
+  - action: solicitar
+    entity: adopcion
+    bonus: 15
+relations:
+  - external_id: "7392"
+    order: 1
+    required: true
+  - external_id: "7437"
+    order: 2
+    required: false
+tests:
+  positive:
+    - subsidio para cuidados por adopcion
+    - licencia especial por adopcion del bps
+    - reduccion de jornada por adopcion
+  negative:
+    - inscribir una adopcion
+    - solicitar el subsidio de maternidad
+    - dar de alta a un trabajador

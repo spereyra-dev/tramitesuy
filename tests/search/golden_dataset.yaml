@@ -361,4 +361,13 @@ cases:
     expect_top1: fe-de-vida-bps
   - query: "constancia de actividades del bps"
     expect_top1: constancia-actividades-haberes
+  # ── lote-19 social-program positives ───────────────────────────────
+  - query: "apoyo a la lactancia del bps"
+    expect_top1: solicitar-apoyo-lactancia
+  - query: "apoyo a madres adolescentes"
+    expect_top1: apoyo-madres-adolescentes
+  - query: "prestacion por sindrome de down del bps"
+    expect_top1: solicitar-prestacion-sindrome-down
+  - query: "subsidio para cuidados por adopcion"
+    expect_top1: solicitar-subsidio-cuidados-adopcion
 

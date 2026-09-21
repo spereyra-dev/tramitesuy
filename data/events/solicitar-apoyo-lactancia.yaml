@@ -1,0 +1,37 @@
+slug: solicitar-apoyo-lactancia
+name: Apoyo a la lactancia
+description: Asesoramiento del BPS a través de equipos técnicos para el acompañamiento de la lactancia.
+category: salud
+keywords:
+  - term: lactancia
+    type: ENTITY
+    weight: 15
+  - term: apoyo
+    type: ENTITY
+    weight: 10
+  - term: amamantar
+    type: ACTION
+    weight: 8
+  - term: pecho
+    type: ENTITY
+    weight: 6
+  - term: bps
+    type: ENTITY
+    weight: 6
+rules:
+  - action: solicitar
+    entity: lactancia
+    bonus: 15
+relations:
+  - external_id: "7422"
+    order: 1
+    required: true
+tests:
+  positive:
+    - apoyo a la lactancia del bps
+    - asesoramiento para la lactancia
+    - necesito ayuda con la lactancia de mi bebe
+  negative:
+    - subsidio por maternidad del bps
+    - subsidio por paternidad del bps
+    - vacunas para viajar

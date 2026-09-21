@@ -1,0 +1,31 @@
+slug: solicitar-prestacion-sindrome-down
+name: Prestación por síndrome de Down
+description: Prestación contributiva mensual del BPS para personas con síndrome de Down y otros síndromes.
+category: beneficios-familiares
+keywords:
+  - term: sindrome
+    type: ENTITY
+    weight: 15
+  - term: down
+    type: ENTITY
+    weight: 12
+  - term: prestacion
+    type: ENTITY
+    weight: 10
+rules:
+  - action: solicitar
+    entity: sindrome
+    bonus: 15
+relations:
+  - external_id: "7348"
+    order: 1
+    required: true
+tests:
+  positive:
+    - prestacion por sindrome de down del bps
+    - "sindrome de down: prestacion mensual"
+    - aporte por sindrome de down
+  negative:
+    - exoneracion de patente por discapacidad
+    - carnet para perro de asistencia
+    - subsidio por maternidad del bps

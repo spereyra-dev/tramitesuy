@@ -1,0 +1,40 @@
+slug: apoyo-madres-adolescentes
+name: Apoyo a madres adolescentes y jóvenes
+description: Programa del BPS que impulsa proyectos educativos de madres adolescentes y jóvenes.
+category: beneficios-familiares
+keywords:
+  - term: adolescentes
+    type: ENTITY
+    weight: 12
+  - term: madres
+    type: ENTITY
+    weight: 15
+  - term: apoyo
+    type: ENTITY
+    weight: 10
+  - term: educativos
+    type: ENTITY
+    weight: 8
+  - term: jovenes
+    type: ENTITY
+    weight: 8
+  - term: proyecto
+    type: MODIFIER
+    weight: 4
+rules:
+  - action: solicitar
+    entity: madres
+    bonus: 12
+relations:
+  - external_id: "7424"
+    order: 1
+    required: true
+tests:
+  positive:
+    - apoyo a madres adolescentes
+    - programa educativo para madres jovenes
+    - ayuda para madres adolescentes que estudian
+  negative:
+    - subsidio por maternidad del bps
+    - apoyo a la lactancia
+    - beca carlos quijano
