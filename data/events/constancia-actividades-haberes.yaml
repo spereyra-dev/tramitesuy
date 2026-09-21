@@ -1,0 +1,40 @@
+slug: constancia-actividades-haberes
+name: Constancia de actividades y haberes
+description: Constancia de los períodos trabajados registrados en el BPS, o negativo de actividades y haberes.
+category: documentos
+keywords:
+  - term: constancia
+    type: ENTITY
+    weight: 8
+  - term: actividades
+    type: ENTITY
+    weight: 12
+  - term: haberes
+    type: ENTITY
+    weight: 8
+  - term: trabajado
+    type: ENTITY
+    weight: 12
+  - term: periodo
+    type: ENTITY
+    weight: 8
+  - term: bps
+    type: ENTITY
+    weight: 6
+rules:
+  - action: solicitar
+    entity: actividades
+    bonus: 12
+relations:
+  - external_id: "7416"
+    order: 1
+    required: true
+tests:
+  positive:
+    - constancia de actividades del bps
+    - negativo de actividades y haberes
+    - certificado de los periodos trabajados en el bps
+  negative:
+    - constancia de irpf e iass
+    - historia laboral
+    - sacar la cedula de identidad

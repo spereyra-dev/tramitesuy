@@ -1,0 +1,43 @@
+slug: cambiar-prestador-salud
+name: Cambiar de prestador de salud
+description: Cambio de prestador de salud por problemas asistenciales o por incumplimiento de los tiempos de espera garantizados.
+category: salud
+keywords:
+  - term: prestador
+    type: ENTITY
+    weight: 15
+  - term: cambio
+    type: ENTITY
+    weight: 6
+  - term: salud
+    type: ENTITY
+    weight: 10
+  - term: espera
+    type: ENTITY
+    weight: 8
+  - term: problemas
+    type: ENTITY
+    weight: 6
+  - term: mutualista
+    type: ENTITY
+    weight: 8
+rules:
+  - action: cambiar
+    entity: prestador
+    bonus: 15
+relations:
+  - external_id: "7404"
+    order: 1
+    required: true
+  - external_id: "7367"
+    order: 2
+    required: false
+tests:
+  positive:
+    - cambiar de prestador de salud
+    - cambio de mutualista por demoras en los turnos
+    - la mutualista no me da turnos, quiero cambiar de prestador
+  negative:
+    - cambiar el local de cobro del bps
+    - cambiar la matricula de mi auto
+    - inscribirme como empleador de trabajo domestico

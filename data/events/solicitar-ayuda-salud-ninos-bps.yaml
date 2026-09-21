@@ -1,0 +1,61 @@
+slug: solicitar-ayuda-salud-ninos-bps
+name: Ayudas de salud para niños y adolescentes (BPS)
+description: Ayudas del BPS para niños y adolescentes con enfermedades congénitas audífonos, lentes, ortodoncia, atención odontológica y atención primaria.
+category: salud
+keywords:
+  - term: ninos
+    type: ENTITY
+    weight: 12
+  - term: enfermedad
+    type: ENTITY
+    weight: 8
+  - term: lentes
+    type: ENTITY
+    weight: 12
+  - term: odontologico
+    type: ENTITY
+    weight: 10
+  - term: ortodoncia
+    type: ENTITY
+    weight: 12
+  - term: adolescent
+    type: ENTITY
+    weight: 10
+  - term: bps
+    type: ENTITY
+    weight: 6
+  - term: ayuda
+    type: MODIFIER
+    weight: 4
+rules:
+  - action: solicitar
+    entity: lentes
+    bonus: 12
+  - action: solicitar
+    entity: odontologico
+    bonus: 12
+relations:
+  - external_id: "7406"
+    order: 1
+    required: true
+  - external_id: "7407"
+    order: 2
+    required: true
+  - external_id: "7425"
+    order: 3
+    required: false
+  - external_id: "7426"
+    order: 4
+    required: false
+  - external_id: "7427"
+    order: 5
+    required: false
+tests:
+  positive:
+    - lentes para mi hijo del bps
+    - ortodoncia y atencion odontologica para adolescentes
+    - audifonos para ninos con enfermedades congenitas
+  negative:
+    - solicitar audifonos del bps para pensionistas
+    - medias de compresion del bps
+    - solicitar protesis y ortesis

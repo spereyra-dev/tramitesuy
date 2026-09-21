@@ -1,0 +1,40 @@
+slug: fe-de-vida-bps
+name: Fe de vida
+description: Fe de vida para jubilados y pensionistas del BPS, y su baja.
+category: jubilaciones
+keywords:
+  - term: vida
+    type: ENTITY
+    weight: 15
+  - term: fe
+    type: ENTITY
+    weight: 12
+  - term: jubilado
+    type: ENTITY
+    weight: 10
+  - term: pensionista
+    type: ENTITY
+    weight: 8
+  - term: bps
+    type: ENTITY
+    weight: 6
+rules:
+  - action: dar
+    entity: vida
+    bonus: 12
+relations:
+  - external_id: "7411"
+    order: 1
+    required: true
+  - external_id: "7362"
+    order: 2
+    required: false
+tests:
+  positive:
+    - fe de vida del bps
+    - justificar mi fe de vida como jubilado
+    - baja de la fe de vida
+  negative:
+    - obtener mi certificado de vacunacion
+    - solicitar mi jubilacion
+    - consultar el estado de mi tramite jubilatorio

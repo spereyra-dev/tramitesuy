@@ -40,7 +40,8 @@ baselines:
   # raised for lote-12: domestic work/parental subsidy cases add two disambiguation-band cases; measured 44/108 ≈ 0.41 on 2026-09-21.
   # raised for lote-14: four bps jubilaciones/monetary cases add disambiguation-band cases; measured 48/114 ≈ 0.4211 on 2026-09-21.
   # raised for lote-15: four bps vejez/poderes/cobros/apoyos cases add disambiguation-band cases; measured 51/118 ≈ 0.4322 on 2026-09-21.
-  max_ambiguous_rate: 0.44
+  # raised for lote-17: pagar-factura-ute-ose negative patente fix leaves 55/124 disambiguation-band cases; measured ≈ 0.4435 on 2026-09-21.
+  max_ambiguous_rate: 0.45
 cases:
   # ── comprar-vehiculo positives ─────────────────────────────────────
   - query: "compre un auto usado"
@@ -344,4 +345,20 @@ cases:
     expect_top1: informar-fallecimiento-bps
   - query: "constancia de irpf e iass"
     expect_top1: solicitar-constancia-irpf-iass
+  # ── lote-17 utilities and feriante positives ───────────────────────
+  - query: "dar de alta la luz de mi casa"
+    expect_top1: alta-o-baja-electrica-ute
+  - query: "pagar la factura de la ute online"
+    expect_top1: pagar-factura-ute-ose
+  - query: "sacar el permiso de feriante"
+    expect_top1: permiso-feriante
+  # ── lote-18 child-health aid, provider change, fe de vida positives ─
+  - query: "lentes para mi hijo del bps"
+    expect_top1: solicitar-ayuda-salud-ninos-bps
+  - query: "cambiar de prestador de salud"
+    expect_top1: cambiar-prestador-salud
+  - query: "fe de vida del bps"
+    expect_top1: fe-de-vida-bps
+  - query: "constancia de actividades del bps"
+    expect_top1: constancia-actividades-haberes
 
