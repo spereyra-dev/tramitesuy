@@ -14,30 +14,6 @@ use crate::dto;
 use crate::error::ApiError;
 use crate::state::AppState;
 
-/// Field-wise clone of the snapshot's shared cards: the `crates/db` record
-/// types carry no `Clone` (outside this slice's edit surfaces), and the
-/// payload assembly consumes owned values. The data is immutable, so the
-/// copy is byte-identical.
-fn cloned_cards(
-    cards: &[db::repos::procedures::EventCard],
-) -> Vec<db::repos::procedures::EventCard> {
-    cards
-        .iter()
-        .map(|card| db::repos::procedures::EventCard {
-            slug: card.slug.clone(),
-            name: card.name.clone(),
-            order_index: card.order_index,
-            importance: card.importance.clone(),
-            required: card.required,
-            organization_short_name: card.organization_short_name.clone(),
-            cost: card.cost.clone(),
-            status: card.status.clone(),
-            official_url: card.official_url.clone(),
-            last_seen_at: card.last_seen_at,
-        })
-        .collect()
-}
-
 /// This route's low-cardinality metrics label (task 1).
 const ROUTE: &str = "/api/v1/events/{slug}";
 
@@ -57,7 +33,7 @@ pub async fn get(
     // Snapshot cards decoded into the same `EventCard` shape the transition
     // query serves — one DTO composition path for attribution + cost
     // (API-3/API-4).
-    let procedures = dto::procedure_cards_from_event_cards(cloned_cards(&cards));
+    let procedures = dto::procedure_cards_from_event_cards(crate::generation::cloned_cards(&cards));
     state.metrics.observe_sql_ops(ROUTE, 0);
     Ok(Json(dto::EventPage {
         slug: event.slug.clone(),

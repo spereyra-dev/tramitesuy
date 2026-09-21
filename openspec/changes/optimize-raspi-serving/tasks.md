@@ -179,7 +179,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - Verify: `.sqlx/` regenerated for the loader queries.
   - Satisfies: OPT-01/OPT-03, catalog-generations delta, R8.
 
-- [ ] 20. [S7] Add the active-generation holder to `apps/api/src/state.rs`: `active: Arc<ArcSwap<Arc<ActiveGeneration>>>` plus config; every handler captures `let generation = state.active.load_full();` as its first operation and keeps it for payload, log, and providers.
+- [x] 20. [S7] Add the active-generation holder to `apps/api/src/state.rs`: `active: Arc<ArcSwap<Arc<ActiveGeneration>>>` plus config; every handler captures `let generation = state.active.load_full();` as its first operation and keeps it for payload, log, and providers.
   - RED: `cargo test -p api --test generation_swap` — a request that captures G1 and finishes after a swap to G2 responds coherently with G1 data only (never mixes generations), and new requests see G2 in full.
   - GREEN: `arc-swap` added as a dependency; `AppState` no longer carries a global engine/taxonomy.
   - TRIANGULATE: the captured `Arc` strong count keeps the old generation alive until the request drops it.

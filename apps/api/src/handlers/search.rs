@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use axum::Json;
 use axum::extract::{Query, State};
 use db::providers::fts::FtsProvider;
+use db::providers::generation_trigram::GenerationTrigramProvider;
 use db::providers::orchestrator;
 use db::providers::trigram::TrigramProvider;
 use db::repos::search_log::{self, NewSearchLog};
@@ -34,8 +35,11 @@ pub async fn search(
     let generation = state.active.load_full();
     let query = query_parameter(&params)?;
     let outcome = run_pipeline(&state, &generation, &query).await?;
-    // Task 1: the two provider statements are consumed by the pipeline.
-    state.metrics.observe_sql_ops(ROUTE, 2);
+    // Task 1: the provider statements are consumed by the pipeline (the
+    // count depends on the captured generation's provider path).
+    state
+        .metrics
+        .observe_sql_ops(ROUTE, provider_sql_ops(&generation));
 
     let log_ops = persist_log(&state, &query, &outcome).await?;
     state.metrics.observe_sql_ops(ROUTE, log_ops);
@@ -59,7 +63,9 @@ pub async fn debug(
     let generation = state.active.load_full();
     let query = query_parameter(&params)?;
     let outcome = run_pipeline(&state, &generation, &query).await?;
-    state.metrics.observe_sql_ops(ROUTE, 2);
+    state
+        .metrics
+        .observe_sql_ops(ROUTE, provider_sql_ops(&generation));
 
     let log_ops = persist_log(&state, &query, &outcome).await?;
     state.metrics.observe_sql_ops(ROUTE, log_ops);
@@ -78,28 +84,54 @@ fn query_parameter(params: &HashMap<String, String>) -> Result<String, ApiError>
 
 /// Runs the deterministic pipeline through the db-side async orchestration
 /// boundary (S4b task 11) over the CAPTURED generation: its engine ranks,
-/// and the request's captured generation id travels with the provider
-/// contract (the legacy tables are not generation-scoped until the stage-3
-/// providers land; task 21 scopes the trigram provider). Provider errors
-/// stay structural and map to the existing public 500 path; no partial
-/// candidate ranking is produced.
+/// and the request's captured `generation_id` goes to BOTH providers (S7
+/// task 21): a loaded snapshot serves the generation-scoped trigram provider
+/// over the precomputed surface (design §2.2), while the no-snapshot path
+/// keeps the legacy provider for rollback. The legacy FTS provider carries
+/// the same captured id (dual-write keeps the legacy projection aligned
+/// during stages 2–3). Provider errors stay structural and map to the
+/// existing public 500 path; no partial candidate ranking is produced.
 async fn run_pipeline(
     state: &AppState,
     generation: &ActiveGeneration,
     query: &str,
 ) -> Result<SearchOutcome, ApiError> {
     let fts = FtsProvider::new(state.pool.clone());
-    let trigram = TrigramProvider::new(state.pool.clone());
-    orchestrator::run_search(
-        &generation.engine,
-        generation.generation_id(),
-        query,
-        &fts,
-        &trigram,
-        state.provider_fetch,
-    )
-    .await
+    match generation.is_loaded() {
+        true => {
+            orchestrator::run_search(
+                &generation.engine,
+                generation.generation_id(),
+                query,
+                &fts,
+                &GenerationTrigramProvider::new(state.pool.clone()),
+                state.provider_fetch,
+            )
+            .await
+        }
+        false => {
+            orchestrator::run_search(
+                &generation.engine,
+                generation.generation_id(),
+                query,
+                &fts,
+                &TrigramProvider::new(state.pool.clone()),
+                state.provider_fetch,
+            )
+            .await
+        }
+    }
     .map_err(|error| ApiError::InternalServerError(format!("search pipeline failed: {error}")))
+}
+
+/// The provider statements the pipeline issues per captured generation
+/// (task 1 counts them at the call site): 2 on the legacy no-snapshot path
+/// (FTS + trigram), 3 with a loaded snapshot — the generation-scoped trigram
+/// provider sets its transaction-local similarity threshold with one
+/// `set_config` statement before the precomputed-surface query (design
+/// §2.2). S8's provider consolidation revisits the ≤3 final budget.
+fn provider_sql_ops(generation: &ActiveGeneration) -> u64 {
+    if generation.is_loaded() { 3 } else { 2 }
 }
 
 /// Persists the redacted log row (API-10, task 82): ONLY the redacted query,
@@ -167,21 +199,29 @@ async fn open_payload(
         // the list cannot be empty in this mode.
         .expect("open selection implies a top result");
 
-    // Task 21 replaces this with snapshot cards for the loaded-snapshot
-    // path; until then `cards_by_event` stays the no-snapshot path.
-    let procedures = match db::repos::procedures::cards_by_event(&state.pool, &slug).await {
-        Ok(Some(cards)) => {
-            // Task 7: the transition cards query issues exactly 1 statement
-            // (no event metadata, no raw_data transport).
-            state.metrics.observe_sql_ops(ROUTE, 1);
-            dto::procedure_cards_from_event_cards(cards)
+    // S7 task 21: a loaded generation serves the open cards from the
+    // snapshot (0 SQL); the legacy `cards_by_event` query stays as the
+    // no-snapshot path (exactly 1 statement) until the snapshot route is
+    // fully verified.
+    let procedures = match generation.cards(&slug) {
+        Some(cards) => {
+            state.metrics.observe_sql_ops(ROUTE, 0);
+            dto::procedure_cards_from_event_cards(crate::generation::cloned_cards(&cards))
         }
-        Ok(None) => Vec::new(),
-        Err(error) => {
-            return Err(ApiError::InternalServerError(format!(
-                "event procedures query failed: {error}"
-            )));
-        }
+        None => match db::repos::procedures::cards_by_event(&state.pool, &slug).await {
+            Ok(Some(cards)) => {
+                // Task 7: the transition cards query issues exactly 1
+                // statement (no event metadata, no raw_data transport).
+                state.metrics.observe_sql_ops(ROUTE, 1);
+                dto::procedure_cards_from_event_cards(cards)
+            }
+            Ok(None) => Vec::new(),
+            Err(error) => {
+                return Err(ApiError::InternalServerError(format!(
+                    "event procedures query failed: {error}"
+                )));
+            }
+        },
     };
 
     Ok(serde_json::json!({

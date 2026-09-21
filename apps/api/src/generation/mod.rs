@@ -638,6 +638,30 @@ async fn load_candidate(
     ))
 }
 
+/// Field-wise clone of the snapshot's shared cards: the `crates/db` record
+/// types carry no `Clone` (outside this slice's edit surfaces), and the
+/// payload assembly consumes owned values. The data is immutable, so the
+/// copy is byte-identical.
+pub(crate) fn cloned_cards(
+    cards: &[db::repos::procedures::EventCard],
+) -> Vec<db::repos::procedures::EventCard> {
+    cards
+        .iter()
+        .map(|card| db::repos::procedures::EventCard {
+            slug: card.slug.clone(),
+            name: card.name.clone(),
+            order_index: card.order_index,
+            importance: card.importance.clone(),
+            required: card.required,
+            organization_short_name: card.organization_short_name.clone(),
+            cost: card.cost.clone(),
+            status: card.status.clone(),
+            official_url: card.official_url.clone(),
+            last_seen_at: card.last_seen_at,
+        })
+        .collect()
+}
+
 /// Decodes one projected card (the build's JSONB shape, task 15) into the
 /// transition `EventCard` the API payloads consume.
 fn decode_card(card: &serde_json::Value) -> Option<db::repos::procedures::EventCard> {
