@@ -6,7 +6,11 @@
  * fixture payloads recorded from the shipped handlers (design §5). No
  * browser, no DOM, no network.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { renderToReadableStream } from 'react-dom/server';
+import { createElement, type ReactNode } from 'react';
+
+import HomePage from '@/app/page';
 
 import type { SearchResponse } from '@/lib/api';
 import { searchView } from '@/lib/search-view';
@@ -22,6 +26,56 @@ type CategoriesResponse = Extract<SearchResponse, { mode: 'categories' }>;
 const open = searchOpen as unknown as OpenResponse;
 const disambiguation = searchDisambiguation as unknown as DisambiguationResponse;
 const categories = searchCategories as unknown as CategoriesResponse;
+
+vi.mock('next/link', () => ({
+  default: function FakeLink(props: { href: string; children: ReactNode }) {
+    return createElement('a', { href: props.href }, props.children);
+  },
+}));
+
+vi.mock('next/headers', () => ({
+  headers: vi.fn(async () => {
+    throw new Error('headers was called outside a request scope');
+  }),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+function fixtureResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+async function renderSearchMode(body: SearchResponse): Promise<string> {
+  vi.stubGlobal('fetch', vi.fn(async () => fixtureResponse(body)));
+  const element = await HomePage({ searchParams: Promise.resolve({ q: body.query }) });
+  const stream = await renderToReadableStream(element);
+  await stream.allReady;
+  return new Response(stream).text();
+}
+
+describe('home search result rendering', () => {
+  it('gives each returned search mode a named, visually targetable result region while retaining official attribution', async () => {
+    const openHtml = await renderSearchMode(open);
+    const disambiguationHtml = await renderSearchMode(disambiguation);
+    const categoriesHtml = await renderSearchMode(categories);
+
+    expect(openHtml).toContain('class="search-results search-results--direct"');
+    expect(openHtml).toContain('Fuente oficial');
+    expect(disambiguationHtml).toContain('class="search-results search-results--disambiguation"');
+    expect(disambiguationHtml).toContain('¿Te referías a...?');
+    expect(categoriesHtml).toContain('class="search-results search-results--categories"');
+    expect(categoriesHtml).toContain('Explorá por categoría');
+  });
+});
 
 describe('searchView: open mode', () => {
   it('renders the result event name with a link to its event page and no redirect', () => {
