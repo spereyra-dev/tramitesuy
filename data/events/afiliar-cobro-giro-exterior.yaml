@@ -1,0 +1,37 @@
+slug: afiliar-cobro-giro-exterior
+name: Cobrar la pasividad desde el exterior
+description: Afiliación de cobro por giro al exterior y asesoramiento para pasivos del BPS que cobran desde otro país.
+category: jubilaciones
+keywords:
+  - term: giro
+    type: ENTITY
+    weight: 15
+  - term: exterior
+    type: ENTITY
+    weight: 12
+  - term: pasividad
+    type: ENTITY
+    weight: 10
+  - term: cobrar
+    type: ACTION
+    weight: 8
+  - term: bps
+    type: ENTITY
+    weight: 6
+rules:
+  - action: afiliar
+    entity: exterior
+    bonus: 15
+relations:
+  - external_id: "7418"
+    order: 1
+    required: true
+tests:
+  positive:
+    - cobrar mi jubilacion desde el exterior
+    - giro al exterior de mi pasividad del bps
+    - cobro de haberes desde el exterior
+  negative:
+    - solicitar una visa de turismo
+    - informar el fallecimiento de un jubilado
+    - cambiar el local de cobro del bps

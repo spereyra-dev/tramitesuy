@@ -1,0 +1,37 @@
+slug: solicitar-teleasistencia
+name: Solicitar teleasistencia
+description: Servicio de teleasistencia del BPS para personas mayores, con dispositivo de respuesta en el hogar.
+category: jubilaciones
+keywords:
+  - term: teleasistencia
+    type: ENTITY
+    weight: 15
+  - term: dispositivo
+    type: ENTITY
+    weight: 8
+  - term: mayores
+    type: MODIFIER
+    weight: 8
+  - term: solicitar
+    type: ACTION
+    weight: 10
+  - term: adulto
+    type: ENTITY
+    weight: 6
+rules:
+  - action: solicitar
+    entity: teleasistencia
+    bonus: 15
+relations:
+  - external_id: "7431"
+    order: 1
+    required: true
+tests:
+  positive:
+    - solicitar teleasistencia para mi madre
+    - dispositivo de teleasistencia para mayores
+    - teleasistencia del bps
+  negative:
+    - asistencia a la vejez
+    - fe de vida del bps
+    - carnet para perro de asistencia

@@ -1,0 +1,43 @@
+slug: solicitar-abono-cultural
+name: Abono Cultural (Tarjeta Socio Espectacular)
+description: "Abono Cultural de BPS para jubilados y pensionistas: descuento en espectáculos culturales."
+category: jubilaciones
+keywords:
+  - term: abono
+    type: ENTITY
+    weight: 15
+  - term: cultural
+    type: ENTITY
+    weight: 12
+  - term: espectaculos
+    type: ENTITY
+    weight: 8
+  - term: espectacular
+    type: ENTITY
+    weight: 15
+  - term: jubilados
+    type: ENTITY
+    weight: 10
+  - term: socio
+    type: ENTITY
+    weight: 15
+  - term: tarjeta
+    type: ENTITY
+    weight: 8
+rules:
+  - action: solicitar
+    entity: cultural
+    bonus: 15
+relations:
+  - external_id: "7361"
+    order: 1
+    required: true
+tests:
+  positive:
+    - abono cultural para jubilados
+    - tarjeta socio espectacular del bps
+    - descuento en espectaculos culturales
+  negative:
+    - tarjeta uruguay social
+    - estadias vacacionales para jubilados
+    - tramitar poderes bps

@@ -1,0 +1,41 @@
+slug: crear-usuario-personal-bps
+name: Crear el usuario personal BPS
+description: Usuario único e intransferible para acceder a los servicios en línea del BPS, con actualización del correo asociado.
+category: documentos
+keywords:
+  - term: usuario
+    type: ENTITY
+    weight: 10
+  - term: bps
+    type: ENTITY
+    weight: 6
+  - term: crear
+    type: ACTION
+    weight: 10
+  - term: digital
+    type: ENTITY
+    weight: 8
+    negative: true
+  - term: correo
+    type: ENTITY
+    weight: 6
+rules:
+  - action: crear
+    entity: usuario
+    bonus: 15
+relations:
+  - external_id: "3850"
+    order: 1
+    required: true
+  - external_id: "7366"
+    order: 2
+    required: false
+tests:
+  positive:
+    - crear mi usuario personal del bps
+    - usuario personal bps para tramites en linea
+    - actualizar el correo de mi usuario bps
+  negative:
+    - crear el usuario de gub uy
+    - tramitar la firma digital
+    - sacar la cedula de identidad

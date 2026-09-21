@@ -92,8 +92,8 @@ fn golden_gate_passes_over_the_real_seed() {
     assert_eq!(dataset.version, 1, "golden dataset must be version 1");
     let case_count = dataset.cases.len();
     assert!(
-        (40..=140).contains(&case_count),
-        "dataset v1 must carry 40-140 cases, found {case_count}"
+        (40..=145).contains(&case_count),
+        "40-145, found {case_count}"
     );
 
     let engine = seed_engine();

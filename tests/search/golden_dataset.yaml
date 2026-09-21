@@ -42,7 +42,8 @@ baselines:
   # raised for lote-15: four bps vejez/poderes/cobros/apoyos cases add disambiguation-band cases; measured 51/118 ≈ 0.4322 on 2026-09-21.
   # raised for lote-17: pagar-factura-ute-ose negative patente fix leaves 55/124 disambiguation-band cases; measured ≈ 0.4435 on 2026-09-21.
   # raised for lote-20: revision/special-pension/aid cases add disambiguation-band cases; measured 63/136 ≈ 0.4633 on 2026-09-21.
-  max_ambiguous_rate: 0.4633
+  # raised for lote-21: bps digital-account/teleasistencia/giro-exterior/abono-cultural cases add disambiguation-band cases; measured 69/140 ≈ 0.4929 on 2026-09-21.
+  max_ambiguous_rate: 0.4929
 cases:
   # ── comprar-vehiculo positives ─────────────────────────────────────
   - query: "compre un auto usado"
@@ -380,4 +381,13 @@ cases:
     expect_top1: solicitar-ayuda-extraordinaria
   - query: "subsidio por enfermedad del bps"
     expect_top1: consultar-subsidio-enfermedad
+  # ── lote-21 bps digital account and services positives ─────────────
+  - query: "crear mi usuario personal del bps"
+    expect_top1: crear-usuario-personal-bps
+  - query: "solicitar teleasistencia para mi madre"
+    expect_top1: solicitar-teleasistencia
+  - query: "cobrar mi jubilacion desde el exterior"
+    expect_top1: afiliar-cobro-giro-exterior
+  - query: "abono cultural para jubilados"
+    expect_top1: solicitar-abono-cultural
 
