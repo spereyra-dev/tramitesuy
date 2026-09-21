@@ -353,29 +353,16 @@ async fn validate_event_keywords(
 
     let mut projected_terms: std::collections::BTreeSet<(String, bool)> =
         std::collections::BTreeSet::new();
+    // The array membership IS the negative flag: the projection splits the
+    // keywords into positive/negative arrays (build.rs), and each entry
+    // carries term/canonical/type/weight.
     let positive_values = row.positive.as_array().cloned().unwrap_or_default();
     let negative_values = row.negative.as_array().cloned().unwrap_or_default();
-    for value in positive_values.into_iter().chain(negative_values) {
-        let term = value
-            .get("term")
-            .and_then(|t| t.as_str())
-            .unwrap_or_default()
-            .to_string();
-        let canonical = value
-            .get("canonical")
-            .and_then(|c| c.as_str())
-            .unwrap_or_default()
-            .to_string();
-        let effective = if canonical.is_empty() {
-            term
-        } else {
-            canonical
-        };
-        let negative = value
-            .get("negative")
-            .and_then(|n| n.as_bool())
-            .unwrap_or(false);
-        projected_terms.insert((effective, negative));
+    for value in positive_values {
+        projected_terms.insert((effective_term(&value), false));
+    }
+    for value in negative_values {
+        projected_terms.insert((effective_term(&value), true));
     }
     let expected: std::collections::BTreeSet<(String, bool)> = event
         .keywords
@@ -392,4 +379,24 @@ async fn validate_event_keywords(
         });
     }
     Ok(())
+}
+
+/// The projected keyword's effective matching term: the canonical term when
+/// present, otherwise the term itself (the engine's canonical-term rule).
+fn effective_term(value: &serde_json::Value) -> String {
+    let term = value
+        .get("term")
+        .and_then(|t| t.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let canonical = value
+        .get("canonical")
+        .and_then(|c| c.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if canonical.is_empty() {
+        term
+    } else {
+        canonical
+    }
 }

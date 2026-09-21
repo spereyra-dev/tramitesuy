@@ -1,7 +1,8 @@
-//! Task 63 (IN-1): the worker binary exposes the three subcommands
-//! `ingest`, `seed-taxonomy`, and `export-ids`; an unknown subcommand exits
-//! non-zero with usage text. Pure CLI-surface contract: no database, no
-//! network (help/usage paths are handled by clap before any wiring runs).
+//! Task 63 (IN-1): the worker binary exposes the `ingest`, `seed-taxonomy`,
+//! `export-ids`, and (since S6 task 18) `publish` subcommands; an unknown
+//! subcommand exits non-zero with usage text. Pure CLI-surface contract: no
+//! database, no network (help/usage paths are handled by clap before any
+//! wiring runs).
 
 use std::process::Command;
 
@@ -11,11 +12,11 @@ fn bin() -> Command {
 }
 
 #[test]
-fn help_lists_the_three_subcommands() {
+fn help_lists_the_subcommands() {
     let output = bin().arg("--help").output().expect("binary runs");
     assert!(output.status.success(), "--help must exit 0");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    for subcommand in ["ingest", "seed-taxonomy", "export-ids"] {
+    for subcommand in ["ingest", "seed-taxonomy", "export-ids", "publish"] {
         assert!(
             stdout.contains(subcommand),
             "--help must list the '{subcommand}' subcommand (IN-1); got:\n{stdout}"

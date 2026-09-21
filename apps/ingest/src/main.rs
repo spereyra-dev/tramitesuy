@@ -5,8 +5,7 @@
 
 use clap::{Parser, Subcommand};
 
-mod commands;
-mod support;
+use ingest::commands;
 
 #[derive(Parser)]
 #[command(
@@ -49,6 +48,16 @@ enum Command {
         #[arg(long)]
         database_url: Option<String>,
     },
+    /// Build → validate → persist → promote the catalog generation
+    /// (S6 task 18): the mandatory publication flow with its run record.
+    Publish {
+        /// Data directory holding events/, categories/, synonyms/.
+        #[arg(long, default_value = "data")]
+        data_dir: String,
+        /// Postgres URL (defaults to the compose dev database).
+        #[arg(long)]
+        database_url: Option<String>,
+    },
 }
 
 fn main() {
@@ -65,5 +74,9 @@ fn main() {
             output,
             database_url,
         } => commands::export_ids::run(&output, database_url.as_deref()),
+        Command::Publish {
+            data_dir,
+            database_url,
+        } => commands::publish::run(&data_dir, database_url.as_deref()),
     }
 }

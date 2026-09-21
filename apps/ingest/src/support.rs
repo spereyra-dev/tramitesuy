@@ -2,9 +2,12 @@
 //! the worker where the real fetcher, pool, and repository are wired
 //! together. Each constructor keeps its seam so tests can substitute parts.
 
+use crate::errors::PublishError;
 use db::repos::procedures::PostgresProcedureRepository;
-use ingest::pool_config;
+use crate::pool_config;
 use ingestion::ports::ProcedureRepository;
+use sha2::{Digest, Sha256};
+use std::path::Path;
 use std::sync::OnceLock;
 
 /// The dev-database URL default (compose `db` service, D-6).
@@ -81,3 +84,54 @@ pub fn repository_for(explicit_url: Option<&str>) -> PostgresProcedureRepository
 /// the marker is intentionally never called.
 #[allow(dead_code)]
 fn _port_in_scope(_repo: &dyn ProcedureRepository) {}
+
+/// Computes the generation's `taxonomy_version` (design §1.2): the SHA-256
+/// of the effective YAML content used in the build — every `events/`,
+/// `categories/`, and `synonyms/` file under `data_dir`, in sorted file
+/// order (the loader's own ordering), with a scheme header so a future
+/// hashing change cannot alias previous versions.
+///
+/// The YAML stays the taxonomy source of truth (TX-1): the hash travels
+/// verbatim from the file bytes, never from the DB projection.
+pub fn compute_taxonomy_version(data_dir: &Path) -> Result<String, PublishError> {
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    for (label, dir) in [
+        ("events", data_dir.join("events")),
+        ("categories", data_dir.join("categories")),
+        ("synonyms", data_dir.join("synonyms")),
+    ] {
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .map_err(|e| PublishError::Taxonomy(format!("taxonomy dir {}: {e}", dir.display())))?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .filter(|name| name.ends_with(".yaml") || name.ends_with(".yml"))
+            .collect();
+        names.sort();
+        for name in names {
+            let path = dir.join(&name);
+            let bytes = std::fs::read(&path).map_err(|e| {
+                PublishError::Taxonomy(format!("taxonomy file {}: {e}", path.display()))
+            })?;
+            files.push((format!("{label}/{name}"), bytes));
+        }
+    }
+    files.sort();
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"tramitesuy:taxonomy-version:v1\n");
+    for (label, bytes) in &files {
+        hasher.update(label.as_bytes());
+        hasher.update(b"\n");
+        hasher.update(bytes);
+        hasher.update(b"\n");
+    }
+    let digest = hasher.finalize();
+    let mut hex = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        use std::fmt::Write as _;
+        // unwrap justification: fmt::Write into an owned String is infallible
+        // (no allocator error is recoverable), so `write!` cannot fail here.
+        let _ = write!(hex, "{byte:02x}");
+    }
+    Ok(hex)
+}

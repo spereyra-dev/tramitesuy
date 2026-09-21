@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use crate::support;
 use db::pool;
-use ingest::daily_loop;
-use ingest::pool_config;
+use crate::daily_loop;
+use crate::pool_config;
 
 /// The daemon loop body. Runs migrations once (self-bootstrapping so the
 /// compose service works on a fresh database), then loops: ingest → sleep

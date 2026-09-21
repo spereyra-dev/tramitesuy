@@ -973,9 +973,13 @@ dependencies = [
  "clap",
  "db",
  "ingestion",
+ "serde_json",
+ "sha2 0.11.0",
  "sqlx",
  "taxonomy",
+ "thiserror",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

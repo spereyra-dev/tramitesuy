@@ -4,4 +4,5 @@
 pub mod daemon;
 pub mod export_ids;
 pub mod ingest;
+pub mod publish;
 pub mod seed_taxonomy;
