@@ -48,6 +48,7 @@ achieved with `system-ui` + ad-hoc blues.
 
 ## Evidence
 
-- commit `80299d2` `feat(web): adopt gub.uy visual identity (Sora + Open Sans, institutional blue)` (branch `feat/gub-uy-visual-identity`, off master `32591db`).
+- commit `6e82eaa` `feat(web): adopt gub.uy visual identity (Sora + Open Sans, institutional blue)` (branch `feat/gub-uy-visual-identity`, off master `32591db`).
 - Tests: 13 files, 71/71 passed (apps/web); `next build` OK, 4 routes.
+- Native review: NOT completed for this candidate. `gentle_review` inspect shows an unrelated working-tree candidate (`odd/tasks/taxonomy-coverage.md` from a parallel session) and the committed-range request fails with `unrelated target status is inconsistent`. Cross-session review-state conflict needs a human decision before any review/reset. Ordinary repo policy (CI on PR) still applies.
 - Note: follow-up candidate — favicon + og:image meta (design audit gap), not in this feature scope.
