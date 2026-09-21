@@ -4,4 +4,5 @@ pub mod category;
 pub mod event;
 pub mod feedback;
 pub mod procedure;
+pub mod readiness;
 pub mod search;

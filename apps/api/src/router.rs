@@ -15,6 +15,10 @@ use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
+        // Internal readiness probe (S7 task 22): deliberately OUTSIDE the
+        // closed `/api/v1` inventory — the proxy uses it to hold traffic
+        // back until the first valid snapshot load.
+        .route("/ready", get(handlers::readiness::ready))
         .route("/api/v1/search", get(handlers::search::search))
         .route("/api/v1/search/debug", get(handlers::search::debug))
         .route("/api/v1/search/feedback", post(handlers::feedback::create))

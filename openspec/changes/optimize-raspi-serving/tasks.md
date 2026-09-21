@@ -185,7 +185,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: the captured `Arc` strong count keeps the old generation alive until the request drops it.
   - Satisfies: OPT-02 (atomic swap), OPT-04, R3.
 
-- [ ] 21. [S7] Point the search path at the captured generation: `apps/api/src/handlers/search.rs` passes the captured `generation_id` to both providers, serves `open` cards from the snapshot, and stops executing `by_event` per search; keep the `cards_by_event` query as the no-snapshot path until the snapshot route is verified.
+- [x] 21. [S7] Point the search path at the captured generation: `apps/api/src/handlers/search.rs` passes the captured `generation_id` to both providers, serves `open` cards from the snapshot, and stops executing `by_event` per search; keep the `cards_by_event` query as the no-snapshot path until the snapshot route is verified.
   - RED: `cargo test -p api --test search_modes` + the SQL counter — catalog reads 0 statements, `open` in the intermediate phase ≤4, new search with PostgreSQL providers ≤3, cache-hit path still 1.
   - GREEN: generation providers + snapshot cards.
   - TRIANGULATE: `/search/debug` uses the same captured generation and still persists its log before responding.
