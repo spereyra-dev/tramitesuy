@@ -615,3 +615,144 @@ file into the index while commits are built; the task-17 commit carries that
 file's staged content (tracked in `HEAD` elsewhere in the repo's pattern).
 No other divergent copy exists; all Engram-independent persistence was
 verified by re-reading the tasks/apply-progress files after writing.
+
+## Slice S7 — Stage 3 Generations (tasks 19–22) — branch `opt/s7-snapshot`
+
+Status: **complete; slice gates green; gga review passed on all four
+work-unit commits** (one first pass per unit; two initial runs failed on
+unjustified `expect()`s / a stale staged copy and were fixed before the
+commit). Delivery: auto-chain, stacked-to-main, branch cut from fresh
+`master` (1ef4a77). Structured status consumed before work:
+`gentle-ai.sdd-status` v2, change `optimize-raspi-serving`,
+`applyState: ready`, `nextRecommended: apply`, repo-local mode, whole
+workspace as allowed edit root, no native blockers (the future-edit-roots
+note concerns a later work unit, ignored for S7 per the parent).
+
+### Completed tasks and proof
+
+| Task | Proof (exact commands, results) |
+|---|---|
+| 19 in-memory snapshot | `cargo test -p api --test generation_snapshot` → 5 passed: known category/event/procedure lookups answer with **0 catalog SQL** after load (section count 0); a nonexistent procedure id resolves to None with 0 SQL; the inactive procedure stays fetchable with `status: "inactive"`, its official URL and last-seen stamp intact; load issues exactly **6 recorded statements** (manifest, events, cards, details, categories, organizations) and never queries version history or `search_logs`; TRIANGULATE: reloading the same durable generation yields identical lookups (ids, names, descriptions, statuses, card order, detail statuses all equal) and an interrupted `building` candidate (projection_status ≠ complete) is rejected while the previous complete generation adopts; nothing published ⇒ `Ok(None)` (cold, not an error). RED confirmed as E0433 `api::generation` unresolved. |
+| 20 ArcSwap holder | `cargo test -p api --test generation_swap` → 3 passed: a request that captured G1 (`state.active.load_full()` as first operation) keeps answering with G1 data only after a swap to G2 (manifest id, cards, procedure name); new HTTP requests see G2 in full (`GET /procedures/4551` serves the renamed procedure); the captured `Arc` strong count drops by exactly 1 after the swap (holder released its reference; the request Arc is the last one keeping G1 alive) and the holder serves the adopted generation after the request drains. `arc-swap` added (workspace dep). |
+| 21 captured-generation search | `cargo test -p api --test sql_ops_baseline` → 5 passed: NEW `open_search_with_snapshot_cards_costs_five_traced_statements` — with a loaded snapshot the open cards come from the snapshot (proven by dropping `life_event_procedures`: the response still carries the fixture cards in order) and the recorded count is **5 traced statements** (FTS 1 + generation trigram provider 3 [traced transaction BEGIN + transaction-local `set_config` + precomputed-surface SELECT; COMMIT not traced] + consolidated log 1); TRIANGULATE `debug_with_snapshot_uses_the_captured_generation_and_logs` → same 5, and the log row count is 1 after the response. Cold (no-snapshot) baselines unchanged: open 4 (FTS + legacy trigram + log + `cards_by_event`), disambiguation 3, categories 3. Catalog reads 0 (snapshot serving, task 19/20). Probe evidence: isolated provider counts — FTS 1, generation trigram 3, legacy trigram 1, log 1. |
+| 22 cold-start /ready | `cargo test -p api --test readiness` → 4 passed: freshly started API with no valid generation ⇒ `/api/v1/categories` 503 and `/ready` 503 (`status: "starting"`, null generation); after the first valid load ⇒ 200 from the snapshot and `/ready` 200 with generation id, `age_seconds`, and `last_successful_sync`; a failed load (manifest `taxonomy_version` not matching the boot YAML hash) is rejected and the served generation stays put; TRIANGULATE: `/ready` registered outside `/api/v1`, `GET /api/v1/ready` ⇒ 404 (closed inventory intact). |
+
+### TDD Cycle Evidence (strict TDD, runner `cargo test`)
+
+| Task | RED (failing test first) | GREEN (minimal implementation) | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| 19 | `cargo test -p api --test generation_snapshot` → E0433 `api::generation` unresolved | `apps/api/src/generation/mod.rs`: `ActiveGeneration` (manifest, engine, synonyms, taxonomy, slug name maps, ordered categories, events by slug, cards per event, details by external id, organizations, provider scope) + `load_published` (newest-first published candidates, completeness + taxonomy-version checks, previous-generation fallback) | deterministic reload + building-candidate rejection + cold `Ok(None)` tests green | gga finding fixed: bare `#[allow(clippy::too_many_arguments)]` replaced by a `SnapshotParts` grouping struct; `.sqlx` regenerated; fmt + clippy clean |
+| 20 | `cargo test -p api --test generation_swap` → no `AppState::boot`/`install` (E0599) | `arc-swap` dependency; `AppState { active: Arc<ArcSwap<Arc<ActiveGeneration>>>, pool, provider_fetch, limits, metrics }`; cold baseline constructor; async `boot`/`boot_with_metrics` attempting the durable load; `install()` as the only swap; every handler's first line captures `state.active.load_full()` | strong-count retention test + HTTP new-request-sees-G2 test green | engine/taxonomy left `AppState` (task 20 GREEN); catalog handlers rewired to snapshot with the api-delta cold 503 gate (recorded deviation: the 503 gate of task 22 landed here because a cold catalog read has no coherent legacy response left once serving is snapshot-based) |
+| 21 | `cargo test -p api --test sql_ops_baseline` → new snapshot tests fail (open 500 after dropping the relations table; debug observed 3) | `run_pipeline` branches per captured generation: loaded ⇒ `GenerationTrigramProvider` scoped by `generation_id`, cold ⇒ legacy `TrigramProvider`; open payload serves snapshot cards (`cards_by_event` only as the no-snapshot path); call-site provider op counts 2/3 | debug-with-snapshot test green (same captured generation, log persisted before responding) | `provider_sql_ops()` documents the 2/3 split (the generation provider's transaction ceremony = traced BEGIN + set_config + surface SELECT) |
+| 22 | `cargo test -p api --test readiness` → `/ready` 404 | `handlers/readiness.rs` + router route outside `/api/v1`: 503 + `starting` before load; 200 + generation/age/sync after; catalog 503 gate already in place from task 20 | inventory-closure test (`/api/v1/ready` 404) + failed-load test green | gga findings fixed (justified-inline comments on pre-existing and new `expect()`s incl. `main.rs` boot roots) |
+
+### Files changed (S7)
+
+- `apps/api/src/generation/mod.rs` (new — snapshot + loader, 748 lines)
+- `apps/api/src/state.rs` (holder + boot; engine/taxonomy moved out)
+- `apps/api/src/handlers/{search,category,event,procedure}.rs` (captured generation; snapshot serving)
+- `apps/api/src/handlers/readiness.rs` (new), `handlers/mod.rs`, `router.rs`, `error.rs` (`ColdStart` → 503)
+- `apps/api/src/main.rs` (boot path + generation gauge), `apps/api/src/lib.rs`
+- `Cargo.toml` / `apps/api/Cargo.toml` (`arc-swap`, `chrono`, `sha2`, `uuid` for the api crate)
+- `apps/api/tests/{generation_snapshot,generation_swap,readiness}.rs` (new), `sql_ops_baseline.rs`, `metrics.rs`, `support/mod.rs` (publish/adopt helpers, snapshot-aware spawns), catalog test setups (`attribution`, `categories`, `events`, `missing_cost`, `procedures`)
+- `.sqlx/`: 5 new loader queries + 1 regenerated (manifest candidates with `projection_status` + `published_at` non-null override)
+- `openspec/changes/optimize-raspi-serving/tasks.md` (19–22 checked)
+
+### Test commands run (slice boundary)
+
+- `cargo test --workspace` → all suites green, 0 FAILED
+- `cargo test -p api` → 21 test binaries green (incl. the 3 new S7 suites)
+- `cargo test -p search --test golden` → 6 passed (golden gate green; no ranking change in S7)
+- `SQLX_OFFLINE=true cargo check --workspace --all-targets` → green against the committed `.sqlx` cache
+- `make lint` → `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` green
+- `make validate-data` → green (taxonomy untouched: 104 events, 14 categories, 37 synonyms, 3501 external ids)
+
+### Deviations from design/tasks (recorded)
+
+1. **Stage-3 supplement for categories, event descriptions, and
+   organizations** (recorded gap): migration 0015 projects events, cards,
+   and procedure details per generation, but categories, event
+   descriptions, and organizations are not per-generation projected. The
+   loader supplements those three from the same legacy tables the build
+   itself read (dual-write stays in place during stages 2–3), once per
+   load — per-request serving stays zero-SQL and the served content stays
+   byte-identical to the legacy path (the "no other citizen-visible
+   change" guardrail). Extending the projections (migration + build) is
+   S8+ work outside this slice's edit surfaces (crates/db, migrations).
+2. **Snapshot open budget records 5 traced statements, not 4**: the
+   generation-scoped trigram provider (S6, kept per task 21) runs its
+   transaction-local `set_config` inside an explicit transaction, and the
+   task-2 counting instrument traces the transaction BEGIN (real data
+   statements = FTS + GUC + surface + log = 4, which meets the
+   intermediate ≤4 budget with snapshot cards). The S8 provider
+   consolidation must absorb the traced ceremony to reach the final ≤3.
+3. **Cold-start 503 landed with task 20's rewiring** (not task 22): once
+   catalog handlers serve the snapshot, a cold read has no coherent legacy
+   path (the holder carries no catalog data), so `ApiError::ColdStart` →
+   503 is the only coherent response; task 22 then added `/ready` and the
+   readiness tests.
+4. **Cold baseline is an empty `ActiveGeneration`** (manifest `None`) over
+   the boot YAML engine, instead of `ArcSwapOption`: satisfies the task's
+   literal holder type while representing "no valid generation" (catalog
+   reads 503, search serves through the dual-written legacy tables, as the
+   no-snapshot path).
+5. **`taxonomy_version` verified at load**: the loader recomputes the
+   YAML-content hash (same scheme/`v1` constants as
+   `apps/ingest/src/support.rs::compute_taxonomy_version`, duplicated in
+   apps/api because apps/ingest is not an allowed dependency surface for
+   the api crate) and rejects candidates whose manifest version does not
+   match the boot YAML. A scheme drift fails loudly at load time. Open
+   risk recorded: a taxonomy-only YAML change (content_hash unchanged)
+   leaves the already-published manifest at its old version and the API
+   rejects it until the worker republishes — S8's content-change semantics
+   must reconcile that.
+6. **FTS provider stays legacy on the loaded path** (carries the captured
+   id; queries the dual-written legacy projection): a generation-scoped FTS
+   provider over `generation_fts_text` would need the weighted
+   `generated_tsvector` semantics (name='A' + description='B') that the
+   concatenated `fts_text` surface cannot reconstruct — equivalence risk;
+   deferred until S8 owns provider work in crates/db.
+7. **Feedback handler does not capture the generation**: it is the write
+   path (search feedback rows by log id), reads no generation data, and
+   writes only its own durable row; capturing would be dead code (recorded
+   task-20 deviation).
+
+### Remaining tasks (unchecked at the tasks locator)
+
+All tasks 23–49 (stages 3 continuation + 4–6) remain unchecked, starting
+with:
+
+- `- [ ] 23. [S8] Implement publication detection: manifest reconciliation every 60 s ...`
+
+No S7 task remains unchecked (49 total, 22 complete).
+
+### Workload / PR boundary
+
+- Slice S7 = PR 8 of the 15-PR stacked chain (branch `opt/s7-snapshot`,
+  targets the S1–S7 chain tip = master; merge/stack at the gate — merge to
+  master and push are the parent's, per the delivery contract).
+- Authored changed lines across the four work-unit commits:
+  **1,904 insertions / 221 deletions** excluding generated `.sqlx` caches
+  and `Cargo.lock` (2,252 / 221 including them) — above the 400-line
+  budget, as tasks.md forecasts for S7 (High risk, ~560 est. before test
+  coverage; the loader tests and the fixture-generation test support are
+  the bulk). Per the resolved delivery contract (`auto-chain`,
+  `stacked-to-main`, carried from the S6 gate), the slice lands as four
+  chained work-unit commits; no comments, blank lines, docs, or tests
+  were compressed to reach the budget.
+- gga review passed on each commit (`gga run --no-cache`; one first pass
+  flagged an unjustified clippy allow + pre-existing unjustified
+  `expect()`s — fixed with justification comments and a struct-grouping
+  refactor; two later runs FAILED on a stale staged copy and were
+  re-run PASSED after re-staging).
+- Rollback boundary: revert the S7 commits — the API returns to the
+  legacy serving path (dual-write legacy tables unchanged by S7; the
+  generation loader and holder are additive; `.sqlx` additions are cache
+  entries for loader queries; no migrations added).
+
+### Commits (identities)
+
+1. `ddad0cd feat(api): in-memory ActiveGeneration snapshot loaded from the durable published generation (S7 task 19)`
+2. `5567a82 feat(api): active-generation holder with atomic ArcSwap swap and per-request capture (S7 task 20)`
+3. `be85ecb feat(api): search path serves the captured generation's providers and snapshot cards (S7 task 21)`
+4. `658233c feat(api): internal /ready probe with cold-start semantics outside the /api/v1 inventory (S7 task 22)`

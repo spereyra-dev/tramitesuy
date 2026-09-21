@@ -191,7 +191,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: `/search/debug` uses the same captured generation and still persists its log before responding.
   - Satisfies: OPT-04/OPT-06, operations delta (SQL budget), R7.
 
-- [ ] 22. [S7] Add cold-start semantics: an internal `/ready` route in `apps/api/src/router.rs` **outside** the closed `/api/v1` inventory, reporting active generation, age, and last successful sync; catalog reads return 503 until the first valid snapshot load, and an invalid or failed load never changes the served generation.
+- [x] 22. [S7] Add cold-start semantics: an internal `/ready` route in `apps/api/src/router.rs` **outside** the closed `/api/v1` inventory, reporting active generation, age, and last successful sync; catalog reads return 503 until the first valid snapshot load, and an invalid or failed load never changes the served generation.
   - RED: `cargo test -p api --test readiness` — freshly started API with no valid generation: `/api/v1/categories` is 503 and readiness reports not-ready; after the first valid load: 200 from the snapshot and ready; a failed load leaves the previous generation active.
   - GREEN: readiness gating inside `apps/api/src/error.rs` + the catalog handlers.
   - TRIANGULATE: `/api/v1` route inventory stays closed (no probe/metric route added under it).
