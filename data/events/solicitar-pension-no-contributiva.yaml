@@ -1,0 +1,49 @@
+slug: solicitar-pension-no-contributiva
+name: Pensiones especiales y no contributivas
+description: Pensión por vejez, por invalidez, pensión reparatoria y pensiones para víctimas de delitos violentos y violencia doméstica.
+category: jubilaciones
+keywords:
+  - term: pension
+    type: ENTITY
+    weight: 12
+  - term: vejez
+    type: ENTITY
+    weight: 6
+  - term: invalidez
+    type: ENTITY
+    weight: 12
+  - term: violentos
+    type: ENTITY
+    weight: 8
+  - term: reparatoria
+    type: ENTITY
+    weight: 10
+rules:
+  - action: solicitar
+    entity: pension
+    bonus: 15
+relations:
+  - external_id: "7452"
+    order: 1
+    required: true
+  - external_id: "7451"
+    order: 2
+    required: false
+  - external_id: "7388"
+    order: 3
+    required: false
+  - external_id: "7455"
+    order: 4
+    required: false
+  - external_id: "7453"
+    order: 5
+    required: false
+tests:
+  positive:
+    - pension por vejez del bps
+    - pension por invalidez
+    - pension reparatoria por delitos violentos
+  negative:
+    - pension por sobrevivencia del bps
+    - asistencia a la vejez
+    - solicitar mi jubilacion

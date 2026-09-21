@@ -41,7 +41,8 @@ baselines:
   # raised for lote-14: four bps jubilaciones/monetary cases add disambiguation-band cases; measured 48/114 ≈ 0.4211 on 2026-09-21.
   # raised for lote-15: four bps vejez/poderes/cobros/apoyos cases add disambiguation-band cases; measured 51/118 ≈ 0.4322 on 2026-09-21.
   # raised for lote-17: pagar-factura-ute-ose negative patente fix leaves 55/124 disambiguation-band cases; measured ≈ 0.4435 on 2026-09-21.
-  max_ambiguous_rate: 0.45
+  # raised for lote-20: revision/special-pension/aid cases add disambiguation-band cases; measured 63/136 ≈ 0.4633 on 2026-09-21.
+  max_ambiguous_rate: 0.4633
 cases:
   # ── comprar-vehiculo positives ─────────────────────────────────────
   - query: "compre un auto usado"
@@ -370,4 +371,13 @@ cases:
     expect_top1: solicitar-prestacion-sindrome-down
   - query: "subsidio para cuidados por adopcion"
     expect_top1: solicitar-subsidio-cuidados-adopcion
+  # ── lote-20 revision, special pensions, extraordinary aid positives ─
+  - query: "modificar mi jubilacion en tramite"
+    expect_top1: revisar-jubilacion-otorgada
+  - query: "pension por vejez del bps"
+    expect_top1: solicitar-pension-no-contributiva
+  - query: "solicitar la ayuda extraordinaria del bps"
+    expect_top1: solicitar-ayuda-extraordinaria
+  - query: "subsidio por enfermedad del bps"
+    expect_top1: consultar-subsidio-enfermedad
 

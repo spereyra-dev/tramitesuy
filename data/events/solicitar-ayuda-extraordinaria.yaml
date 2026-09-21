@@ -1,0 +1,43 @@
+slug: solicitar-ayuda-extraordinaria
+name: Solicitar la ayuda extraordinaria
+description: "Ayudas extraordinarias del BPS: solicitud por primera vez, renovación, cambio de tratamiento y resultado de la evaluación técnica."
+category: beneficios-familiares
+keywords:
+  - term: extraordinaria
+    type: ENTITY
+    weight: 15
+  - term: ayuda
+    type: ENTITY
+    weight: 12
+  - term: renovar
+    type: ACTION
+    weight: 8
+  - term: tratamiento
+    type: ENTITY
+    weight: 8
+rules:
+  - action: solicitar
+    entity: extraordinaria
+    bonus: 15
+relations:
+  - external_id: "7448"
+    order: 1
+    required: true
+  - external_id: "7423"
+    order: 2
+    required: false
+  - external_id: "7409"
+    order: 3
+    required: false
+  - external_id: "7396"
+    order: 4
+    required: false
+tests:
+  positive:
+    - solicitar la ayuda extraordinaria del bps
+    - renovar mi ayuda extraordinaria
+    - cambio de tratamiento de la ayuda extraordinaria
+  negative:
+    - asistencia a la vejez
+    - tarjeta uruguay social
+    - subsidio para cuidados por adopcion

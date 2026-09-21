@@ -1,0 +1,43 @@
+slug: revisar-jubilacion-otorgada
+name: Revisar mi jubilación otorgada
+description: Reformas y revisiones de jubilaciones, y asesoramiento y modificación de la jubilación en trámite.
+category: jubilaciones
+keywords:
+  - term: revisar
+    type: ENTITY
+    weight: 12
+  - term: jubilacion
+    type: ENTITY
+    weight: 8
+  - term: reformar
+    type: ACTION
+    weight: 10
+  - term: modificar
+    type: ACTION
+    weight: 10
+  - term: asesoramiento
+    type: ENTITY
+    weight: 8
+rules:
+  - action: modificar
+    entity: jubilacion
+    bonus: 15
+  - action: reformar
+    entity: jubilacion
+    bonus: 15
+relations:
+  - external_id: "7441"
+    order: 1
+    required: true
+  - external_id: "7442"
+    order: 2
+    required: true
+tests:
+  positive:
+    - revisar mi jubilacion ya otorgada
+    - modificar mi jubilacion en tramite
+    - reforma de la jubilacion
+  negative:
+    - solicitar mi jubilacion
+    - consultar el estado de mi tramite jubilatorio
+    - prestacion por sindrome de down del bps

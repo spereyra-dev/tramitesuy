@@ -1,0 +1,40 @@
+slug: consultar-subsidio-enfermedad
+name: Subsidio por enfermedad
+description: Consultas sobre el subsidio por enfermedad y el complemento BSE del subsidio por enfermedad del BPS.
+category: trabajo
+keywords:
+  - term: enfermedad
+    type: ENTITY
+    weight: 12
+  - term: subsidio
+    type: ENTITY
+    weight: 10
+  - term: consulta
+    type: ENTITY
+    weight: 8
+  - term: bse
+    type: ENTITY
+    weight: 6
+  - term: bps
+    type: ENTITY
+    weight: 6
+rules:
+  - action: solicitar
+    entity: enfermedad
+    bonus: 15
+relations:
+  - external_id: "7432"
+    order: 1
+    required: true
+  - external_id: "7461"
+    order: 2
+    required: false
+tests:
+  positive:
+    - subsidio por enfermedad del bps
+    - complemento bse del subsidio por enfermedad
+    - consultas sobre el subsidio por enfermedad
+  negative:
+    - solicitar el subsidio de desempleo
+    - solicitar el subsidio de maternidad
+    - solicitar audifonos del bps

@@ -35,6 +35,9 @@ relations:
   - external_id: "1850-3"
     order: 3
     required: false
+  - external_id: "7450"
+    order: 4
+    required: false
 tests:
   positive:
     - prestamo para protesis del bps

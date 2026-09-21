@@ -29,6 +29,12 @@ relations:
   - external_id: "7385"
     order: 2
     required: false
+  - external_id: "7459"
+    order: 3
+    required: false
+  - external_id: "7440"
+    order: 4
+    required: false
 tests:
   positive:
     - solicitar audifonos del bps

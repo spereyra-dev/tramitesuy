@@ -37,6 +37,9 @@ relations:
   - external_id: "7460"
     order: 1
     required: true
+  - external_id: "7444"
+    order: 2
+    required: false
 tests:
   positive:
     - subsidio por maternidad del bps
