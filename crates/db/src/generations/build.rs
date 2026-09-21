@@ -183,11 +183,10 @@ fn content_hash(payload: &CatalogPayload) -> String {
 /// Reads the whole observable payload from the legacy tables — the same
 /// source ingestion writes today (dual-write, design §2.1).
 async fn read_payload(pool: &PgPool) -> Result<CatalogPayload, sqlx::Error> {
-    let categories = sqlx::query!(
-        "SELECT slug, name, icon, order_index FROM categories ORDER BY slug",
-    )
-    .fetch_all(pool)
-    .await?;
+    let categories =
+        sqlx::query!("SELECT slug, name, icon, order_index FROM categories ORDER BY slug",)
+            .fetch_all(pool)
+            .await?;
     let organizations = sqlx::query!(
         "SELECT external_id, name, short_name FROM organizations ORDER BY external_id",
     )
@@ -508,7 +507,10 @@ pub async fn finalize_build(pool: &PgPool, generation_id: Uuid) -> Result<(), sq
 /// payload, reuses the generation id already recorded for the same
 /// `content_hash` when present, and leaves the manifest row `building` with
 /// incomplete projections when the projections still have to be (re)written.
-pub async fn begin_build(pool: &PgPool, taxonomy_version: &str) -> Result<BuildManifest, sqlx::Error> {
+pub async fn begin_build(
+    pool: &PgPool,
+    taxonomy_version: &str,
+) -> Result<BuildManifest, sqlx::Error> {
     let payload = read_payload(pool).await?;
     let hash = content_hash(&payload);
     let event_count = payload.events.len() as i32;

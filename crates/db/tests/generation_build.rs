@@ -104,14 +104,16 @@ async fn seed_small_catalog(pool: &sqlx::PgPool) {
     .expect("seed relation");
 }
 
-async fn projection_row_counts(pool: &sqlx::PgPool, generation_id: Uuid) -> (i64, i64, i64, i64, i64) {
-    let life_events: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM generation_life_events WHERE generation_id = $1",
-    )
-    .bind(generation_id)
-    .fetch_one(pool)
-    .await
-    .expect("count generation_life_events");
+async fn projection_row_counts(
+    pool: &sqlx::PgPool,
+    generation_id: Uuid,
+) -> (i64, i64, i64, i64, i64) {
+    let life_events: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM generation_life_events WHERE generation_id = $1")
+            .bind(generation_id)
+            .fetch_one(pool)
+            .await
+            .expect("count generation_life_events");
     let fts: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM generation_fts_text WHERE generation_id = $1")
             .bind(generation_id)
@@ -125,13 +127,12 @@ async fn projection_row_counts(pool: &sqlx::PgPool, generation_id: Uuid) -> (i64
     .fetch_one(pool)
     .await
     .expect("count generation_trigram_surface");
-    let cards: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM generation_event_cards WHERE generation_id = $1",
-    )
-    .bind(generation_id)
-    .fetch_one(pool)
-    .await
-    .expect("count generation_event_cards");
+    let cards: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM generation_event_cards WHERE generation_id = $1")
+            .bind(generation_id)
+            .fetch_one(pool)
+            .await
+            .expect("count generation_event_cards");
     let details: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM generation_procedure_details WHERE generation_id = $1",
     )

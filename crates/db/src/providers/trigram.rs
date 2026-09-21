@@ -27,7 +27,7 @@ const SIMILARITY_THRESHOLD: f32 = 0.3;
 
 /// Contribution scale: `round(similarity * 10)` keeps fuzzy hits below the
 /// `MIN_OPEN_SCORE` order of magnitude (design D-1).
-const VALUE_SCALE: f64 = 10.0;
+pub const VALUE_SCALE: f64 = 10.0;
 
 pub struct TrigramProvider {
     pool: PgPool,

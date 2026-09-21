@@ -518,3 +518,167 @@ async fn no_embedding_implementation_exists_in_the_db_crate() {
         "the MVP ships no embeddings, models, or vector stores: {offenders:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Task 16 (S6, design §2.2): the generation-scoped trigram provider reads the
+// precomputed `generation_trigram_surface` written at build time. It must
+// replicate the legacy per-request `string_agg` composition exactly — the
+// same canonical terms, the same negative-keyword exclusion, the same
+// `round(similarity * 10)` scale and the same strict `>` threshold — with the
+// threshold applied through `SET LOCAL pg_trgm.similarity_threshold` inside
+// the provider transaction instead of the pool session state.
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn generation_trigram_provider_implements_the_candidate_provider_trait() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    let provider = db::providers::generation_trigram::GenerationTrigramProvider::new(pool.clone());
+    let _trait_object: &dyn CandidateProvider = &provider;
+    assert_eq!(provider.rule_name(), "TRIGRAM");
+
+    drop_db(&db_name).await;
+}
+
+/// Equivalence RED: for the same generation, the precomputed surface must
+/// yield identical candidates (same similarity values after the round scale,
+/// same threshold, same exclusions) as the legacy per-request `string_agg`
+/// query over task 3's representative catalog fixture.
+#[tokio::test(flavor = "multi_thread")]
+async fn generation_trigram_provider_matches_the_legacy_computation_on_the_task3_catalog_fixture() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    catalog_fixture::apply(&pool, &repo_data_dir(), 42)
+        .await
+        .expect("task 3 catalog fixture applies");
+    let report = db::generations::build::build_generation(&pool, "taxonomy-fixture-s6")
+        .await
+        .expect("generation build succeeds");
+
+    let provider = db::providers::generation_trigram::GenerationTrigramProvider::new(pool.clone());
+    for raw_query in [
+        "compre un auto usado",
+        "compré un auto usado",
+        "vender vehículo usado",
+        "vendér un vehículo",
+        "pagar la patente",
+        "pagár paténte",
+        "quiero abrir una cuenta bancaria",
+    ] {
+        let normalized = query_of(raw_query);
+        let generation_candidates = provider
+            .candidates(report.generation_id, &normalized)
+            .await
+            .expect("generation trigram provider succeeds");
+        let legacy_candidates = db::providers::trigram::TrigramProvider::new(pool.clone())
+            .candidates(report.generation_id, &normalized)
+            .await
+            .expect("legacy trigram provider succeeds");
+        let reference_candidates = pre_async_trigram_candidates(&pool, &normalized)
+            .await
+            .expect("pre-async reference query succeeds");
+        assert_eq!(
+            canonical_candidates(generation_candidates),
+            canonical_candidates(reference_candidates.clone()),
+            "generation trigram candidates must match the per-request computation for {raw_query:?}"
+        );
+        assert_eq!(
+            canonical_candidates(legacy_candidates),
+            canonical_candidates(reference_candidates),
+            "legacy trigram candidates must keep matching the reference for {raw_query:?}"
+        );
+    }
+
+    drop_db(&db_name).await;
+}
+
+/// TRIANGULATE: a negative keyword excludes the event identically through
+/// the precomputed surface — a query matching only a negative keyword must
+/// produce no candidate for that event in either computation.
+#[tokio::test(flavor = "multi_thread")]
+async fn generation_trigram_provider_excludes_negative_keywords_identically() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_provider_fixture(&pool).await;
+    let report = db::generations::build::build_generation(&pool, "taxonomy-fixture-s6")
+        .await
+        .expect("generation build succeeds");
+
+    let provider = db::providers::generation_trigram::GenerationTrigramProvider::new(pool.clone());
+    let legacy = db::providers::trigram::TrigramProvider::new(pool.clone());
+    let normalized = query_of("vender");
+
+    let generation_candidates = provider
+        .candidates(report.generation_id, &normalized)
+        .await
+        .expect("generation trigram provider succeeds");
+    let legacy_candidates = legacy
+        .candidates(report.generation_id, &normalized)
+        .await
+        .expect("legacy trigram provider succeeds");
+
+    assert_eq!(
+        canonical_candidates(generation_candidates.clone()),
+        canonical_candidates(legacy_candidates.clone()),
+        "the negative-keyword exclusion must be identical in both computations"
+    );
+    assert!(
+        !generation_candidates
+            .iter()
+            .any(|c| c.event_slug == "otro-tramite"),
+        "an event whose only mention is a negative keyword must not become a candidate, got: {generation_candidates:?}"
+    );
+
+    drop_db(&db_name).await;
+}
+
+/// TRIANGULATE: the threshold no longer depends on pool session state — the
+/// provider sets `pg_trgm.similarity_threshold` with `SET LOCAL` inside its
+/// transaction, so connections polluted with a different session GUC produce
+/// exactly the default-threshold results.
+#[tokio::test(flavor = "multi_thread")]
+async fn generation_trigram_threshold_does_not_depend_on_pool_session_state() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_provider_fixture(&pool).await;
+    let report = db::generations::build::build_generation(&pool, "taxonomy-fixture-s6")
+        .await
+        .expect("generation build succeeds");
+
+    // Taint every pooled connection with a session-level threshold far above
+    // the default: without the provider's SET LOCAL, the `%` predicate would
+    // behave differently per connection.
+    let mut tainted: Vec<sqlx::pool::PoolConnection<sqlx::Postgres>> = Vec::new();
+    while tainted.len() < 3 {
+        let mut conn = pool
+            .acquire()
+            .await
+            .expect("pool connection acquired for tainting");
+        sqlx::query("SET pg_trgm.similarity_threshold = 0.9")
+            .execute(&mut *conn)
+            .await
+            .expect("session threshold taint applied");
+        tainted.push(conn);
+    }
+    drop(tainted);
+
+    let provider = db::providers::generation_trigram::GenerationTrigramProvider::new(pool.clone());
+    let normalized = query_of("registro vehiculo");
+    let tainted_pool_candidates = provider
+        .candidates(report.generation_id, &normalized)
+        .await
+        .expect("provider query succeeds on a tainted pool");
+    // Reference on a completely different pool whose session state is clean.
+    let reference_candidates = pre_async_trigram_candidates(&pool, &normalized)
+        .await
+        .expect("reference query succeeds");
+    assert_eq!(
+        canonical_candidates(tainted_pool_candidates.clone()),
+        canonical_candidates(reference_candidates),
+        "SET LOCAL must override pool session state: both connections see the same result"
+    );
+    assert!(
+        tainted_pool_candidates
+            .iter()
+            .any(|c| c.event_slug == "alta-vehiculo"),
+        "the expected candidate survives the tainted session state: {tainted_pool_candidates:?}"
+    );
+
+    drop_db(&db_name).await;
+}
