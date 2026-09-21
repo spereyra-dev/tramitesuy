@@ -1,0 +1,42 @@
+slug: licencia-antecedentes
+name: Certificado de antecedentes de licencia de conducir
+description: Trámite de expedición del certificado de antecedentes de la licencia de conducir.
+category: conduccion
+keywords:
+  - term: certificado
+    type: ENTITY
+    weight: 10
+  - term: antecedentes
+    type: ENTITY
+    weight: 10
+  - term: licencia
+    type: ENTITY
+    weight: 10
+  - term: conducir
+    type: ENTITY
+    weight: 8
+  - term: solicitar
+    type: ACTION
+    weight: 8
+rules:
+  - action: solicitar
+    entity: antecedentes
+    bonus: 15
+relations:
+  - external_id: "3960"
+    order: 1
+    required: true
+  - external_id: "5673"
+    order: 2
+    required: false
+  - external_id: "7857"
+    order: 3
+    required: false
+tests:
+  positive:
+    - certificado de antecedentes de licencia de conducir
+    - solicitar antecedentes de la libreta para manejar
+  negative:
+    - solicitar antecedentes judiciales
+    - certificado de vacunacion
+    - sacar la licencia por primera vez

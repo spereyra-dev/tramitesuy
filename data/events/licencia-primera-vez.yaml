@@ -1,0 +1,65 @@
+slug: licencia-primera-vez
+name: Sacar la licencia de conducir por primera vez
+description: Trámites de primera expedición de la licencia o libreta de conducir en los gobiernos departamentales.
+category: conduccion
+keywords:
+  - term: sacar
+    type: ACTION
+    weight: 10
+  - term: obtener
+    type: ACTION
+    weight: 10
+  - term: licencia
+    type: ENTITY
+    weight: 10
+  - term: conducir
+    type: ENTITY
+    weight: 8
+  - term: primera
+    type: MODIFIER
+    weight: 4
+  - term: moto
+    type: ENTITY
+    weight: 4
+  - term: renovar
+    type: ACTION
+    weight: 12
+    negative: true
+rules:
+  - action: sacar
+    entity: licencia
+    bonus: 15
+  - action: obtener
+    entity: licencia
+    bonus: 15
+relations:
+  - external_id: "3458"
+    order: 1
+    required: true
+  - external_id: "4293"
+    order: 2
+    required: false
+  - external_id: "6221"
+    order: 3
+    required: false
+  - external_id: "6410"
+    order: 4
+    required: false
+  - external_id: "6404"
+    order: 5
+    required: false
+  - external_id: "6531"
+    order: 6
+    required: false
+  - external_id: "4824"
+    order: 7
+    required: false
+tests:
+  positive:
+    - sacar la licencia de conducir por primera vez
+    - primera libreta para manejar
+    - sacar la licencia de moto
+  negative:
+    - renovar la licencia de conducir
+    - perdi mi libreta de conducir
+    - pagar la patente de mi auto

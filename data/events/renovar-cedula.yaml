@@ -1,0 +1,80 @@
+slug: renovar-cedula
+name: Renovar la cédula de identidad
+description: Trámites para la renovación del documento de identidad uruguayo ante la Dirección Nacional de Identificación Civil.
+category: documentos
+keywords:
+  - term: renovar
+    type: ACTION
+    weight: 10
+  - term: vencer
+    type: ACTION
+    weight: 10
+  - term: vencimiento
+    type: MODIFIER
+    weight: 6
+  - term: documento
+    type: ENTITY
+    weight: 8
+  - term: identidad
+    type: ENTITY
+    weight: 8
+  - term: duplicado
+    type: MODIFIER
+    weight: 4
+  - term: sacar
+    type: ACTION
+    weight: 12
+    negative: true
+rules:
+  - action: renovar
+    entity: documento
+    bonus: 15
+relations:
+  - external_id: "6538"
+    order: 1
+    required: true
+  - external_id: "6538-1"
+    order: 2
+    required: false
+  - external_id: "6538-2"
+    order: 3
+    required: false
+  - external_id: "6538-3"
+    order: 4
+    required: false
+  - external_id: "6538-4"
+    order: 5
+    required: false
+  - external_id: "6538-5"
+    order: 6
+    required: false
+  - external_id: "6538-6"
+    order: 7
+    required: false
+  - external_id: "6538-7"
+    order: 8
+    required: false
+  - external_id: "6538-8"
+    order: 9
+    required: false
+  - external_id: "6538-9"
+    order: 10
+    required: false
+  - external_id: "5278"
+    order: 11
+    required: false
+  - external_id: "2123"
+    order: 12
+    required: false
+  - external_id: "5800"
+    order: 13
+    required: false
+tests:
+  positive:
+    - renovar la cedula de identidad
+    - me vencio el dni como lo renuevo
+    - renovar el documento vencido
+  negative:
+    - sacar la cedula por primera vez
+    - renovar el pasaporte
+    - cambiar la matricula del auto

@@ -6,6 +6,9 @@ keywords:
   - term: perder
     type: ACTION
     weight: 10
+  - term: perdi
+    type: ACTION
+    weight: 10
   - term: licencia
     type: ENTITY
     weight: 8

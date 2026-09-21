@@ -65,3 +65,8 @@ synonyms:
     canonical: reclamar
   - term: quejarse
     canonical: reclamar
+  # Identity-document noun surfaces → canonical `documento`
+  - term: cedula
+    canonical: documento
+  - term: dni
+    canonical: documento

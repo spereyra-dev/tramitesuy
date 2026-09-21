@@ -1,0 +1,56 @@
+slug: licencia-duplicado
+name: Duplicado de la licencia de conducir
+description: Trámites de duplicado de la licencia o libreta de conducir extraviada, robada o deteriorada en los gobiernos departamentales.
+category: conduccion
+keywords:
+  - term: duplicado
+    type: ENTITY
+    weight: 10
+  - term: licencia
+    type: ENTITY
+    weight: 10
+  - term: conducir
+    type: ENTITY
+    weight: 8
+  - term: extraviar
+    type: ACTION
+    weight: 8
+  - term: robar
+    type: ACTION
+    weight: 8
+  - term: perder
+    type: ACTION
+    weight: 10
+rules:
+  - action: perder
+    entity: duplicado
+    bonus: 15
+relations:
+  - external_id: "3957"
+    order: 1
+    required: true
+  - external_id: "4428"
+    order: 2
+    required: false
+  - external_id: "6222"
+    order: 3
+    required: false
+  - external_id: "6481"
+    order: 4
+    required: false
+  - external_id: "6533"
+    order: 5
+    required: false
+  - external_id: "5565"
+    order: 6
+    required: false
+tests:
+  positive:
+    - duplicado de la licencia de conducir
+    - me robaron la libreta para manejar
+    - me robaron la licencia de conducir
+    - necesito un duplicado de mi libreta
+  negative:
+    - perder la partida de nacimiento
+    - renovar la licencia vencida
+    - denunciar un robo de celular

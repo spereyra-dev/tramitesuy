@@ -1,0 +1,56 @@
+slug: crear-usuario-gub-uy
+name: Crear la identidad digital (Usuario gub.uy)
+description: Trámites para crear y validar la identidad digital de Usuario gub.uy, con la que se accede a los servicios digitales del Estado.
+category: documentos
+keywords:
+  - term: crear
+    type: ACTION
+    weight: 10
+  - term: usuario
+    type: ENTITY
+    weight: 10
+  - term: digital
+    type: ENTITY
+    weight: 8
+  - term: identidad
+    type: ENTITY
+    weight: 6
+  - term: gub
+    type: ENTITY
+    weight: 6
+  - term: validar
+    type: ACTION
+    weight: 8
+  - term: empresa
+    type: ENTITY
+    weight: 15
+    negative: true
+rules:
+  - action: crear
+    entity: usuario
+    bonus: 15
+relations:
+  - external_id: "4992"
+    order: 1
+    required: true
+  - external_id: "4992-1"
+    order: 2
+    required: false
+  - external_id: "4992-2"
+    order: 3
+    required: false
+  - external_id: "4992-3"
+    order: 4
+    required: false
+  - external_id: "4992-4"
+    order: 5
+    required: false
+tests:
+  positive:
+    - crear el usuario de gub uy
+    - identidad digital para tramites en linea
+    - validar mi identidad en gub uy
+  negative:
+    - crear una empresa
+    - sacar la cedula de identidad
+    - cambiar mi contrasena del correo

@@ -1,0 +1,72 @@
+slug: sacar-cedula
+name: Sacar la cédula de identidad (DNI)
+description: Trámites para la primera expedición del documento de identidad uruguayo ante la Dirección Nacional de Identificación Civil.
+category: documentos
+keywords:
+  - term: sacar
+    type: ACTION
+    weight: 10
+  - term: obtener
+    type: ACTION
+    weight: 10
+  - term: documento
+    type: ENTITY
+    weight: 8
+  - term: identidad
+    type: ENTITY
+    weight: 8
+  - term: primera
+    type: MODIFIER
+    weight: 4
+  - term: hijo
+    type: MODIFIER
+    weight: 4
+  - term: renovar
+    type: ACTION
+    weight: 12
+    negative: true
+rules:
+  - action: sacar
+    entity: documento
+    bonus: 15
+  - action: obtener
+    entity: documento
+    bonus: 15
+relations:
+  - external_id: "607"
+    order: 1
+    required: true
+  - external_id: "607-1"
+    order: 2
+    required: false
+  - external_id: "607-2"
+    order: 3
+    required: false
+  - external_id: "607-3"
+    order: 4
+    required: false
+  - external_id: "607-4"
+    order: 5
+    required: false
+  - external_id: "607-5"
+    order: 6
+    required: false
+  - external_id: "607-6"
+    order: 7
+    required: false
+  - external_id: "607-7"
+    order: 8
+    required: false
+  - external_id: "607-8"
+    order: 9
+    required: false
+tests:
+  positive:
+    - sacar la cedula de identidad por primera vez
+    - tramitar el dni de mi hijo
+    - obtener el documento de identidad
+    - primera cedula para un menor
+  negative:
+    - renovar la cedula que me vencio
+    - sacar el pasaporte para viajar
+    - solicitar una partida de nacimiento

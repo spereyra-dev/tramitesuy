@@ -1,0 +1,44 @@
+slug: cambiar-nombre-sexo-registral
+name: Cambiar nombre o sexo registral
+description: Trámite de rectificación de nombre y anotación de sexo registral ante la Dirección Nacional de Identificación Civil (Ley 19.684).
+category: documentos
+keywords:
+  - term: cambiar
+    type: ACTION
+    weight: 10
+  - term: nombre
+    type: ENTITY
+    weight: 10
+  - term: sexo
+    type: ENTITY
+    weight: 10
+  - term: identidad
+    type: ENTITY
+    weight: 6
+  - term: genero
+    type: ENTITY
+    weight: 8
+  - term: matricula
+    type: ENTITY
+    weight: 15
+    negative: true
+rules:
+  - action: cambiar
+    entity: nombre
+    bonus: 15
+  - action: cambiar
+    entity: sexo
+    bonus: 15
+relations:
+  - external_id: "6081"
+    order: 1
+    required: true
+tests:
+  positive:
+    - cambiar el nombre en el documento
+    - cambio de sexo registral
+    - adecuacion de nombre y genero en la cedula
+  negative:
+    - cambiar la matricula del auto
+    - cambiar la categoria de la licencia
+    - inscribir un nacimiento

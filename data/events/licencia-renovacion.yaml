@@ -1,0 +1,65 @@
+slug: licencia-renovacion
+name: Renovar la licencia de conducir
+description: Trámites de renovación y revalidación de la licencia o libreta de conducir en los gobiernos departamentales.
+category: conduccion
+keywords:
+  - term: renovar
+    type: ACTION
+    weight: 10
+  - term: revalidar
+    type: ACTION
+    weight: 8
+  - term: licencia
+    type: ENTITY
+    weight: 10
+  - term: conducir
+    type: ENTITY
+    weight: 8
+  - term: vencer
+    type: ACTION
+    weight: 6
+  - term: vencimiento
+    type: MODIFIER
+    weight: 8
+  - term: perder
+    type: ACTION
+    weight: 12
+    negative: true
+rules:
+  - action: renovar
+    entity: licencia
+    bonus: 15
+relations:
+  - external_id: "3459"
+    order: 1
+    required: true
+  - external_id: "4694"
+    order: 2
+    required: false
+  - external_id: "6219"
+    order: 3
+    required: false
+  - external_id: "6407"
+    order: 4
+    required: false
+  - external_id: "6411"
+    order: 5
+    required: false
+  - external_id: "4492"
+    order: 6
+    required: false
+  - external_id: "4828"
+    order: 7
+    required: false
+  - external_id: "4827"
+    order: 8
+    required: false
+tests:
+  positive:
+    - renovar la licencia de conducir
+    - me vencio la libreta para manejar
+    - revalidar la licencia de conducir
+  negative:
+    - perdi la licencia de conducir
+    - sacar la licencia por primera vez
+    - renovar la cedula de identidad

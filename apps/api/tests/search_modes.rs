@@ -135,6 +135,7 @@ async fn zero_match_query_falls_back_to_categories() {
         categories,
         &vec![
             serde_json::json!({"slug": "beneficios-familiares", "name": "Beneficios familiares"}),
+            serde_json::json!({"slug": "conduccion", "name": "Conducción"}),
             serde_json::json!({"slug": "consumo", "name": "Consumo"}),
             serde_json::json!({"slug": "documentos", "name": "Documentos"}),
             serde_json::json!({"slug": "educacion", "name": "Educación"}),

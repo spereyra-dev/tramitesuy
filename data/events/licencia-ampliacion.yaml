@@ -1,0 +1,61 @@
+slug: licencia-ampliacion
+name: Ampliar o cambiar la categoría de la licencia
+description: Trámites de ampliación, aumento o cambio de categoría de la licencia de conducir, incluido el canje de licencias extranjeras.
+category: conduccion
+keywords:
+  - term: ampliar
+    type: ACTION
+    weight: 10
+  - term: categoria
+    type: ENTITY
+    weight: 10
+  - term: licencia
+    type: ENTITY
+    weight: 10
+  - term: conducir
+    type: ENTITY
+    weight: 8
+  - term: canje
+    type: ENTITY
+    weight: 6
+  - term: profesional
+    type: MODIFIER
+    weight: 4
+rules:
+  - action: ampliar
+    entity: licencia
+    bonus: 15
+relations:
+  - external_id: "6223"
+    order: 1
+    required: true
+  - external_id: "6532"
+    order: 2
+    required: false
+  - external_id: "6535"
+    order: 3
+    required: false
+  - external_id: "6534"
+    order: 4
+    required: false
+  - external_id: "6536"
+    order: 5
+    required: false
+  - external_id: "4826"
+    order: 6
+    required: false
+  - external_id: "4372"
+    order: 7
+    required: false
+  - external_id: "7858"
+    order: 8
+    required: false
+tests:
+  positive:
+    - ampliar la categoria de la licencia
+    - canje de licencia de conducir extranjera
+    - licencia de conducir profesional
+  negative:
+    - cambiar la matricula del auto
+    - transferir un vehiculo
+    - cambiar el nombre en el documento
