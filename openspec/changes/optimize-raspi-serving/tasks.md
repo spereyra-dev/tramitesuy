@@ -228,7 +228,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - Satisfies: OPT-05, search-cache delta, R2.
 
 - [ ] 28. [S9] Shapes and per-request reconstruction: `CachedEntry` holds reusable computational results (ordered candidates, ranked events with explanations, confidence, selection mode, `disambiguation`/`categories` payload data) and never the request's `query.original`, normalized text, or a full HTTP response. `query`, `normalized_query`, and debug tokens are always rebuilt for the current request.
-  - RED: `cargo test -p api --test cache_equivalence` — cached vs. uncached responses are identical for the same generation and input across `/search`, `/search/debug`, accents, synonyms, zero-match inputs, and inputs requiring redaction; `compré un auto` and `compre un coche` never exchange text or tokens; structural errors are not cached; feedback responses are never cached.
+  - RED: `cargo test -p api --test cache_equivalence` — cached vs. uncached responses are identical for the same generation and input across `/search` (read-only), `/search/debug` (read-only), accents, synonyms, zero-match inputs, and inputs requiring redaction; `compré un auto` and `compre un coche` never exchange text or tokens; structural errors are not cached; feedback responses are never cached.
   - GREEN: response assembly reads from the current request's query plus the cached computation.
   - TRIANGULATE: cached and uncached debug token lists are identical for the same request, and an engine/taxonomy version change invalidates earlier keys.
   - Satisfies: OPT-05, search-engine delta ("Cached and uncached results are identical"), spec §7 test 1, R2/R6.
@@ -239,7 +239,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: two different keys compute concurrently without grouping.
   - Satisfies: OPT-05/OPT-09, search-cache delta, spec §7 test 5, R7.
 
-- [ ] 30. [S10] Log-before-respond on the cached path: every successful search — compute, `/search/debug` and cache hit — persists its log before responding, with redaction before persistence and the allowlisted fields; a log failure keeps the current structural error (public 500), never a silent success; admission accounts for log work.
+- [ ] 30. [S10] Log-before-respond on the cached path: every successful search — compute, `/search/debug` (read-only) and cache hit — persists its log before responding, with redaction before persistence and the allowlisted fields; a log failure keeps the current structural error (public 500), never a silent success; admission accounts for log work.
   - RED: `cargo test -p api --test cache_log_guarantee` — a cache hit executes exactly 1 SQL statement (the consolidated log insert); 100 concurrent identical requests produce 100 logs; a forced log failure returns the structural error and does not cache a success.
   - TRIANGULATE: a transport failure after a confirmed log is not reported as "no write" (documented limit asserted in the test name/comment, not re-implemented).
   - Satisfies: OPT-09, operations delta ("Admission counts log work"), R7.
@@ -282,9 +282,9 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: multi-byte characters are counted by Unicode scalar (510 chars / 1500 bytes passes; 513 chars fails).
   - Satisfies: OPT-10, api delta ("Query length limit validated before any processing").
 
-- [ ] 38. [S12] Admission control over total work: `tokio::sync::Semaphore(max_concurrent_searches)` (default 32) held across compute + log + payload in the search route, shared by `/search/debug`; saturation returns 503 + `Retry-After` with no unbounded queue, and cancellation releases the permit and the in-flight holders.
+- [ ] 38. [S12] Admission control over total work: `tokio::sync::Semaphore(max_concurrent_searches)` (default 32) held across compute + log + payload in the search route, shared by `/search/debug` (read-only); saturation returns 503 + `Retry-After` with no unbounded queue, and cancellation releases the permit and the in-flight holders.
   - RED: `cargo test -p api --test admission` — the 33rd concurrent search receives 503 with `Retry-After` immediately; in-flight work never exceeds the limit while logs are still being persisted; a cancelled request leaves no unbounded work.
-  - TRIANGULATE: `/search/debug` shares the same limiter (no separate debug budget).
+  - TRIANGULATE: `/search/debug` (read-only) shares the same limiter (no separate debug budget).
   - Satisfies: OPT-10, api delta ("Controlled overload response"), operations delta (admission counts log work), R11.
 
 - [ ] 39. [S12] Deadline and acquisition-timeout error contract: wrap all admitted work in `tokio::time::timeout(search_deadline)` (default 2 s) returning 504 with the documented structured error shape and no internal detail (no SQL text, stack, or timings); exhausting the pool within `acquire_timeout` (500 ms) returns the same 503 + `Retry-After` shape as overload; cache waits are bounded by the remaining deadline.
@@ -293,13 +293,13 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: a request cancelled by the deadline releases its permit, single-flight holder, and generation `Arc`.
   - Satisfies: OPT-10, api delta (deadline 504 / overload 503), operations delta, R11.
 
-- [ ] 40. [S13] Raspi production profile, part 1: `docker-compose.yml` gains a `prod` profile where `db` is reachable only on the internal network (no published 5432), credentials come from a `.env` outside the repo (`.env.example` committed), services use `restart: unless-stopped` with healthcheck-based readiness, and the `Dockerfile` builds a release ARM64 (`aarch64-unknown-linux-gnu`) API/ingest image.
+- [ ] 40. [S13] Raspi production profile, part 1: `docker-compose.yml` gains a `prod` profile where `db` is reachable only on the internal network (no published 5432), credentials come from an operator-managed `.env` outside the repo (read-only input: this change never writes it; `.env.example` committed), services use `restart: unless-stopped` with healthcheck-based readiness, and the `Dockerfile` builds a release ARM64 (`aarch64-unknown-linux-gnu`) API/ingest image.
   - RED/verify: a `make check-deploy` target asserts `docker compose --profile prod config` publishes no `5432` port and that no committed file contains a credential value; the ARM64 image builds and boots and responds on the internal readiness endpoint.
   - TRIANGULATE: the dev profile is unchanged (`docker compose up -d db` still works for local development).
   - Satisfies: OPT-11, operations delta (Raspberry Pi production profile), R12.
 
-- [ ] 41. [S13] Raspi production profile, part 2: HTTPS reverse proxy config under `docker/` (TLS termination, restart/readiness wiring to the internal `/ready`, internal-only probes and metrics outside the closed `/api/v1` inventory, query-string logging explicitly disabled).
-  - RED/verify: `make check-deploy` asserts the proxy access-log format has no query-string field and that probe/metric paths are not under `/api/v1`; an integration run proves a search over the proxy logs no `q=` value while the response is served normally.
+- [ ] 41. [S13] Raspi production profile, part 2: HTTPS reverse proxy config under `docker/` (TLS termination, restart/readiness wiring to the internal `/ready` (read-only), internal-only probes and metrics outside the closed `/api/v1` (read-only) inventory, query-string logging explicitly disabled).
+  - RED/verify: `make check-deploy` asserts the proxy access-log format has no query-string field and that probe/metric paths are not under `/api/v1` (read-only); an integration run proves a search over the proxy logs no `q=` value while the response is served normally.
   - TRIANGULATE: readiness failing at the proxy prevents routing traffic before the first valid snapshot.
   - Satisfies: OPT-11, api delta (closed inventory), R14.
 
@@ -316,7 +316,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
 
 - [ ] 44. [S14] SQL-budget acceptance test: `crates/db/tests/sql_budget.rs` (or the API-level counter harness from task 2) asserting catalog read 0, cache-hit search 1, new PostgreSQL-provider search ≤3, and intermediate-phase `open` ≤4, in normal operation excluding publication controls and metrics.
   - RED: the test fails against the pre-optimization baseline numbers recorded in task 4 and passes after stages 2–4.
-  - TRIANGULATE: `/search/debug` and cache-hit paths are covered separately.
+  - TRIANGULATE: `/search/debug` (read-only) and cache-hit paths are covered separately.
   - Satisfies: OPT-06, operations delta (SQL budget per request), spec §7 test 10.
 
 - [ ] 45. [S14] Complete the spec §7 functional matrix (tests 1–10) as named test files, filling the gaps not covered by earlier slices: concurrent-update coherence during a swap (`apps/api/tests/generation_swap.rs`), database-down behavior with a warm cache (`apps/api/tests/db_down.rs`: snapshot reads work, search and feedback fail on their durable dependency), content-change cases (`crates/db/tests/generation_content_changes.rs`: cost change, deactivation, new arrival, taxonomy/synonym change, no-content ingestion updating only observable sync dates), and old-provider retention until in-flight requests and adoption confirmation (`crates/db/tests/generation_retention.rs`).
