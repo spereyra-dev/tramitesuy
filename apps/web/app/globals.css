@@ -1,15 +1,29 @@
 /* Minimal plain CSS (P3): no framework, one global sheet. Component-scoped
-   .module.css files may be added later; global styles here stay small. */
+   .module.css files may be added later; global styles here stay small.
+
+   Visual identity: institutional gub.uy look. Sora (headings/UI) + Open Sans
+   (body) loaded via next/font; institutional blue #25418e with dark navy
+   #042f62 and a single teal secondary color #007d8a. */
 
 :root {
+  /* gub.uy institutional palette (verified from their compiled CSS). */
+  --blue: #25418e;
+  --blue-dark: #042f62;
+  --blue-soft: #eef1f8;
+  --teal: #007d8a;
+  --teal-dark: #006371;
+  --teal-soft: #eef6f7;
   --text: #18222d;
-  --muted: #4d5d6c;
-  --accent: #075a9c;
-  --accent-dark: #004576;
-  --border: #c8d2dc;
-  --bg-soft: #f2f6f8;
+  --muted: #55616e;
+  --border: #d4dae2;
+  --border-strong: #b6c0cc;
+  --bg-soft: #f4f6f8;
   --surface: #ffffff;
   --focus: #d85b00;
+  --amber: #7a4b00;
+  --amber-soft: #fff8eb;
+  --font-ui: var(--font-sora), 'Sora', 'Open Sans', system-ui, sans-serif;
+  --font-body: var(--font-open-sans), 'Open Sans', system-ui, sans-serif;
 }
 
 * {
@@ -19,11 +33,19 @@
 body {
   margin: 0;
   background: var(--surface);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-body);
   color: var(--text);
   /* Citizen-first base size (task 6): at least 17px for older readers. */
   font-size: 1.0625rem;
   line-height: 1.55;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-ui);
+  letter-spacing: -0.01em;
 }
 
 :focus-visible {
@@ -48,9 +70,11 @@ body {
   transform: translateY(0);
 }
 
+/* Site shell: dark navy top band + blue header, like the gub.uy portal. */
 .site-header {
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-soft);
+  border-bottom: 3px solid var(--blue-dark);
+  background: var(--blue);
+  color: #fff;
 }
 
 .site-header__content,
@@ -62,17 +86,18 @@ body {
 
 .site-title {
   display: inline-block;
-  color: var(--accent-dark);
-  font-size: 1.5rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  color: #fff;
+  font-family: var(--font-ui);
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   text-decoration: none;
 }
 
 .site-tagline {
   max-width: 38rem;
   margin: 0.3rem 0 0;
-  color: var(--muted);
+  color: #c9d3ee;
   font-size: 0.95rem;
 }
 
@@ -84,8 +109,16 @@ body {
   /* Comfortable tap target: >=48px total height on mobile. */
   display: inline-block;
   padding: 0.7rem 0;
-  color: var(--accent-dark);
-  font-weight: 700;
+  color: #fff;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.4);
+  text-underline-offset: 0.2em;
+}
+
+.site-nav a:hover {
+  text-decoration-color: #fff;
 }
 
 .site-main {
@@ -96,7 +129,8 @@ body {
 }
 
 .site-footer {
-  border-top: 1px solid var(--border);
+  border-top: 3px solid var(--blue);
+  background: var(--bg-soft);
   color: var(--muted);
   font-size: 0.9rem;
 }
@@ -106,11 +140,11 @@ body {
 }
 
 a {
-  color: var(--accent);
+  color: var(--blue);
 }
 
 a:hover {
-  color: var(--accent-dark);
+  color: var(--blue-dark);
 }
 
 @media (min-width: 48rem) {
@@ -142,18 +176,36 @@ a:hover {
   max-width: 62rem;
 }
 
-.home-hero {
-  max-width: 48rem;
-  padding: 0.5rem 0 2.5rem;
-}
-
-.home-eyebrow,
+/* Standalone kicker for section eyebrows outside the hero (e.g. result
+   headings); teal-dark keeps the secondary tone subtle. */
 .section-kicker {
   margin: 0 0 0.45rem;
-  color: var(--accent-dark);
+  color: var(--teal-dark);
+  font-family: var(--font-ui);
   font-size: 0.8rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Home hero: solid institutional blue band with white text and the search
+   box inside, mirroring the gub.uy "Trámites y servicios" front block. */
+.home-hero {
+  max-width: 48rem;
+  margin: 0 0 2.5rem;
+  padding: clamp(2rem, 6vw, 3.5rem) clamp(1.25rem, 4vw, 2.5rem);
+  border-radius: 0.25rem;
+  background: var(--blue);
+  color: #fff;
+}
+
+.home-eyebrow {
+  margin: 0 0 0.6rem;
+  color: #c9d3ee;
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -165,38 +217,43 @@ a:hover {
 }
 
 .home-hero h1 {
-  max-width: 15ch;
+  max-width: 20ch;
   margin: 0;
-  font-size: clamp(2rem, 7vw, 3.5rem);
-  letter-spacing: -0.04em;
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
 .home-intro {
   max-width: 42rem;
-  margin: 1rem 0 0;
-  color: var(--muted);
-  font-size: 1.1rem;
+  margin: 0.9rem 0 0;
+  color: #e3e8f6;
+  font-size: 1.05rem;
 }
 
+/* Search form: white field + blue action, like the gub.uy hero search. */
 .search-form {
   max-width: 46rem;
-  margin: 1.75rem 0 0;
+  margin: 1.5rem 0 0;
   padding: 1.1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  background: var(--bg-soft);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0.25rem;
+  background: rgba(4, 47, 98, 0.55);
 }
 
 .search-label {
   display: block;
   margin-bottom: 0.25rem;
+  color: #fff;
+  font-family: var(--font-ui);
   font-size: 1.05rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .search-guidance {
   margin: 0;
-  color: var(--muted);
+  color: #c9d3ee;
   font-size: 0.95rem;
 }
 
@@ -208,7 +265,7 @@ a:hover {
 
 .search-controls input,
 .search-controls button {
-  border-radius: 0.35rem;
+  border-radius: 0.25rem;
   font: inherit;
 }
 
@@ -223,24 +280,30 @@ a:hover {
 }
 
 .search-controls button {
-  min-height: 3.25rem;
-  padding: 0.65rem 1rem;
-  border: 1px solid var(--accent-dark);
-  background: var(--accent);
+  min-height: 3.5rem;
+  padding: 0.65rem 1.5rem;
+  border: 1px solid var(--blue-dark);
+  background: var(--blue);
   color: #fff;
-  font-size: 1.1rem;
-  font-weight: 800;
+  font-family: var(--font-ui);
+  font-size: 1.05rem;
+  font-weight: 600;
   cursor: pointer;
+  transition: background-color 150ms ease;
 }
 
 .search-controls button:hover {
-  background: var(--accent-dark);
+  background: var(--blue-dark);
+}
+
+.search-controls button:active {
+  transform: translateY(1px);
 }
 
 .home-reassurance {
   max-width: 42rem;
   margin: 0.85rem 0 0;
-  color: var(--muted);
+  color: #c9d3ee;
   font-size: 0.9rem;
 }
 
@@ -256,6 +319,8 @@ a:hover {
 .home-categories h2 {
   margin: 0;
   font-size: clamp(1.5rem, 4vw, 2rem);
+  font-weight: 600;
+  line-height: 1.15;
 }
 
 /* Citizen-first category tiles (task 5/6): large plain-text cards, no
@@ -264,9 +329,9 @@ a:hover {
   margin-top: 2rem;
   padding: clamp(1.25rem, 4vw, 2rem);
   border: 1px solid var(--border);
-  border-top: 0.4rem solid #2f6b58;
-  border-radius: 0.75rem;
-  background: #f1f8f4;
+  border-top: 0.4rem solid var(--teal);
+  border-radius: 0.25rem;
+  background: var(--teal-soft);
 }
 
 .home-categories__grid {
@@ -285,28 +350,30 @@ a:hover {
   min-height: 3rem;
   padding: 1.1rem 1.25rem;
   border: 1px solid var(--border);
-  border-left: 0.4rem solid var(--accent);
-  border-radius: 0.5rem;
+  border-left: 0.4rem solid var(--blue);
+  border-radius: 0.25rem;
   background: var(--surface);
   text-decoration: none;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 
 .home-categories__tile:hover {
-  background: var(--bg-soft);
-  border-left-color: var(--accent-dark);
+  background: var(--blue-soft);
+  border-left-color: var(--blue-dark);
 }
 
 .home-categories__name {
   color: var(--text);
-  font-size: 1.15rem;
-  font-weight: 800;
+  font-family: var(--font-ui);
+  font-size: 1.1rem;
+  font-weight: 600;
   line-height: 1.3;
 }
 
 .home-categories__hint {
   color: var(--muted);
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 @media (min-width: 40rem) {
@@ -322,19 +389,19 @@ a:hover {
 }
 
 .search-results--direct {
-  border-top: 0.4rem solid var(--accent);
+  border-top: 0.4rem solid var(--blue);
   background: var(--surface);
 }
 
 .search-results--disambiguation {
-  border-top: 0.4rem solid #7a4b00;
-  background: #fff8eb;
+  border-top: 0.4rem solid var(--amber);
+  background: var(--amber-soft);
 }
 
 .search-results--categories,
 .browse-prompt {
-  border-top: 0.4rem solid #2f6b58;
-  background: #f1f8f4;
+  border-top: 0.4rem solid var(--teal);
+  background: var(--teal-soft);
 }
 
 .result-heading > p:not(.section-kicker),
@@ -345,7 +412,8 @@ a:hover {
 .result-heading a,
 .option-list a,
 .text-link {
-  font-weight: 800;
+  font-family: var(--font-ui);
+  font-weight: 600;
 }
 
 .confidence {
@@ -368,13 +436,16 @@ a:hover {
   margin: 0.85rem 0;
   padding: 1rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-left: 0.3rem solid var(--blue);
+  border-radius: 0.25rem;
   background: var(--bg-soft);
 }
 
 .procedure-name {
   margin: 0;
+  font-family: var(--font-ui);
   font-size: 1.1rem;
+  font-weight: 600;
   line-height: 1.3;
 }
 
@@ -392,14 +463,16 @@ a:hover {
 
 .procedure-details dt {
   color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 800;
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .procedure-details dd {
   margin: 0.15rem 0 0;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .procedure-official-link {
@@ -408,16 +481,20 @@ a:hover {
 
 .procedure-official-link a {
   display: inline-block;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--accent-dark);
-  border-radius: 0.35rem;
-  color: var(--accent-dark);
-  font-weight: 800;
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--blue-dark);
+  border-radius: 0.25rem;
+  color: var(--blue-dark);
+  font-family: var(--font-ui);
+  font-weight: 600;
   text-decoration: none;
+  transition: background-color 150ms ease, color 150ms ease;
 }
 
 .procedure-official-link a:hover {
-  background: var(--surface);
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
 }
 
 .procedure-attribution {
@@ -448,8 +525,9 @@ a:hover {
   display: block;
   padding: 0.85rem 1rem;
   border: 1px solid currentColor;
-  border-radius: 0.4rem;
+  border-radius: 0.25rem;
   text-decoration: none;
+  transition: background-color 150ms ease;
 }
 
 .option-list a:hover {
@@ -472,7 +550,7 @@ a:hover {
 .status-page {
   padding: clamp(1.25rem, 4vw, 2rem);
   border: 1px solid var(--border);
-  border-top: 0.4rem solid var(--accent);
+  border-top: 0.4rem solid var(--blue);
   border-radius: 0.75rem;
   background: var(--surface);
 }
@@ -482,7 +560,8 @@ a:hover {
 .status-page h1 {
   margin: 0;
   font-size: clamp(1.8rem, 6vw, 3rem);
-  letter-spacing: -0.035em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   line-height: 1.15;
 }
 
@@ -501,7 +580,8 @@ a:hover {
 }
 
 .event-category a {
-  font-weight: 800;
+  font-family: var(--font-ui);
+  font-weight: 600;
 }
 
 /* Structural navigation (T7/T9): breadcrumb path, bottom back links, and
@@ -518,8 +598,9 @@ a:hover {
 }
 
 .breadcrumb a {
-  color: var(--accent-dark);
-  font-weight: 800;
+  color: var(--blue-dark);
+  font-family: var(--font-ui);
+  font-weight: 600;
   text-decoration: none;
 }
 
@@ -541,12 +622,13 @@ a:hover {
   display: inline-block;
   min-height: 48px;
   padding: 0.75rem 1rem;
+  font-family: var(--font-ui);
   font-size: 1rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .back-link a {
-  color: var(--accent-dark);
+  color: var(--blue-dark);
   text-decoration: none;
 }
 
@@ -577,8 +659,8 @@ a:hover {
 
 .status-page {
   max-width: 38rem;
-  border-top-color: #7a4b00;
-  background: #fff8eb;
+  border-top-color: var(--amber);
+  background: var(--amber-soft);
 }
 
 @media (min-width: 40rem) {
