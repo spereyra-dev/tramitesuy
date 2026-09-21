@@ -1,37 +1,50 @@
-//! Shared handler state (design §2 `AppState`, task 84): the search engine,
-//! the YAML-loaded taxonomy, and the database pool. The taxonomy is loaded
-//! from `data/events/*.yaml` (plus categories/synonyms) at boot and cached
-//! here — the YAML remains the ranker's single source of truth (design §4.2,
-//! TX-1); the DB `life_events`/`life_event_keywords` tables are projections
+//! Shared handler state (design §1.4, S7 task 20): the active-generation
+//! holder plus the database pool and serving configuration. The engine, the
+//! YAML-loaded taxonomy, and every catalog index live inside the immutable
+//! `ActiveGeneration` snapshot (`crate::generation`); handlers capture
+//! `let generation = state.active.load_full();` as their FIRST operation and
+//! keep that `Arc` for the whole request (payload, log, providers), so a
+//! request that finishes after a swap answers coherently with its own
+//! generation and never mixes two.
+//!
+//! The holder is `arc_swap::ArcSwap<Arc<ActiveGeneration>>`: one atomic
+//! store per publication, lock-free `load_full()` per request, and the
+//! returned strong `Arc` doubles as the in-flight retention token (the old
+//! generation stays alive until the last request drops it).
+//!
+//! The YAML remains the ranker's single source of truth (design §4.2, TX-1);
+//! the DB `life_events`/`life_event_keywords` tables are projections
 //! consumed by the FTS/trigram providers and the website, never by the
-//! ranker. That keeps `/search/debug` reconstruction exact.
+//! ranker. The snapshot loader pins the manifest's `taxonomy_version`
+//! against the same YAML bytes, so a boot serves only a generation whose
+//! taxonomy matches the loaded source of truth.
 
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::metrics::Metrics;
+use arc_swap::ArcSwap;
 use db::providers::orchestrator::ProviderFetch;
-use search::engine::SearchEngine;
-use search::tokenizer::SynonymMap;
-use search::types::{
-    CombinationRule as EngineRule, EventLexicon, Keyword as EngineKeyword,
-    KeywordKind as EngineKeywordKind,
-};
-use sqlx::PgPool;
+
+use crate::config::ApiLimits;
+use crate::generation::{self, ActiveGeneration, TaxonomyBundle};
+use crate::metrics::{GenerationState, Metrics};
 
 #[derive(Clone)]
 pub struct AppState {
-    /// The deterministic search engine, built once at boot from the YAML
-    /// taxonomy (never per request, never from the DB projection).
-    pub engine: Arc<SearchEngine>,
-    /// The loaded YAML taxonomy: the ranker's source of truth and the
-    /// resolver for event/category display names.
-    pub taxonomy: Arc<taxonomy::model::Taxonomy>,
-    pub pool: PgPool,
+    /// The active generation holder (design §1.4): every handler captures
+    /// `state.active.load_full()` as its first operation. Between boot and
+    /// the first valid snapshot load the holder serves the cold baseline —
+    /// an empty catalog over the boot taxonomy, with catalog reads gating
+    /// to 503 (S7 task 22) until the first valid load.
+    pub active: Arc<ArcSwap<Arc<ActiveGeneration>>>,
+    pub pool: sqlx::PgPool,
     /// FTS/trigram policy consumed by the async db orchestrator (S4b task
     /// 11). Tests and default boot stay sequential unless configuration
     /// explicitly opts into concurrent provider fetching.
     pub provider_fetch: ProviderFetch,
+    /// The serving limits (S3 task 8): deadline/admission/q limits are
+    /// carried here and consumed by their own later slices.
+    pub limits: ApiLimits,
     /// The privacy-safe metrics sink (task 1): every served request reports
     /// route/status latency, SQL ops, cache events, and generation state
     /// through this seam — never query-derived text (R14).
@@ -39,101 +52,117 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Boots the state: loads the taxonomy directory and builds the engine
-    /// once. `data_dir` must contain the `events/`, `categories/`, and
-    /// `synonyms/` subdirectories (the `taxonomy-validate` CLI owns
-    /// validation in CI; boot requires only a loadable taxonomy).
-    pub fn build(pool: PgPool, data_dir: &Path) -> Result<Self, String> {
+    /// Boots the cold state: loads the taxonomy directory and builds the
+    /// engine once (the pre-first-snapshot serving basis). `data_dir` must
+    /// contain the `events/`, `categories/`, and `synonyms/` subdirectories
+    /// (the `taxonomy-validate` CLI owns validation in CI; boot requires
+    /// only a loadable taxonomy). No snapshot is loaded — use [`boot`] for
+    /// the durable-generation load path.
+    pub fn build(pool: sqlx::PgPool, data_dir: &Path) -> Result<Self, String> {
         Self::build_with_metrics(
             pool,
             data_dir,
+            ApiLimits::default(),
             Arc::new(crate::metrics::MemoryMetrics::new()),
         )
     }
 
-    /// Boots the state with an injected metrics sink (task 1 seam): the
-    /// boot path is identical, but tests can read the counters.
+    /// Boots the cold state with an injected metrics sink (task 1 seam).
     pub fn build_with_metrics(
-        pool: PgPool,
+        pool: sqlx::PgPool,
         data_dir: &Path,
+        limits: ApiLimits,
         metrics: Arc<dyn Metrics>,
     ) -> Result<Self, String> {
-        let taxonomy = taxonomy::loader::load_data_dir(data_dir)
-            .map_err(|error| format!("taxonomy load failed: {error}"))?;
-        let synonyms: SynonymMap = taxonomy
-            .synonyms
-            .iter()
-            .map(|source| {
-                (
-                    source.synonym.term.clone(),
-                    source.synonym.canonical.clone(),
-                )
-            })
-            .collect();
-        let events: Vec<EventLexicon> = taxonomy
-            .events
-            .iter()
-            .map(|source| event_lexicon(&source.event))
-            .collect();
-        Ok(AppState {
-            engine: Arc::new(SearchEngine::new(events, synonyms)),
-            taxonomy: Arc::new(taxonomy),
+        let bundle = load_bundle(data_dir)?;
+        Ok(Self::from_bundle(bundle, pool, limits, metrics))
+    }
+
+    /// Boots the state AND attempts the durable-generation load (design
+    /// §6.4): the newest `published` generation is rebuilt into the
+    /// in-memory snapshot without an AGESIC download, falling back to the
+    /// previous generation. With nothing published, or when every candidate
+    /// fails to load, the state stays cold (catalog reads 503, readiness
+    /// reports not-ready) and the failure is reported server-side — an
+    /// invalid or failed load never installs a partial snapshot.
+    pub async fn boot(
+        pool: sqlx::PgPool,
+        data_dir: &Path,
+        limits: ApiLimits,
+    ) -> Result<Self, String> {
+        Self::boot_with_metrics(
             pool,
-            provider_fetch: ProviderFetch::Sequential,
+            data_dir,
+            limits,
+            Arc::new(crate::metrics::MemoryMetrics::new()),
+        )
+        .await
+    }
+
+    /// [`boot`] with an injected metrics sink (the test-readable seam).
+    pub async fn boot_with_metrics(
+        pool: sqlx::PgPool,
+        data_dir: &Path,
+        limits: ApiLimits,
+        metrics: Arc<dyn Metrics>,
+    ) -> Result<Self, String> {
+        let bundle = load_bundle(data_dir)?;
+        let state = Self::from_bundle(bundle.clone(), pool, limits, metrics);
+        match generation::load_published_with_bundle(&state.pool, &bundle, limits.provider_fetch)
+            .await
+        {
+            Ok(Some(loaded)) => {
+                state.install(Arc::new(loaded));
+            }
+            Ok(None) => {
+                // Cold start: nothing published yet (S7 task 22 semantics).
+            }
+            Err(error) => {
+                eprintln!("api generation boot: {error}");
+            }
+        }
+        Ok(state)
+    }
+
+    fn from_bundle(
+        bundle: TaxonomyBundle,
+        pool: sqlx::PgPool,
+        limits: ApiLimits,
+        metrics: Arc<dyn Metrics>,
+    ) -> Self {
+        let provider_fetch = limits.provider_fetch;
+        AppState {
+            active: Arc::new(ArcSwap::from_pointee(Arc::new(ActiveGeneration::cold(
+                bundle,
+                provider_fetch,
+            )))),
+            pool,
+            provider_fetch,
+            limits,
             metrics,
-        })
+        }
     }
 
-    /// The YAML display name of an event slug.
-    pub fn event_name(&self, slug: &str) -> Option<&str> {
-        self.taxonomy
-            .events
-            .iter()
-            .find(|source| source.event.slug == slug)
-            .map(|source| source.event.name.as_str())
+    /// Installs one fully loaded snapshot atomically (design §1.4: a
+    /// complete, validated load is the only thing that ever swaps the
+    /// served generation; a failed load never reaches here). Adoption is
+    /// reported through the generation-state gauge.
+    pub fn install(&self, generation: Arc<ActiveGeneration>) {
+        let state = if generation.is_loaded() {
+            GenerationState::Active
+        } else {
+            GenerationState::NotLoaded
+        };
+        self.active.store(Arc::new(generation));
+        self.metrics.observe_generation_state(state);
     }
 
-    /// The YAML display name of a category slug.
-    pub fn category_name(&self, slug: &str) -> Option<&str> {
-        self.taxonomy
-            .categories
-            .iter()
-            .find(|source| source.category.slug == slug)
-            .map(|source| source.category.name.as_str())
+    /// The currently served generation's id (nil before the first load).
+    pub fn generation_id(&self) -> uuid::Uuid {
+        self.active.load_full().generation_id()
     }
 }
 
-/// Projects one taxonomy event into the engine-side scoring lexicon. The
-/// mapping is shape-only (terms, kinds, weights, rules) — no seed domain
-/// data lives in code (TX-1).
-fn event_lexicon(event: &taxonomy::model::Event) -> EventLexicon {
-    EventLexicon {
-        slug: event.slug.clone(),
-        category: event.category.clone(),
-        keywords: event
-            .keywords
-            .iter()
-            .map(|keyword| EngineKeyword {
-                term: keyword.term.clone(),
-                canonical: keyword.canonical_or_term().to_string(),
-                kind: match keyword.keyword_type {
-                    taxonomy::model::KeywordType::Action => EngineKeywordKind::Action,
-                    taxonomy::model::KeywordType::Entity => EngineKeywordKind::Entity,
-                    taxonomy::model::KeywordType::Modifier => EngineKeywordKind::Modifier,
-                    taxonomy::model::KeywordType::Context => EngineKeywordKind::Context,
-                },
-                weight: keyword.weight,
-                negative: keyword.negative,
-            })
-            .collect(),
-        rules: event
-            .rules
-            .iter()
-            .map(|rule| EngineRule {
-                action: rule.action.clone(),
-                entity: rule.entity.clone(),
-                bonus: rule.bonus,
-            })
-            .collect(),
-    }
+fn load_bundle(data_dir: &Path) -> Result<TaxonomyBundle, String> {
+    generation::load_taxonomy_bundle(data_dir).map_err(|error| error.to_string())
 }

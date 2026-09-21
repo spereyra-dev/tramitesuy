@@ -114,8 +114,43 @@ pub fn spawn_app_with_metrics(
     pool: PgPool,
     metrics: std::sync::Arc<dyn api::metrics::Metrics>,
 ) -> Router {
-    let state = api::state::AppState::build_with_metrics(pool, &repo_root().join("data"), metrics)
-        .expect("boot AppState from the real data seed");
+    let state = api::state::AppState::build_with_metrics(
+        pool,
+        &repo_root().join("data"),
+        api::config::ApiLimits::default(),
+        metrics,
+    )
+    .expect("boot AppState from the real data seed");
+    api::build_router(state)
+}
+
+/// Builds the API router over a published generation (S7 task 20): the
+/// test publishes one catalog generation from the seeded legacy tables
+/// (the worker-side promotion stand-in) and boots the state through the
+/// durable-load path, so the router serves the snapshot exactly like a
+/// restarted production API. Requires `seed_read_fixture` to have run.
+pub async fn spawn_app_with_generation(pool: PgPool) -> Router {
+    publish_sample_generation(&pool).await;
+    let state = api::state::AppState::boot(pool, &repo_root().join("data"), Default::default())
+        .await
+        .expect("boot AppState from the published generation");
+    api::build_router(state)
+}
+
+/// [`spawn_app_with_generation`] with an injected metrics sink.
+pub async fn spawn_app_with_generation_and_metrics(
+    pool: PgPool,
+    metrics: std::sync::Arc<dyn api::metrics::Metrics>,
+) -> Router {
+    publish_sample_generation(&pool).await;
+    let state = api::state::AppState::boot_with_metrics(
+        pool,
+        &repo_root().join("data"),
+        api::config::ApiLimits::default(),
+        metrics,
+    )
+    .await
+    .expect("boot AppState from the published generation");
     api::build_router(state)
 }
 
@@ -311,6 +346,27 @@ pub async fn seed_read_fixture(pool: &PgPool) {
     .execute(pool)
     .await
     .expect("seed relation order 2");
+}
+
+/// Builds, validates, and publishes a NEW generation over changed legacy
+/// content (the fixture's first procedure is renamed), then installs it
+/// into the running state's holder — the test-side equivalent of the S8
+/// adoption path. Returns the adopted manifest.
+pub async fn adopt_changed_generation(
+    state: &api::state::AppState,
+    pool: &PgPool,
+) -> db::generations::build::BuildManifest {
+    sqlx::query("UPDATE procedures SET name = name || ' (cambiado)' WHERE external_id = '4551'")
+        .execute(pool)
+        .await
+        .expect("content change for the new generation");
+    let published = publish_sample_generation(pool).await;
+    let generation = api::generation::load_published(pool, &repo_root().join("data"))
+        .await
+        .expect("the new generation loads")
+        .expect("the published generation loads");
+    state.install(std::sync::Arc::new(generation));
+    published
 }
 
 /// Drops the scratch database (explicit cleanup at the end of each test).

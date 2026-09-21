@@ -12,7 +12,7 @@ use support::*;
 async fn categories_list_is_order_index_ascending_starting_with_vehiculos() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool);
+    let app = spawn_app_with_generation(pool).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/categories").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -33,7 +33,7 @@ async fn categories_list_is_order_index_ascending_starting_with_vehiculos() {
 async fn category_events_listing_returns_slug_and_name() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool);
+    let app = spawn_app_with_generation(pool).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/categories/vehiculos/events").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -56,7 +56,7 @@ async fn category_events_listing_returns_slug_and_name() {
 async fn unknown_category_slug_returns_404() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool);
+    let app = spawn_app_with_generation(pool).await;
 
     let (status, _) = request(&app, "GET", "/api/v1/categories/no-existe/events").await;
     assert_eq!(status, StatusCode::NOT_FOUND);

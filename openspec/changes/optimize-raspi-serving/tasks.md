@@ -172,7 +172,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: interrupting after `validated` and re-running produces no second generation for identical content.
   - Satisfies: OPT-02, R13, ingestion delta ("Build and promotion are retryable and idempotent").
 
-- [ ] 19. [S7] Build the in-memory snapshot: new `apps/api/src/generation/mod.rs` with `ActiveGeneration` (manifest, engine, synonyms, taxonomy, ordered categories, events by slug, cards by event slug, procedure details by slug, organizations, attribution, providers) loaded from a durable published generation **without** an AGESIC download, plus the previous generation as a recoverable fallback.
+- [x] 19. [S7] Build the in-memory snapshot: new `apps/api/src/generation/mod.rs` with `ActiveGeneration` (manifest, engine, synonyms, taxonomy, ordered categories, events by slug, cards by event slug, procedure details by slug, organizations, attribution, providers) loaded from a durable published generation **without** an AGESIC download, plus the previous generation as a recoverable fallback.
   - RED: `cargo test -p api --test generation_snapshot` — a known category/event/procedure answers with 0 catalog SQL statements; a nonexistent procedure id returns 404 with 0 SQL; an inactive procedure returns 200 with `status: "inactive"` and its attribution block; version history and logs are absent from the snapshot.
   - GREEN: replace the `state.rs` linear `event_name`/`category_name` scans with per-generation slug maps.
   - TRIANGULATE: rebuilding the snapshot from the same durable generation twice yields identical lookups (deterministic load), and a `building`/incomplete generation is rejected as a candidate.

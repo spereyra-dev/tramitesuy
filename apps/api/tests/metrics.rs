@@ -40,14 +40,15 @@ async fn search_request_increments_latency_and_sql_op_counters_privately() {
     }
 }
 
-/// TRIANGULATE: the same seam covers a catalog route (`/api/v1/events/{slug}`,
-/// 2 statements today) with the same privacy guarantee.
+/// TRIANGULATE: the same seam covers a catalog route (`/api/v1/events/{slug}`)
+/// with the same privacy guarantee; the recorded budget is 0 (snapshot
+/// serving, S7 task 20).
 #[tokio::test(flavor = "multi_thread")]
 async fn catalog_route_records_sql_ops_and_latency_privately() {
     let (pool, _db) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
     let metrics = Arc::new(MemoryMetrics::new());
-    let app = spawn_app_with_metrics(pool, metrics.clone());
+    let app = spawn_app_with_generation_and_metrics(pool, metrics.clone()).await;
 
     let (status, _) = request(&app, "GET", "/api/v1/events/comprar-vehiculo").await;
     assert_eq!(status, 200);
@@ -59,8 +60,9 @@ async fn catalog_route_records_sql_ops_and_latency_privately() {
     );
     assert_eq!(
         metrics.sql_ops_total(EVENTS_ROUTE),
-        2,
-        "by_event issues exactly 2 statements today (metadata + procedure rows)"
+        0,
+        "S7 task 20: the snapshot-served event page issues zero SQL \
+         statements (previously 2 on the legacy by_event path)"
     );
     for label in metrics.all_labels() {
         assert!(

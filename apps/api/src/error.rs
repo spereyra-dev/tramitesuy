@@ -13,6 +13,10 @@ pub enum ApiError {
     NotFound,
     /// Malformed request payload; the detail names the reason server-side.
     BadRequest(String),
+    /// Cold start (S7 task 22, api delta): no valid catalog snapshot is
+    /// loaded yet, so catalog reads refuse traffic until the first valid
+    /// load completes.
+    ColdStart,
     /// Storage or handler failure; the detail is logged, never returned.
     InternalServerError(String),
 }
@@ -24,6 +28,9 @@ impl IntoResponse for ApiError {
             ApiError::BadRequest(detail) => {
                 eprintln!("api bad request: {detail}");
                 public_error(StatusCode::BAD_REQUEST, "bad request")
+            }
+            ApiError::ColdStart => {
+                public_error(StatusCode::SERVICE_UNAVAILABLE, "service starting")
             }
             ApiError::InternalServerError(detail) => {
                 eprintln!("api internal error: {detail}");

@@ -21,6 +21,7 @@ use search::types::{ScoredEvent, SearchOutcome, SelectionMode};
 
 use crate::dto;
 use crate::error::ApiError;
+use crate::generation::ActiveGeneration;
 use crate::redaction::redact;
 use crate::state::AppState;
 
@@ -28,8 +29,11 @@ pub async fn search(
     State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    // Design §1.4: the request's FIRST operation captures its generation;
+    // payload, log, and providers all use this one `Arc` (task 20).
+    let generation = state.active.load_full();
     let query = query_parameter(&params)?;
-    let outcome = run_pipeline(&state, &query).await?;
+    let outcome = run_pipeline(&state, &generation, &query).await?;
     // Task 1: the two provider statements are consumed by the pipeline.
     state.metrics.observe_sql_ops(ROUTE, 2);
 
@@ -37,9 +41,9 @@ pub async fn search(
     state.metrics.observe_sql_ops(ROUTE, log_ops);
 
     let payload = match outcome.selection.mode {
-        SelectionMode::Open => open_payload(&state, &outcome).await?,
-        SelectionMode::Disambiguation => disambiguation_payload(&state, &outcome),
-        SelectionMode::Categories => categories_payload(&state, &outcome),
+        SelectionMode::Open => open_payload(&state, &generation, &outcome).await?,
+        SelectionMode::Disambiguation => disambiguation_payload(&generation, &outcome),
+        SelectionMode::Categories => categories_payload(&generation, &outcome),
     };
     Ok(Json(payload))
 }
@@ -52,14 +56,15 @@ pub async fn debug(
     State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let generation = state.active.load_full();
     let query = query_parameter(&params)?;
-    let outcome = run_pipeline(&state, &query).await?;
+    let outcome = run_pipeline(&state, &generation, &query).await?;
     state.metrics.observe_sql_ops(ROUTE, 2);
 
     let log_ops = persist_log(&state, &query, &outcome).await?;
     state.metrics.observe_sql_ops(ROUTE, log_ops);
 
-    Ok(Json(debug_payload(&state, &outcome)))
+    Ok(Json(debug_payload(&generation, &outcome)))
 }
 
 /// Extracts the required `q` parameter (missing or blank → 400).
@@ -72,15 +77,22 @@ fn query_parameter(params: &HashMap<String, String>) -> Result<String, ApiError>
 }
 
 /// Runs the deterministic pipeline through the db-side async orchestration
-/// boundary (S4b task 11): normalize → await FTS/trigram per configuration
-/// → pure `score`. Provider errors stay structural and map to the existing
-/// public 500 path; no partial candidate ranking is produced.
-async fn run_pipeline(state: &AppState, query: &str) -> Result<SearchOutcome, ApiError> {
+/// boundary (S4b task 11) over the CAPTURED generation: its engine ranks,
+/// and the request's captured generation id travels with the provider
+/// contract (the legacy tables are not generation-scoped until the stage-3
+/// providers land; task 21 scopes the trigram provider). Provider errors
+/// stay structural and map to the existing public 500 path; no partial
+/// candidate ranking is produced.
+async fn run_pipeline(
+    state: &AppState,
+    generation: &ActiveGeneration,
+    query: &str,
+) -> Result<SearchOutcome, ApiError> {
     let fts = FtsProvider::new(state.pool.clone());
     let trigram = TrigramProvider::new(state.pool.clone());
     orchestrator::run_search(
-        &state.engine,
-        db::providers::LEGACY_GENERATION_ID,
+        &generation.engine,
+        generation.generation_id(),
         query,
         &fts,
         &trigram,
@@ -131,21 +143,32 @@ async fn persist_log(
 /// Open mode (API-2): `results` carries exactly the selected event — slug,
 /// name, score, confidence — plus the event's ordered procedures summary
 /// with the attribution block (API-4). An event absent from the DB
-/// projection serves an empty procedures summary.
+/// projection serves an empty procedures summary. The names resolve from
+/// the CAPTURED generation's slug maps (task 19 GREEN); task 21 serves the
+/// cards from the snapshot.
 async fn open_payload(
     state: &AppState,
+    generation: &ActiveGeneration,
     outcome: &SearchOutcome,
 ) -> Result<serde_json::Value, ApiError> {
     let slug = outcome
         .selection
         .event_slug
         .clone()
+        // Justified inline: the engine's Open selection is constructed only
+        // together with its event slug — a mode with no selected event is
+        // unreachable by construction (search-engine invariant).
         .expect("open selection always names the selected event");
     let top = outcome
         .results
         .first()
+        // Justified inline: Open mode ranks at least one candidate into
+        // `results` (the engine always emits the selected event first), so
+        // the list cannot be empty in this mode.
         .expect("open selection implies a top result");
 
+    // Task 21 replaces this with snapshot cards for the loaded-snapshot
+    // path; until then `cards_by_event` stays the no-snapshot path.
     let procedures = match db::repos::procedures::cards_by_event(&state.pool, &slug).await {
         Ok(Some(cards)) => {
             // Task 7: the transition cards query issues exactly 1 statement
@@ -169,7 +192,7 @@ async fn open_payload(
         "results": [{
             "event": {
                 "slug": slug,
-                "name": state.event_name(&slug).unwrap_or_default(),
+                "name": generation.event_name(&slug).unwrap_or_default(),
             },
             "score": top.score,
             "confidence": outcome.confidence,
@@ -180,12 +203,15 @@ async fn open_payload(
 
 /// Disambiguation mode (API-2, SE-10): up to 3 top-scored events, no single
 /// answer. Names resolve from the YAML taxonomy.
-fn disambiguation_payload(state: &AppState, outcome: &SearchOutcome) -> serde_json::Value {
+fn disambiguation_payload(
+    generation: &ActiveGeneration,
+    outcome: &SearchOutcome,
+) -> serde_json::Value {
     let options: Vec<serde_json::Value> = outcome
         .selection
         .options
         .iter()
-        .map(|event| option_payload(state, event, outcome.confidence))
+        .map(|event| option_payload(generation, event, outcome.confidence))
         .collect();
     serde_json::json!({
         "query": outcome.query.original,
@@ -196,10 +222,14 @@ fn disambiguation_payload(state: &AppState, outcome: &SearchOutcome) -> serde_js
     })
 }
 
-fn option_payload(state: &AppState, event: &ScoredEvent, confidence: f64) -> serde_json::Value {
+fn option_payload(
+    generation: &ActiveGeneration,
+    event: &ScoredEvent,
+    confidence: f64,
+) -> serde_json::Value {
     serde_json::json!({
         "slug": event.slug,
-        "name": state.event_name(&event.slug).unwrap_or_default(),
+        "name": generation.event_name(&event.slug).unwrap_or_default(),
         "score": event.score,
         "confidence": confidence,
     })
@@ -207,7 +237,7 @@ fn option_payload(state: &AppState, event: &ScoredEvent, confidence: f64) -> ser
 
 /// Categories mode (API-2): the available category slugs with their YAML
 /// names.
-fn categories_payload(state: &AppState, outcome: &SearchOutcome) -> serde_json::Value {
+fn categories_payload(generation: &ActiveGeneration, outcome: &SearchOutcome) -> serde_json::Value {
     let categories: Vec<serde_json::Value> = outcome
         .selection
         .categories
@@ -215,7 +245,7 @@ fn categories_payload(state: &AppState, outcome: &SearchOutcome) -> serde_json::
         .map(|slug| {
             serde_json::json!({
                 "slug": slug,
-                "name": state.category_name(slug).unwrap_or(slug),
+                "name": generation.category_name(slug).unwrap_or(slug),
             })
         })
         .collect();
@@ -232,7 +262,7 @@ fn categories_payload(state: &AppState, outcome: &SearchOutcome) -> serde_json::
 /// result an explanation array whose entry values sum exactly to the score.
 /// Every result echoes the outcome-wide confidence (SE-9's formula is
 /// computed from the full candidate list, not per event).
-fn debug_payload(state: &AppState, outcome: &SearchOutcome) -> serde_json::Value {
+fn debug_payload(generation: &ActiveGeneration, outcome: &SearchOutcome) -> serde_json::Value {
     let tokens: Vec<serde_json::Value> = outcome
         .query
         .tokens
@@ -250,7 +280,7 @@ fn debug_payload(state: &AppState, outcome: &SearchOutcome) -> serde_json::Value
         .map(|event| {
             serde_json::json!({
                 "slug": event.slug,
-                "name": state.event_name(&event.slug),
+                "name": generation.event_name(&event.slug),
                 "score": event.score,
                 "confidence": outcome.confidence,
                 "explanation": event

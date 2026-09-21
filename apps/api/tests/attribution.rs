@@ -37,7 +37,7 @@ fn collect_procedure_payloads<'a>(value: &'a Value, out: &mut Vec<&'a Value>) {
 async fn every_procedure_payload_on_an_event_page_carries_full_attribution() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool.clone());
+    let app = spawn_app_with_generation(pool.clone()).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/events/comprar-vehiculo").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -60,7 +60,7 @@ async fn every_procedure_payload_on_an_event_page_carries_full_attribution() {
 async fn procedure_detail_carries_full_attribution() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool.clone());
+    let app = spawn_app_with_generation(pool.clone()).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/procedures/2368").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -77,7 +77,7 @@ async fn procedure_detail_carries_full_attribution() {
 async fn a_deactivated_procedures_attribution_stays_intact() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool.clone());
+    let app = spawn_app_with_generation(pool.clone()).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/procedures/6995").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");

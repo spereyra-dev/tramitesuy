@@ -12,7 +12,7 @@ use support::*;
 async fn procedure_detail_carries_the_full_contract() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool.clone());
+    let app = spawn_app_with_generation(pool.clone()).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/procedures/4551").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -37,7 +37,7 @@ async fn procedure_detail_carries_the_full_contract() {
 async fn deactivated_procedure_still_returns_200_with_status_inactive() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool.clone());
+    let app = spawn_app_with_generation(pool.clone()).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/procedures/6995").await;
     assert_eq!(
@@ -59,7 +59,7 @@ async fn deactivated_procedure_still_returns_200_with_status_inactive() {
 async fn unknown_procedure_id_returns_404() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool);
+    let app = spawn_app_with_generation(pool).await;
 
     let (status, _) = request(&app, "GET", "/api/v1/procedures/no-existe").await;
     assert_eq!(status, StatusCode::NOT_FOUND);

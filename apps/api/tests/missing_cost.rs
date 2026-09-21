@@ -13,7 +13,7 @@ use support::*;
 async fn empty_cost_renders_null_with_sin_costo_informado() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool);
+    let app = spawn_app_with_generation(pool).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/procedures/4551").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -31,7 +31,7 @@ async fn empty_cost_renders_null_with_sin_costo_informado() {
 async fn populated_cost_passes_through_verbatim() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool);
+    let app = spawn_app_with_generation(pool).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/procedures/2368").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -48,7 +48,7 @@ async fn populated_cost_passes_through_verbatim() {
 async fn absent_raw_data_never_defaults_or_estimates_a_cost() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool);
+    let app = spawn_app_with_generation(pool).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/procedures/7001").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -62,7 +62,7 @@ async fn absent_raw_data_never_defaults_or_estimates_a_cost() {
 async fn event_page_procedure_cards_share_the_same_wording() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool);
+    let app = spawn_app_with_generation(pool).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/events/comprar-vehiculo").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");

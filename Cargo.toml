@@ -23,6 +23,9 @@ thiserror = "2.0"
 # Async / HTTP
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 axum = "0.8"
+# Lock-free snapshot holder (stage 3, design §0): `load_full()` hands each
+# request its own strong `Arc`, which doubles as the in-flight retention token.
+arc-swap = "1"
 # Database
 sqlx = { version = "0.9", default-features = false, features = [
     "runtime-tokio",

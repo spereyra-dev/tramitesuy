@@ -13,7 +13,7 @@ use support::*;
 async fn event_page_returns_ordered_procedures_with_attribution() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool.clone());
+    let app = spawn_app_with_generation(pool.clone()).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/events/comprar-vehiculo").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -62,7 +62,7 @@ async fn event_page_keeps_a_deactivated_related_procedure_visible() {
     // its event page with its attribution block intact.
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool.clone());
+    let app = spawn_app_with_generation(pool.clone()).await;
 
     let (status, body) = request(&app, "GET", "/api/v1/events/vender-vehiculo").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -83,7 +83,7 @@ async fn event_page_keeps_a_deactivated_related_procedure_visible() {
 async fn unknown_event_slug_returns_404() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
-    let app = spawn_app(pool);
+    let app = spawn_app_with_generation(pool).await;
 
     let (status, _) = request(&app, "GET", "/api/v1/events/no-existe").await;
     assert_eq!(status, StatusCode::NOT_FOUND);

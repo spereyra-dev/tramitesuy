@@ -268,7 +268,10 @@ impl ActiveGeneration {
 
 /// The taxonomy/engine bundle every generation (and the cold baseline)
 /// carries: the YAML source of truth, the engine built from it, and the
-/// manifest's `taxonomy_version` identity of those exact bytes.
+/// manifest's `taxonomy_version` identity of those exact bytes. `Clone` is
+/// cheap: every field is an `Arc` over immutable data (shared, not copied —
+/// design §2.3 memory budget).
+#[derive(Clone)]
 pub struct TaxonomyBundle {
     pub taxonomy: Arc<taxonomy::model::Taxonomy>,
     pub engine: Arc<SearchEngine>,
@@ -402,12 +405,26 @@ pub async fn load_published(
     data_dir: &Path,
 ) -> Result<Option<ActiveGeneration>, GenerationError> {
     let bundle = load_taxonomy_bundle(data_dir)?;
-    let fetch = db::providers::orchestrator::ProviderFetch::Sequential;
+    load_published_with_bundle(
+        pool,
+        &bundle,
+        db::providers::orchestrator::ProviderFetch::Sequential,
+    )
+    .await
+}
 
+/// [`load_published`] over an already-loaded taxonomy bundle (the boot path
+/// reuses the state's own YAML load) with the configured provider fetch
+/// policy.
+pub async fn load_published_with_bundle(
+    pool: &sqlx::PgPool,
+    bundle: &TaxonomyBundle,
+    fetch: db::providers::orchestrator::ProviderFetch,
+) -> Result<Option<ActiveGeneration>, GenerationError> {
     let candidates = sqlx::query!(
         r#"SELECT generation_id, content_hash, taxonomy_version, engine_version,
-                  source_synced_at, published_at, event_count, procedure_count,
-                  projection_status
+                  source_synced_at, published_at AS "published_at!",
+                  event_count, procedure_count, projection_status
            FROM catalog_generations
            WHERE status = 'published' AND published_at IS NOT NULL
            ORDER BY published_at DESC, created_at DESC"#,
@@ -427,14 +444,12 @@ pub async fn load_published(
             taxonomy_version: candidate.taxonomy_version,
             engine_version: candidate.engine_version,
             source_synced_at: candidate.source_synced_at,
-            published_at: candidate
-                .published_at
-                .expect("filter guarantees published_at"),
+            published_at: candidate.published_at,
             event_count: candidate.event_count,
             procedure_count: candidate.procedure_count,
             projection_status: candidate.projection_status,
         };
-        match load_candidate(pool, candidate, &bundle, fetch).await {
+        match load_candidate(pool, candidate, bundle, fetch).await {
             Ok(generation) => return Ok(Some(generation)),
             Err(error) => {
                 eprintln!("api generation: candidate rejected: {error}");
@@ -442,6 +457,9 @@ pub async fn load_published(
             }
         }
     }
+    // Justified inline: this line runs only when `candidates` was
+    // non-empty and every candidate failed, so `last_rejection` was set —
+    // the loop body guarantees it.
     Err(last_rejection.expect("at least one rejected candidate"))
 }
 
@@ -607,7 +625,7 @@ async fn load_candidate(
         procedure_count,
     });
     Ok(ActiveGeneration::from_parts(
-        clone_bundle(bundle),
+        bundle.clone(),
         SnapshotParts {
             manifest,
             events,
@@ -669,18 +687,6 @@ fn parse_timestamp(raw: String) -> Option<DateTime<chrono::Utc>> {
     DateTime::parse_from_rfc3339(&raw)
         .ok()
         .map(|parsed| parsed.with_timezone(&chrono::Utc))
-}
-
-/// Clones the shared taxonomy/engine bundle so every generation carries its
-/// own `Arc` references to the same immutable data (shared, not copied —
-/// design §2.3 memory budget).
-fn clone_bundle(bundle: &TaxonomyBundle) -> TaxonomyBundle {
-    TaxonomyBundle {
-        taxonomy: bundle.taxonomy.clone(),
-        engine: bundle.engine.clone(),
-        synonyms: bundle.synonyms.clone(),
-        version: bundle.version.clone(),
-    }
 }
 
 /// Projects one taxonomy event into the engine-side scoring lexicon
