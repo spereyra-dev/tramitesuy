@@ -82,11 +82,26 @@ pub async fn fresh_migrated_db() -> (PgPool, String) {
         }
     }
     let url = format!("{}/{}", admin_url().trim_end_matches("/postgres"), name);
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&url)
-        .await
-        .expect("connect to scratch test database");
+    // Full-workspace parallelism can briefly fail the first connect to the
+    // freshly created scratch database (observed once per several
+    // full-workspace runs); a short bounded retry keeps the scratch setup
+    // deterministic without masking real failures.
+    let mut scratch = Err(sqlx::Error::Configuration("unreached".into()));
+    for attempt in 0..3u32 {
+        match PgPoolOptions::new().max_connections(5).connect(&url).await {
+            Ok(pool) => {
+                scratch = Ok(pool);
+                break;
+            }
+            Err(error) => {
+                scratch = Err(error);
+                if attempt < 2 {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+            }
+        }
+    }
+    let pool = scratch.expect("connect to scratch test database");
     for ext in ["pg_trgm", "unaccent"] {
         sqlx::query(audited(format!("CREATE EXTENSION IF NOT EXISTS {ext}")))
             .execute(&pool)
