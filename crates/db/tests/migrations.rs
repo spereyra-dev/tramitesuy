@@ -427,7 +427,10 @@ async fn migration_renames_casarse_without_changing_event_id_or_relations() {
     .fetch_one(&pool)
     .await
     .expect("0016 renames the existing marriage event");
-    assert_eq!(renamed_id, event_id, "the rename must preserve the event UUID");
+    assert_eq!(
+        renamed_id, event_id,
+        "the rename must preserve the event UUID"
+    );
     assert!(updated_at_changed, "the rename must refresh updated_at");
 
     let relation_event_id: sqlx::types::Uuid = sqlx::query_scalar(
@@ -442,12 +445,11 @@ async fn migration_renames_casarse_without_changing_event_id_or_relations() {
         "the rename must preserve foreign-key relations"
     );
 
-    let old_slug_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM life_events WHERE slug = 'casarse'",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("count old slug rows");
+    let old_slug_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM life_events WHERE slug = 'casarse'")
+            .fetch_one(&pool)
+            .await
+            .expect("count old slug rows");
     assert_eq!(old_slug_count, 0, "the old slug must no longer be present");
 
     common::drop_test_db(&name).await;

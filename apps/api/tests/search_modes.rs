@@ -128,9 +128,25 @@ async fn zero_match_query_falls_back_to_categories() {
     assert!(body.get("results").is_none());
     assert!(body.get("options").is_none());
     let categories = body["categories"].as_array().expect("categories array");
+    // The engine derives the available categories from the YAML taxonomy
+    // events, sorted (BTreeSet), so the zero-match fallback lists all seeded
+    // categories with their YAML names, in slug-ascending order.
     assert_eq!(
         categories,
-        &vec![serde_json::json!({"slug": "vehiculos", "name": "Vehículos"})],
+        &vec![
+            serde_json::json!({"slug": "beneficios-familiares", "name": "Beneficios familiares"}),
+            serde_json::json!({"slug": "consumo", "name": "Consumo"}),
+            serde_json::json!({"slug": "documentos", "name": "Documentos"}),
+            serde_json::json!({"slug": "educacion", "name": "Educación"}),
+            serde_json::json!({"slug": "familia", "name": "Familia"}),
+            serde_json::json!({"slug": "jubilaciones", "name": "Jubilaciones"}),
+            serde_json::json!({"slug": "justicia", "name": "Justicia"}),
+            serde_json::json!({"slug": "migracion", "name": "Migración"}),
+            serde_json::json!({"slug": "salud", "name": "Salud"}),
+            serde_json::json!({"slug": "trabajo", "name": "Trabajo"}),
+            serde_json::json!({"slug": "vehiculos", "name": "Vehículos"}),
+            serde_json::json!({"slug": "vivienda", "name": "Vivienda"}),
+        ],
         "the available category slugs (with names) are listed: {body}"
     );
 

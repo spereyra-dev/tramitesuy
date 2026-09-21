@@ -1,5 +1,6 @@
 //! Task 3 (spec §7 load-plan prerequisite, OPT-01 fixture surface): the
-//! representative synthetic PII-free catalog fixture — ≈20 events, ≥3,500
+//! representative synthetic PII-free catalog fixture — one event per
+//! taxonomy event (25 at the time of recording), ≥3,500
 //! procedures, inactive procedures, missing-cost rows (the API renders
 //! those as "Sin costo informado"), and accented / redaction-requiring
 //! scenario queries — with no data that could be real personal data.
@@ -17,7 +18,10 @@ async fn generated_fixture_has_expected_shape_and_no_real_data() {
         .await
         .expect("fixture applies cleanly");
 
-    assert_eq!(summary.events, 20, "≈20 events (recorded expectation)");
+    assert_eq!(
+        summary.events, 25,
+        "one fixture event per taxonomy event (recorded expectation)"
+    );
     assert!(
         summary.procedures >= 3_500,
         "at least 3,500 procedures (got {})",
