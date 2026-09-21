@@ -217,4 +217,17 @@ cases:
     expect_top1: licencia-ampliacion
   - query: "certificado de antecedentes de licencia de conducir"
     expect_top1: licencia-antecedentes
+  # ── lote-2 salud, trabajo, vivienda, ciudadania positives ──────────
+  - query: "sacar el carnet de salud"
+    expect_top1: tramitar-carne-de-salud
+  - query: "inscribirme al monotributo"
+    expect_top1: inscribirse-al-monotributo
+  - query: "dar de alta a un trabajador en el bps"
+    expect_top1: dar-de-alta-un-trabajador
+  - query: "postularme para comprar una vivienda del mvot"
+    expect_top1: postularse-compra-vivienda
+  - query: "sacar la carta de ciudadania"
+    expect_top1: obtener-carta-de-ciudadania
+  - query: "casarme en el registro civil"
+    expect_top1: inscribir-matrimonio
 

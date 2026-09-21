@@ -1,0 +1,44 @@
+slug: dar-de-alta-un-trabajador
+name: Dar de alta a un trabajador
+description: Declaración de la empresa ante el BPS del ingreso (alta), egreso (baja) o modificación de actividad de un trabajador.
+category: trabajo
+keywords:
+  - term: alta
+    type: ACTION
+    weight: 10
+  - term: trabajador
+    type: ENTITY
+    weight: 12
+  - term: egreso
+    type: ENTITY
+    weight: 6
+  - term: baja
+    type: ENTITY
+    weight: 6
+  - term: bps
+    type: ENTITY
+    weight: 8
+  - term: empresa
+    type: MODIFIER
+    weight: 4
+  - term: monotributo
+    type: ENTITY
+    weight: 12
+    negative: true
+rules:
+  - action: alta
+    entity: trabajador
+    bonus: 15
+relations:
+  - external_id: "7564"
+    order: 1
+    required: true
+tests:
+  positive:
+    - dar de alta a un trabajador en el bps
+    - ingreso de un trabajador a mi empresa
+    - declarar la baja de un trabajador
+  negative:
+    - inscribirme al monotributo
+    - sacar el carnet de salud
+    - crear una empresa en el monotributo

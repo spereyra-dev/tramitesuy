@@ -70,3 +70,6 @@ synonyms:
     canonical: documento
   - term: dni
     canonical: documento
+  # Tax regime noun surface → canonical `monotributo`
+  - term: monotax
+    canonical: monotributo

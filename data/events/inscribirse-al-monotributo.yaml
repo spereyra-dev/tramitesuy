@@ -1,0 +1,50 @@
+slug: inscribirse-al-monotributo
+name: Inscribirse al monotributo
+description: Trámites de inscripción al monotributo y monotributo social (MIDES) ante la DGI, unipersonal o sociedad de hecho.
+category: trabajo
+keywords:
+  - term: inscribir
+    type: ACTION
+    weight: 10
+  - term: monotributo
+    type: ENTITY
+    weight: 15
+  - term: monotax
+    type: ENTITY
+    weight: 12
+  - term: alta
+    type: ACTION
+    weight: 8
+  - term: social
+    type: MODIFIER
+    weight: 4
+  - term: clausura
+    type: ENTITY
+    weight: 10
+    negative: true
+rules:
+  - action: inscribir
+    entity: monotributo
+    bonus: 15
+relations:
+  - external_id: "2090"
+    order: 1
+    required: true
+  - external_id: "2115"
+    order: 2
+    required: true
+  - external_id: "2092"
+    order: 3
+    required: false
+  - external_id: "2614"
+    order: 4
+    required: false
+tests:
+  positive:
+    - inscribirme al monotributo
+    - alta en el monotributo social
+    - inscripcion al monotax
+  negative:
+    - dar de alta a un trabajador
+    - inscribir un nacimiento
+    - renovar la licencia de conducir

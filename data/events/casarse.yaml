@@ -9,6 +9,12 @@ keywords:
   - term: registrar
     type: ACTION
     weight: 10
+  - term: casar
+    type: ACTION
+    weight: 10
+  - term: casarme
+    type: ACTION
+    weight: 10
   - term: matrimonio
     type: ENTITY
     weight: 8

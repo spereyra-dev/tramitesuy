@@ -1,0 +1,40 @@
+slug: postularse-compra-vivienda
+name: Postularse a la compra de vivienda (MVOT)
+description: Inscripción a los llamados abiertos del MVOT para compra de vivienda en el mercado inmobiliario a nivel nacional.
+category: vivienda
+keywords:
+  - term: postular
+    type: ACTION
+    weight: 10
+  - term: comprar
+    type: ACTION
+    weight: 8
+  - term: vivienda
+    type: ENTITY
+    weight: 12
+  - term: mvot
+    type: ENTITY
+    weight: 8
+  - term: llamado
+    type: MODIFIER
+    weight: 4
+  - term: inscribirse
+    type: ACTION
+    weight: 6
+rules:
+  - action: postular
+    entity: vivienda
+    bonus: 15
+relations:
+  - external_id: "7319"
+    order: 1
+    required: true
+tests:
+  positive:
+    - postularme para comprar una vivienda del mvot
+    - inscripcion a los llamados de vivienda
+    - comprar vivienda en el mercado inmobiliario
+  negative:
+    - comprar un vehiculo usado
+    - solicitar la garantia de alquiler
+    - inscribir un nacimiento

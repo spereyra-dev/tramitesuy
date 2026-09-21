@@ -1,0 +1,46 @@
+slug: obtener-carta-de-ciudadania
+name: Obtener la carta de ciudadanía
+description: Trámites de la carta de ciudadanía legal uruguaya y sus certificados de habilitación para el sufragio.
+category: migracion
+keywords:
+  - term: ciudadania
+    type: ENTITY
+    weight: 15
+  - term: carta
+    type: ENTITY
+    weight: 10
+  - term: naturalizacion
+    type: ENTITY
+    weight: 8
+  - term: votar
+    type: MODIFIER
+    weight: 4
+  - term: legal
+    type: MODIFIER
+    weight: 3
+  - term: sufragio
+    type: ENTITY
+    weight: 6
+rules:
+  - action: obtener
+    entity: ciudadania
+    bonus: 15
+relations:
+  - external_id: "585"
+    order: 1
+    required: true
+  - external_id: "6537"
+    order: 2
+    required: false
+  - external_id: "478"
+    order: 3
+    required: false
+tests:
+  positive:
+    - sacar la carta de ciudadania
+    - obtener la ciudadania legal uruguaya
+    - certificado de ciudadania o no naturalizacion
+  negative:
+    - solicitar la residencia legal
+    - sacar la cedula de identidad
+    - renovar el pasaporte

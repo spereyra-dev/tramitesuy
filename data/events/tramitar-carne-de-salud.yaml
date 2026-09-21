@@ -1,0 +1,57 @@
+slug: tramitar-carne-de-salud
+name: Sacar el carné de salud
+description: Trámite del carné de salud, examen clínico de aptitud laboral obligatorio para ejercer una actividad laboral en el Uruguay.
+category: salud
+keywords:
+  - term: sacar
+    type: ACTION
+    weight: 10
+  - term: renovar
+    type: ACTION
+    weight: 6
+  - term: carne
+    type: ENTITY
+    weight: 15
+  - term: salud
+    type: ENTITY
+    weight: 10
+  - term: aptitud
+    type: MODIFIER
+    weight: 4
+  - term: laboral
+    type: MODIFIER
+    weight: 4
+  - term: conducir
+    type: ENTITY
+    weight: 15
+    negative: true
+  - term: identidad
+    type: ENTITY
+    weight: 10
+    negative: true
+rules:
+  - action: sacar
+    entity: carne
+    bonus: 15
+  - action: renovar
+    entity: carne
+    bonus: 12
+relations:
+  - external_id: "1835"
+    order: 1
+    required: true
+  - external_id: "4756"
+    order: 2
+    required: false
+  - external_id: "6224"
+    order: 3
+    required: false
+tests:
+  positive:
+    - sacar el carnet de salud
+    - renovar el carne de salud
+    - carne de salud para trabajar
+  negative:
+    - carnet de conducir
+    - sacar la cedula de identidad
+    - carnet de identidad
