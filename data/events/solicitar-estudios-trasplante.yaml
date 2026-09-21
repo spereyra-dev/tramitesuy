@@ -1,0 +1,33 @@
+slug: solicitar-estudios-trasplante
+name: Solicitar estudios para trasplante
+description: Coordinación de los estudios de laboratorio correspondientes al programa de trasplante de la Dirección General de la Salud.
+category: salud
+keywords:
+  - term: trasplante
+    type: ENTITY
+    weight: 15
+  - term: estudios
+    type: ENTITY
+    weight: 10
+  - term: laboratorio
+    type: ENTITY
+    weight: 10
+  - term: solicitar
+    type: ACTION
+    weight: 8
+rules:
+  - action: solicitar
+    entity: trasplante
+    bonus: 15
+relations:
+  - external_id: "4170"
+    order: 1
+    required: true
+tests:
+  positive:
+    - solicitar los estudios para el trasplante
+    - estudios de laboratorio para el programa de trasplante
+  negative:
+    - donar mis organos
+    - certificado de nacido vivo
+    - vacuna para viajar

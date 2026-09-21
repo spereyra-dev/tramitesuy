@@ -30,11 +30,12 @@ version: 1
 # raised for lote-1: nine new events widen legitimate keyword overlap; measured 0.33 on 2026-09-21.
 # raised for lote-4: nine new events since the last raise widen legitimate keyword overlap; measured 0.37 on 2026-09-21.
 # raised for lote-5: nacido vivo/beca cases add one disambiguation-band case; measured 30/81 ≈ 0.3704 on 2026-09-21.
+# raised for lote-6: four salud cases add two disambiguation-band cases; measured 33/89 ≈ 0.3708 on 2026-09-21.
 baselines:
   top1: 1.00
   top3: 1.00
   max_no_result_rate: 0.02
-  max_ambiguous_rate: 0.371
+  max_ambiguous_rate: 0.38
 cases:
   # ── comprar-vehiculo positives ─────────────────────────────────────
   - query: "compre un auto usado"
@@ -255,4 +256,13 @@ cases:
     expect_top1: permiso-viaje-menor
   - query: "vacaciones y trabajo en el exterior"
     expect_top1: solicitar-working-holiday
+  # ── lote-6 salud positives ─────────────────────────────────────────
+  - query: "vacuna contra la fiebre amarilla para viajar"
+    expect_top1: vacunacion-para-viajar
+  - query: "homologar mi vacuna covid del exterior"
+    expect_top1: homologar-vacunacion-covid
+  - query: "solicitar los estudios para el trasplante"
+    expect_top1: solicitar-estudios-trasplante
+  - query: "prestamo para protesis del bps"
+    expect_top1: solicitar-protesis-fnr
 

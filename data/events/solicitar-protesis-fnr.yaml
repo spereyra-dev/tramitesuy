@@ -1,0 +1,46 @@
+slug: solicitar-protesis-fnr
+name: Solicitar prótesis y ortesis (FNR/BPS)
+description: Prótesis y ortesis del Fondo Nacional de Recursos y préstamos del BPS para prótesis, incluido el apoyo técnico CENATT para niños con enfermedades congénitas.
+category: salud
+keywords:
+  - term: protesis
+    type: ENTITY
+    weight: 15
+  - term: ortesis
+    type: ENTITY
+    weight: 10
+  - term: prestamo
+    type: ACTION
+    weight: 10
+  - term: fnr
+    type: ENTITY
+    weight: 6
+  - term: ortopedico
+    type: MODIFIER
+    weight: 6
+  - term: calzado
+    type: ENTITY
+    weight: 5
+rules:
+  - action: prestamo
+    entity: protesis
+    bonus: 15
+relations:
+  - external_id: "7389"
+    order: 1
+    required: true
+  - external_id: "7435"
+    order: 2
+    required: true
+  - external_id: "1850-3"
+    order: 3
+    required: false
+tests:
+  positive:
+    - prestamo para protesis del bps
+    - protesis y ortesis para mi hijo
+    - apoyo tecnico de protesis ortopedicas
+  negative:
+    - certificado de nacido vivo
+    - vacuna para viajar
+    - estudios para el trasplante

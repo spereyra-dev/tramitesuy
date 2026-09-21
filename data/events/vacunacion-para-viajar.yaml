@@ -1,0 +1,56 @@
+slug: vacunacion-para-viajar
+name: Vacunación para viajar al exterior
+description: Inmunización contra la fiebre amarilla, certificado internacional de vacunación y asesoramiento profiláctico para viajes al exterior.
+category: salud
+keywords:
+  - term: vacunacion
+    type: ENTITY
+    weight: 12
+  - term: viaje
+    type: ENTITY
+    weight: 12
+  - term: viajar
+    type: ACTION
+    weight: 10
+  - term: vacunarme
+    type: ACTION
+    weight: 10
+  - term: amarilla
+    type: MODIFIER
+    weight: 8
+  - term: fiebre
+    type: MODIFIER
+    weight: 8
+  - term: internacional
+    type: MODIFIER
+    weight: 4
+  - term: vacuna
+    type: ENTITY
+    weight: 10
+  - term: solo
+    type: MODIFIER
+    weight: 3
+    negative: true
+rules:
+  - action: viajar
+    entity: vacunacion
+    bonus: 15
+relations:
+  - external_id: "7093"
+    order: 1
+    required: true
+  - external_id: "1839"
+    order: 2
+    required: true
+  - external_id: "1874"
+    order: 3
+    required: false
+tests:
+  positive:
+    - vacuna contra la fiebre amarilla para viajar
+    - certificado internacional de vacunacion para mi viaje
+    - quiero vacunarme para viajar al exterior
+  negative:
+    - obtener mi certificado de vacunacion
+    - sacar el pasaporte
+    - solicitar la residencia legal

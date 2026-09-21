@@ -1,0 +1,43 @@
+slug: homologar-vacunacion-covid
+name: Homologar la vacunación COVID del exterior
+description: Homologación de esquemas de vacunación COVID-19 emitidos en el exterior para uruguayos y residentes.
+category: salud
+keywords:
+  - term: homologar
+    type: ACTION
+    weight: 10
+  - term: homologacion
+    type: ENTITY
+    weight: 12
+  - term: covid
+    type: ENTITY
+    weight: 12
+  - term: vacunacion
+    type: ENTITY
+    weight: 10
+  - term: vacuna
+    type: ENTITY
+    weight: 10
+  - term: esquema
+    type: ENTITY
+    weight: 6
+  - term: exterior
+    type: MODIFIER
+    weight: 4
+rules:
+  - action: homologar
+    entity: vacunacion
+    bonus: 15
+relations:
+  - external_id: "6101"
+    order: 1
+    required: true
+tests:
+  positive:
+    - homologar mi vacuna covid del exterior
+    - homologacion del esquema de vacunacion covid
+    - vacunacion covid hecha en el exterior
+  negative:
+    - obtener mi certificado de vacunacion
+    - vacuna para viajar
+    - sacar la cedula
