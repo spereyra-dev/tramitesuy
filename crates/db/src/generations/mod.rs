@@ -5,6 +5,7 @@
 
 pub mod adopt;
 pub mod build;
+pub mod collect;
 pub mod validate;
 
 /// Engine version pinned in the manifest (design §1.2: "versión de

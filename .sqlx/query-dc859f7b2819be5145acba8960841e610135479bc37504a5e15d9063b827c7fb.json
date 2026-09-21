@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE catalog_generations SET retired_at = now() WHERE generation_id = $1 AND retired_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dc859f7b2819be5145acba8960841e610135479bc37504a5e15d9063b827c7fb"
+}
