@@ -1698,3 +1698,146 @@ No S14-assigned task remains unchecked (47 total lines: 47 of 49 tasks complete;
   to unwind. The compose dev stack was never touched; the compose db
   stayed running; scratch databases were dropped by their tests.
 
+
+## Slice S14 (corrective addendum) — Stage 6 Validation (task 47) — branch `opt/s14-load-harness`
+
+Status: **complete; all boundary gates green; the full plan executed for
+real**. Delivery: auto-chain, stacked-to-main (the maintainer-resolved
+pattern carried from the S14 partial), branch cut from fresh master
+`5106b44` (S14 partial merged and pushed). This addendum continues the
+S14 session: task 47 only — **task 48 stays UNCHECKED** (pending target
+hardware, maintainer decision; `docs/capacity-raspi.md` keeps every
+capacity row NOT MEASURED). Structured status consumed before work:
+`gentle-ai.sdd-status` v2, change `optimize-raspi-serving`,
+`applyState: ready`, `nextRecommended: apply`, 47/49 at dispatch (46 at
+the S14 partial), no blockedReasons, repo-local mode, edit roots over the
+workspace root (`.gentle-ai-instance` marker present, left untracked —
+the gga hook re-staged it into one commit and it was amended out, the
+established recovery). Review Workload Gate: `Decision needed before
+apply: Yes` / `Chained PRs recommended: Yes` / S14 budget risk High —
+resolved by the parent prompt's maintainer-resolved delivery path
+(`auto-chain`, `stacked-to-main`). Skill resolution: `paths-injected`
+(chained-pr, work-unit-commits SKILL.md files were read in the S14
+session; no new project skills discovered).
+
+### Completed tasks and proof
+
+| Task | Proof (exact commands, results) |
+|---|---|
+| 47 load harness + plan | **Harness:** `tests/load/arrival.py` (arrival-rate generator: slot `k` at `start + k/rps`, per-slot worker with NO waiting on previous responses — no think-time masking; warm-up excluded; never-sent accounting with reasons; 503+`Retry-After` classified `controlled_rejection` apart from unexpected errors; mode distribution; 10 s series; JSON results; arrival verdict ±5 % gated on exit code) + `test_arrival.py` (11 unit tests) + `crates/db/tests/load_fixture.rs` (ignored seeder: extensions + migrations + task-3 fixture into the persistent `tramitesuy_load` database, idempotent) + `seed.sh` (reset → seed → real `ingest publish` G1) + `run_plan.sh`/`make load-plan` (the full sequential plan) + docs (`tests/load/README.md` harness section, `tests/load/RESULTS.md`, `docs/capacity-raspi.md` task-47 addendum). **Executed 2026-09-22 13:02:14Z→14:36:59Z, plan exit 0**, figures verbatim from `tests/load/results/plan.log`: mixed 5 rps 600 s → 3000/3000 sent, observed **5.00/5.0 OK**, p50 2.6 / p95 12.1 / p99 13.0 ms, 100 % OK, 0 unexpected, never-sent 0; 10 rps → 6000/6000, **10.00 OK**, p95 10.9 ms, 0 errors; 20 rps → 12000/12000, **20.00 OK**, p95 10.9 ms, 0 errors; 40 rps → 24000/24000, **40.00 OK**, p95 9.6 ms, 0 errors; catalog 20 rps → 12000/12000, **20.00 OK**, p50 0.7 / p95 0.9 ms; warm-cache 20 rps → **20.00 OK**, p50 4.4 / p95 5.3 ms, 0 errors; unique non-hit 20 rps → **20.00 OK**, p50 10.5 / p95 12.5 ms, 0 errors (each sustained run = 60 s warm-up + **600 s measured ≥ 10 min**). **Long run including publication:** 10 rps 600 s measured; content change (`last_seen_at` bump on 50 synthetic rows of the disposable DB) + real `ingest publish` at measure +300 s → publish **3 s**, adoption observed **+4 s** (G `01a0c92e-…` → `01a0c8…c68a`), whole run **6000/6000 sent, 100 % OK, zero errors**, series buckets t=280…360 all 100/100 OK (no dip through publish/swap). **Restart-with-recovery:** killed at measure +60 s, restarted +5 s, `/ready` 200 **6 s after kill** (durable snapshot load, no re-ingestion), arrival still **10.00 OK**; all 51 transport errors (1.7 % of that run) confined to buckets t=50/t=60 — the planned downtime window; 0 errors elsewhere. **Burst:** 200/200 simultaneous, p50 12.6 / p95 49.1 ms, 195 OK + **5 controlled 503+Retry-After**, 0 unexpected. **Overload (reported separately):** constrained instance (`API_MAX_CONCURRENT_SEARCHES=1`, `API_POOL_MAX=1`) at 400 rps → arrival **400.00 OK**, 24000/24000 sent, **12,083 controlled rejections (every 503 carried Retry-After) + 11,917 OK, 0 unexpected, never-sent 0**. **TRIANGULATE:** observed-vs-configured arrival within the stated ±5 % at every level (recorded: exact to 2 dp), gated on exit code; falsifiability probe `--rps 50 --expect-rps 20` → `FAIL`, **exit 2**, reverted to matching runs; never-sent accounting unit-proven (cap-governed run → never-sent > 0 with reasons, verdict fails). All figures are **PROVISORY local (M1 MacBook Air, loopback) harness evidence — NEVER capacity results** (`tests/load/RESULTS.md` header); task 48 owns every capacity number. |
+
+### TDD Cycle Evidence (strict TDD; runner `cargo test` for the Rust surface, executed runs + unit tests for the non-Rust harness — the S13 precedent)
+
+| Task | RED (failing test first) | GREEN (minimal implementation) | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| 47 (generator) | `python3 -m unittest discover -s tests/load -p 'test_*.py'` → `FAILED (errors=1)` ImportError — `arrival.py` did not exist; 11 assertions written first (scheduling, warm-up exclusion, inside/outside tolerance, classification incl. bare-503 ≠ controlled, unique uniqueness, mixed-path coverage, never-sent under a governing cap, controlled rejections excluded from unexpected errors) | `arrival.py` (~600 lines): slot scheduler + per-slot workers, warm-up/measured phases, transport + discovery, five scenarios + burst, report with arrival verdict on exit code. → **11 passed** | executed probe `--rps 50 --expect-rps 20` → `observed 50.00 vs expected 20.0 (±5%) → FAIL`, **exit 2** (verdict not vacuous), reverted; unit `test_rate_verdict_outside_tolerance_fails` pins the same | two bugs found before GREEN completed (join deadline re-anchored per thread; join-timeout fill limited to spawned slots); `result.pop("body")` keeps payloads out of records; burst summary cosmetic fix; fmt of the Python files via consistent layout (no linter for py in repo — recorded) |
+| 47 (seeder, Rust) | `cargo test -p db --test load_fixture` → cargo error: no test target `load_fixture` (file absent) | `crates/db/tests/load_fixture.rs` (`#[ignore]`, `LOAD_DB_URL`-driven: extensions → idempotent migrations → fixture guard → task-3 `catalog_fixture::apply` + ≥3,500 assertion); `seed.sh` reset→seed→publish | seed run: **104 events / 3,600 procedures (327 inactive, 900 missing-cost)** seeded and `ingest publish status=success` (taxonomy validation gate passed on the fixture); re-run skips (idempotent) | `cargo fmt`/clippy clean (target compiles under `--all-targets`) |
+| 47 (plan, executed) | RED/verify = the executed plan itself per the task text (non-Rust surface; S13 precedent) | `run_plan.sh` + `make load-plan` executed end-to-end, exit 0, all 11 runs recorded in `results/*.json` + `plan.log` | every scenario's arrival verdict + the restart/publication/overload breakouts recorded in `RESULTS.md`; capacity rows in `docs/capacity-raspi.md` remain NOT MEASURED (task 48) | restart-window log line fixed to clock-time output after the run (cosmetic; the timestamps were already in the log) |
+
+### Files changed (S14 corrective addendum)
+
+- `tests/load/arrival.py` (new — arrival-rate generator), `tests/load/test_arrival.py` (new — 11 unit tests), `tests/load/.gitignore` (new)
+- `tests/load/seed.sh` (new), `tests/load/run_plan.sh` (new), `tests/load/README.md` (harness section + stale fixture-table facts corrected to the recorded 104-event fixture)
+- `tests/load/RESULTS.md` (new), `tests/load/results/{ENV.txt,plan.log,11× *.json}` (executed evidence; `results/logs/` process logs gitignored)
+- `crates/db/tests/load_fixture.rs` (new — ignored persistent seeder)
+- `Makefile` (`load-plan` target; `.PHONY`), `docs/capacity-raspi.md` (task-47 row + addendum; task-48 rows untouched, NOT MEASURED)
+- `openspec/changes/optimize-raspi-serving/tasks.md` (47 checked; **48 still `- [ ]`**)
+- No SQL query change ⇒ `.sqlx/` untouched (verified `git status .sqlx` clean); no migration; no production Rust source changed.
+
+### Test commands run (final state)
+
+- `python3 -m unittest discover -s tests/load -p 'test_*.py'` → RED (ImportError) → **11 passed**
+- `cargo test -p db --test load_fixture` → RED (no target) → GREEN; `bash tests/load/seed.sh` → fixture seeded + G1 published (`publish status=success`)
+- Smoke runs per scenario + burst + constrained overload + publication adoption (+4 s) + restart before the full plan
+- Falsifiability probe → exit 2; reverted (all recorded runs exit 0)
+- `make load-plan` → **plan exit 0**, 11 runs, exact figures in `tests/load/results/plan.log`
+- `SQLX_OFFLINE=true cargo test --workspace` → **108 suites `test result: ok`, 0 FAILED** (final boundary run; one earlier sweep hit the known timing flake `the_lagging_alert_fires_past_the_bound`, green standalone and in both clean re-runs — recorded honestly)
+- `cargo test -p search --test golden` → 6 passed (golden gate green; no ranking change)
+- `make lint` → fmt + clippy `-D warnings` green; `make validate-data` → PASS (104 events, 14 categories, 37 synonyms, 3501 external ids)
+- `cargo sqlx prepare` → **not needed** (no compile-time query changed; runtime-checked test SQL only)
+
+### Deviations from design/tasks (recorded)
+
+1. **"Closed-loop arrival rate" read as controlled arrival WITHOUT
+   response serialization.** The task's parenthetical and the spec's own
+   rationale ("un generador con tasa de llegada controlada para no
+   ocultar saturación por clientes que esperan la respuesta anterior")
+   both forbid waiting on the previous response: the generator schedules
+   slots independently and reports slots it could not dispatch as
+   **never sent** (reasons `dispatcher_late` / `inflight_cap`) — rather
+   than a think-time client loop. The dispatch loop itself is single-
+   threaded (sequential slot scheduling), which is the only "closed
+   loop" in the harness; every request's worker runs independently.
+2. **≥10-min scope interpretation:** the four levels (5/10/20/40 rps,
+   mixed traffic) and the three focused scenarios at the target level
+   20 rps (catalog / warm / unique — the goal's "repeated AND new
+   queries" plus the catalog p95 target make 20 rps their relevant
+   level) each ran 600 s measured after a 60 s warm-up; the publication
+   long run is 600 s measured. Restart (300 s), burst (one-shot) and
+   overload (60 s) are shape-specific scenarios without a sustained-
+   level requirement; all executed in full — nothing truncated, no
+   documented shortfall needed.
+3. **Live AGESIC download excluded from the publication scenario**:
+   network-dependent and it would replace the synthetic fixture
+   mid-plan; the dispatch's requirement is "one long run including
+   publication", which ran for real (build → validate → promote →
+   adoption swap, timed). The daily cycle's download phase stays the
+   ingest test-suite's surface (`failure_injection`, `retries`).
+4. **Publication trigger is a `last_seen_at` bump on 50 synthetic rows
+   of the disposable load database** — the same observable field the
+   daily ingestion refreshes; the dev database and the taxonomy
+   (YAML = source of truth) are never written by the harness.
+5. **Restart-run error attribution**: its 51 transport errors (1.7 %
+   of that run) are the planned downtime window (series-proven: only
+   buckets t=50/t=60); outside the window the run is error-free.
+   Reported, not hidden — the goal's "<1 % unexpected errors" applies
+   to steady-state levels, all of which recorded 0.
+6. **Cache-hit rate is not externally observable** (S10 counters are
+   in-process, no exporter on the closed route inventory): every run
+   reports the real mode distribution; the warm scenario's hit behavior
+   is evidenced by its latency profile, and the observability gap is
+   documented rather than assumed.
+7. **Local Mac / loopback / compose-Postgres execution** — explicitly
+   PROVISORY harness evidence in every recorded artifact; capacity
+   numbers (all rows) remain NOT MEASURED pending task 48.
+8. **Fixture-table drift corrected in `tests/load/README.md`**: the
+   task-3 table predates the taxonomy growth (said 20 events / 9-event
+   taxonomy); the fixture now seeds one event per taxonomy event (104,
+   asserted by `fixture_catalog`) with no synthetic fillers — table
+   updated to the recorded behavior while documenting the filler rule.
+9. **gga/marker**: the pre-commit hook re-staged `.gentle-ai-instance`
+   into the seeder commit; amended out immediately (marker left
+   untracked, never committed), the established recovery. No commit
+   used `--no-verify`.
+
+### Remaining tasks (unchecked at the tasks locator)
+
+- `- [ ] 48. [S14] Run the load plan on the target hardware ...` — **the
+  only remaining task**; pending target hardware (maintainer decision
+  recorded; annotated in tasks.md and `docs/capacity-raspi.md`).
+  Tasks 1–47 + 49 complete (48 of 49 checked, re-read at the locator).
+
+### Workload / PR boundary
+
+- Branch `opt/s14-load-harness` (cut from master `5106b44`). Work-unit
+  commits: `127c353 feat(load): arrival-rate load generator with
+  unit-tested scheduling (S14 task 47)`, `638b04d feat(load): persistent
+  task-3 fixture seeder and full load-plan runner (S14 task 47)`,
+  `a36df77 fix(load): print the restart window as clock time in the plan
+  log`, `78ba23f docs(load): record the executed task-47 load plan as
+  provisory local evidence`, plus the apply-progress/tasks record commit
+  closing the addendum. Not pushed; no PR opened (parent instruction).
+- Authored changed lines vs master: **5,611 insertions / 15 deletions**
+  total; **1,312 / 15 excluding the committed run evidence** (`results/*.json`
+  — machine-generated recorded measurements), of which ~1,002 lines are
+  the harness (generator + unit tests + scripts). Above the 400-line
+  budget as tasks.md forecasts for S14 (High risk); **the blanket
+  per-slice `size:exception` recorded 2026-09-18 applies** — no comments,
+  blank lines, docs, tests or measurement evidence were compressed.
+- Rollback boundary: revert the five commits — the harness, seeder,
+  evidence and docs disappear; no migration, no `.sqlx` entry, no
+  production source, no persisted data touched; the disposable
+  `tramitesuy_load` database remains droppable with
+  `DROP DATABASE tramitesuy_load WITH (FORCE)`; the compose stack and
+  its containers were never restarted (the harness always ran its own
+  release API process on :18080/:18081).
