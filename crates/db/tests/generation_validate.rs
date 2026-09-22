@@ -165,6 +165,60 @@ async fn zero_procedure_catalog_is_rejected() {
     drop_db(&db_name).await;
 }
 
+/// A candidate whose procedures are all inactive declares no usable
+/// procedure. The manifest counters count inactive rows, so they stay
+/// non-zero; the gate must inspect the generation's own immutable projection
+/// and reject the candidate as `empty_active_catalog`.
+#[tokio::test(flavor = "multi_thread")]
+async fn all_inactive_procedures_are_rejected_as_empty_active_catalog() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_small_catalog(&pool).await;
+    sqlx::query("UPDATE procedures SET status = 'inactive', deactivated_at = now()")
+        .execute(&pool)
+        .await
+        .expect("deactivate every procedure");
+
+    let report = db::generations::build::build_generation(&pool, "taxonomy-fixture-s6")
+        .await
+        .expect("build succeeds (a build is not a publication)");
+
+    // The manifest counters count inactive rows, so they are non-zero — the
+    // pre-existing `empty_catalog` check cannot catch this candidate.
+    let (event_count, procedure_count): (i32, i32) = sqlx::query_as(
+        "SELECT event_count, procedure_count FROM catalog_generations \
+         WHERE generation_id = $1",
+    )
+    .bind(report.generation_id)
+    .fetch_one(&pool)
+    .await
+    .expect("manifest row exists");
+    assert!(
+        event_count > 0 && procedure_count > 0,
+        "the manifest counters must be non-zero for this candidate to be a real gap"
+    );
+
+    let gate = db::generations::validate::validate_generation(&pool, report.generation_id, None)
+        .await
+        .expect("validation runs");
+    assert!(
+        gate.failures
+            .iter()
+            .any(|f| f.kind == "empty_active_catalog"),
+        "an all-inactive catalog must be rejected as empty_active_catalog, got: {:?}",
+        gate.failures
+    );
+
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM catalog_generations WHERE generation_id = $1")
+            .bind(report.generation_id)
+            .fetch_one(&pool)
+            .await
+            .expect("manifest row exists");
+    assert_ne!(status, "validated", "a rejected candidate never validates");
+
+    drop_db(&db_name).await;
+}
+
 /// A dangling relation (a card referencing a procedure whose detail row is
 /// missing) is rejected as relation-integrity failure.
 #[tokio::test(flavor = "multi_thread")]

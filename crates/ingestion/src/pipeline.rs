@@ -14,7 +14,11 @@ use std::collections::BTreeSet;
 
 /// Runs one full ingestion pass and returns the deterministic summary.
 /// Validation findings (skips, duplicates) are warnings on the summary;
-/// only structural failures (fetch, parse, repo) are hard errors.
+/// only structural failures (fetch, parse, repo) are hard errors. A batch
+/// that yields no valid row is such a structural failure
+/// ([`IngestionError::EmptyBatch`]): the run returns before touching state,
+/// because `deactivate_missing` with an empty present set would deactivate
+/// the entire catalog.
 pub fn run(
     fetcher: &dyn SourceFetcher,
     format: &dyn FormatStrategy,
@@ -37,6 +41,18 @@ pub fn run(
     let outcome = dedup(valid);
     summary.record_duplicates(outcome.warnings, outcome.resolved_rows);
 
+    // An empty or fully invalid batch must change nothing. `deactivate_missing`
+    // treats every known id absent from `present` as missing, so with an empty
+    // `present` set it would soft-delete the whole catalog. The guard therefore
+    // sits before every state-changing repository call (`upsert_procedures`,
+    // `close_versions`, `deactivate_missing`, `touch_last_seen`).
+    if outcome.winners.is_empty() {
+        return Err(IngestionError::EmptyBatch {
+            rows_read: summary.rows_read,
+            skipped: summary.rows_skipped,
+        });
+    }
+
     // normalize + hash + diff vs latest known hashes (IN-6, DM-3).
     let latest = repo.latest_hashes()?;
     let plan = diff::plan(&outcome.winners, &latest)?;
@@ -54,7 +70,11 @@ pub fn run(
         repo.close_versions(&plan.closes, now.clone())?;
     }
     // soft delete (IN-7): rows absent from the source become inactive with
-    // deactivated_at stamped, never deleted.
+    // deactivated_at stamped, never deleted. The empty-batch guard above only
+    // covers the fully empty / fully invalid batch (empty `present`); a
+    // non-empty partial batch still deactivates every absent row by design, so
+    // the publication validation gate is the second line of defence against a
+    // mass deactivation.
     let present: BTreeSet<String> = outcome
         .winners
         .iter()

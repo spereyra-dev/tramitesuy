@@ -38,4 +38,10 @@ pub enum IngestionError {
     Fetch(#[from] FetchError),
     #[error(transparent)]
     Repo(#[from] RepoError),
+    /// The source batch yielded no valid row (empty payload, or every row
+    /// skipped). Persisting it would be a no-op at best and, because
+    /// `deactivate_missing` treats every absent id as missing, would
+    /// soft-delete the entire catalog at worst — so the run changes nothing.
+    #[error("ingestion batch is empty: rows_read={rows_read}, skipped={skipped}")]
+    EmptyBatch { rows_read: usize, skipped: usize },
 }

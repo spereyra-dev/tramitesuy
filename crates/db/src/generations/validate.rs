@@ -5,8 +5,8 @@
 //! - **manifest**: the generation exists and its projections report complete
 //!   (`projection_status = 'complete'`) — an interrupted build (design §6.4)
 //!   is never a publication candidate;
-//! - **empty catalog**: an accidentally empty source (zero events or zero
-//!   procedures) is rejected;
+//! - **empty catalog**: an accidentally empty source (zero events, zero
+//!   procedures, or zero *active* procedures) is rejected;
 //! - **relation integrity**: every projected card resolves to a projected
 //!   procedure detail and to a projected event (no dangling relations);
 //! - **schema**: every projected JSON artifact carries the keys the API
@@ -31,8 +31,8 @@ use uuid::Uuid;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationFailure {
     /// The gate that failed: `manifest` | `incomplete_projections` |
-    /// `empty_catalog` | `relation_integrity` | `schema` |
-    /// `search_projection` | `taxonomy`.
+    /// `empty_catalog` | `empty_active_catalog` | `relation_integrity` |
+    /// `schema` | `search_projection` | `taxonomy`.
     pub kind: &'static str,
     pub detail: String,
 }
@@ -112,6 +112,28 @@ pub async fn validate_generation(
             generation_id,
             failures,
         });
+    }
+
+    // The manifest counters count every projected procedure, inactive rows
+    // included, so a catalog whose procedures are all inactive passes the
+    // checks above. A publication with no usable procedure is just as broken
+    // as one with none at all, so require at least one active procedure from
+    // the generation's own immutable projection — the manifest cannot tell.
+    let active_procedure_count: i64 = sqlx::query_scalar!(
+        "SELECT count(*) AS \"count!\" FROM generation_procedure_details \
+         WHERE generation_id = $1 AND details ->> 'status' = 'active'",
+        generation_id,
+    )
+    .fetch_one(pool)
+    .await?;
+    if active_procedure_count == 0 {
+        failures.push(ValidationFailure {
+            kind: "empty_active_catalog",
+            detail: "the candidate declares no active procedure".to_string(),
+        });
+        // Accumulate and keep checking: a corrupted candidate may also carry
+        // dangling relations or schema drift, and the report must name every
+        // applicable failure instead of short-circuiting on the first one.
     }
 
     validate_search_projections(pool, generation_id, &mut failures).await?;

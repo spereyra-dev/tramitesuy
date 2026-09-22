@@ -250,16 +250,21 @@ async fn validation_failure_keeps_the_previous_version_active() {
         .execute(&pool)
         .await
         .expect("corrupt the candidate's projected details");
-    // The corrupted candidate is rejected as a publication candidate.
+    // The corrupted candidate is rejected as a publication candidate, and
+    // the gate reports every applicable failure: the missing active procedure
+    // AND the dangling relations, in that order, instead of short-circuiting.
     let gate_after = db::generations::validate::validate_generation(&pool, g2, Some(&taxonomy))
         .await
         .expect("validation after corruption");
-    assert!(
-        gate_after
-            .failures
-            .iter()
-            .any(|failure| failure.kind == "relation_integrity"),
-        "the corrupted artifacts are rejected: {:?}",
+    let failure_kinds: Vec<&str> = gate_after
+        .failures
+        .iter()
+        .map(|failure| failure.kind)
+        .collect();
+    assert_eq!(
+        failure_kinds,
+        vec!["empty_active_catalog", "relation_integrity"],
+        "the corrupted candidate reports every applicable failure: {:?}",
         gate_after.failures
     );
 
