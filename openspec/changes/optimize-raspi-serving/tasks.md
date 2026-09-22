@@ -277,7 +277,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: a transient failure that succeeds on the second attempt does not record a final failure.
   - Satisfies: OPT-03, ingestion delta (bounded increasing retries).
 
-- [ ] 37. [S12] Query-length validation before any side effect: validate `q.chars().count() ≤ q_max_chars` (512) and `q.len() ≤ q_max_bytes` (2048) in `apps/api/src/handlers/search.rs` before normalization, cache lookup/insertion, and any SQL; excess returns 400.
+- [x] 37. [S12] Query-length validation before any side effect: validate `q.chars().count() ≤ q_max_chars` (512) and `q.len() ≤ q_max_bytes` (2048) in `apps/api/src/handlers/search.rs` before normalization, cache lookup/insertion, and any SQL; excess returns 400.
   - RED: `cargo test -p api --test query_limits` — a 600-character `q` returns 400 with no log row, no candidate-provider query, and an untouched cache; exactly 512 characters within 2 KiB proceeds normally; both limits are configuration-driven.
   - TRIANGULATE: multi-byte characters are counted by Unicode scalar (510 chars / 1500 bytes passes; 513 chars fails).
   - Satisfies: OPT-10, api delta ("Query length limit validated before any processing").

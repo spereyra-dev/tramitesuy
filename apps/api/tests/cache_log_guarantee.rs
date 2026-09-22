@@ -12,6 +12,7 @@ mod support;
 use axum::http::StatusCode;
 use std::sync::Arc;
 
+use api::config::ApiLimits;
 use api::metrics::MemoryMetrics;
 use support::*;
 
@@ -108,7 +109,13 @@ async fn hundred_concurrent_identical_requests_produce_hundred_logs() {
     let (app, _state) = spawn_app_with_generation_state_and_metrics(
         pool.clone(),
         metrics.clone(),
-        limits_without_warming(),
+        // S12 admission default is 32; this test drives 100 concurrent
+        // requests, so its budget is raised to admit all of them (the
+        // limit under test here is per-request logs, not admission).
+        ApiLimits {
+            max_concurrent_searches: 100,
+            ..limits_without_warming()
+        },
     )
     .await;
 

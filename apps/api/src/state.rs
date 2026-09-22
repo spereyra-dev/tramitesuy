@@ -77,6 +77,12 @@ pub struct AppState {
     /// The serving limits (S3 task 8): deadline/admission/q limits are
     /// carried here and consumed by their own later slices.
     pub limits: ApiLimits,
+    /// The admission limiter (S12 task 38, design §7.2):
+    /// `Semaphore(max_concurrent_searches)` shared by `/search` AND
+    /// `/search/debug` (no separate debug budget); one permit is held
+    /// across the whole admitted work — compute, log persistence, and
+    /// payload — so total in-flight work never exceeds the limit.
+    pub admission: Arc<tokio::sync::Semaphore>,
     /// The privacy-safe metrics sink (task 1): every served request reports
     /// route/status latency, SQL ops, cache events, and generation state
     /// through this seam — never query-derived text (R14).
@@ -193,6 +199,7 @@ impl AppState {
         metrics: Arc<dyn Metrics>,
     ) -> Self {
         let provider_fetch = limits.provider_fetch;
+        let admission = Arc::new(tokio::sync::Semaphore::new(limits.max_concurrent_searches));
         AppState {
             active: Arc::new(ArcSwap::from_pointee(Arc::new(ActiveGeneration::cold(
                 bundle.clone(),
@@ -202,6 +209,7 @@ impl AppState {
             pool,
             provider_fetch,
             limits,
+            admission,
             metrics,
             bundle: Arc::new(bundle),
             retired: Arc::new(Mutex::new(Vec::new())),

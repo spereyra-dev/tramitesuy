@@ -40,6 +40,7 @@ pub async fn search(
     let generation = state.active.load_full();
     let query = query_parameter(&params)?;
     validate_query_length(&state.limits, &query)?;
+    let _admission = admit(&state)?;
     let (outcome, cache_write, provider_ops) =
         lookup_or_compute(&state, &generation, &query).await?;
     // Task 1: the provider statements are consumed by the pipeline — ZERO
@@ -74,6 +75,7 @@ pub async fn debug(
     let generation = state.active.load_full();
     let query = query_parameter(&params)?;
     validate_query_length(&state.limits, &query)?;
+    let _admission = admit(&state)?;
     let (outcome, cache_write, provider_ops) =
         lookup_or_compute(&state, &generation, &query).await?;
     state.metrics.observe_sql_ops(ROUTE, provider_ops);
@@ -151,6 +153,20 @@ pub(crate) fn cache_write_commit(
         metrics.observe_cache(CacheEvent::Eviction);
     }
     metrics.observe_cache_size(generation.cache.bytes(), generation.cache.entry_count());
+}
+
+/// S12 task 38 (design §7.2): admission control over TOTAL work. One
+/// permit is taken up front with `try_acquire` — saturation answers the
+/// overload contract immediately (503 + `Retry-After`, no unbounded
+/// queue; the request is rejected, never enqueued) — and the permit is
+/// held by the handler for the WHOLE admitted work (compute, log
+/// persistence, payload): dropping it with the handler future releases
+/// the slot on every exit path, including cancellation. `/search` and
+/// `/search/debug` share this one limiter (no separate debug budget).
+fn admit(state: &AppState) -> Result<tokio::sync::OwnedSemaphorePermit, ApiError> {
+    Arc::clone(&state.admission)
+        .try_acquire_owned()
+        .map_err(|_| ApiError::overload(state.limits.retry_after_seconds))
 }
 
 /// The search pipeline with the S9 cache in front (tasks 27/28) and the

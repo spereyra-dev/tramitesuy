@@ -45,7 +45,13 @@ async fn hundred_identical_concurrent_requests_share_one_computation() {
     let (app, _state) = spawn_app_with_generation_state_and_metrics(
         pool.clone(),
         metrics.clone(),
-        limits_without_warming(),
+        // S12 admission default is 32; this test drives 100 concurrent
+        // requests, so its budget is raised to admit all of them (the
+        // limit under test here is single-flight, not admission).
+        ApiLimits {
+            max_concurrent_searches: 100,
+            ..limits_without_warming()
+        },
     )
     .await;
 
