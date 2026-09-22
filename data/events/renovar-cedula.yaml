@@ -1,6 +1,6 @@
 slug: renovar-cedula
 name: Renovar la cédula de identidad
-description: Trámites para la renovación del documento de identidad uruguayo ante la Dirección Nacional de Identificación Civil.
+description: "Trámites para la renovación del documento de identidad uruguayo ante la Dirección Nacional de Identificación Civil. El catálogo oficial de la DNIC publica únicamente la primera expedición (607) y la renovación (6538): no existe un trámite nacional explícito de pérdida o duplicado, por lo que una consulta de pérdida, robo o duplicado se orienta hacia la renovación."
 category: documentos
 keywords:
   - term: renovar
@@ -20,7 +20,26 @@ keywords:
     weight: 8
   - term: duplicado
     type: MODIFIER
+    weight: 8
+  # Pérdida/robo del documento: la pérdida de la cédula no tiene trámite
+  # nacional propio (DNIC solo publica primera vez y renovación), así que la
+  # renovación reconoce el vocabulario de extravío para orientar al ciudadano.
+  - term: perder
+    type: ACTION
+    weight: 10
+  - term: extraviar
+    type: ACTION
+    weight: 10
+  - term: robar
+    type: ACTION
+    weight: 8
+  # La sinonimia global ya pliega `dni` -> `documento`; la declaración
+  # explícita documenta la superficie y su peso queda por debajo del de la
+  # primera expedición para no robarle sus consultas de primera cédula.
+  - term: dni
+    type: ENTITY
     weight: 4
+    canonical: documento
   - term: sacar
     type: ACTION
     weight: 12
@@ -77,7 +96,11 @@ tests:
     - renovar la cedula de identidad
     - me vencio el dni como lo renuevo
     - renovar el documento vencido
+    - perdi la cedula de identidad
+    - me robaron el documento de identidad
+    - necesito un duplicado de mi cedula
   negative:
     - sacar la cedula por primera vez
     - renovar el pasaporte
     - cambiar la matricula del auto
+    - perdi la libreta de conducir

@@ -1,6 +1,6 @@
 slug: comprar-vehiculo
 name: Comprar un vehículo
-description: Requisitos y trámites para comprar un vehículo nuevo o usado en Uruguay.
+description: "Requisitos y trámites para que un particular compre un vehículo nuevo o usado en Uruguay, con los trámites departamentales de referencia: el vehículo nuevo se empadrona y el usado requiere transferencia de titularidad."
 category: vehiculos
 keywords:
   - term: comprar
@@ -28,15 +28,12 @@ rules:
     entity: vehiculo
     bonus: 15
 relations:
-  - external_id: "4551"
+  - external_id: "6978"
     order: 1
     required: true
-  - external_id: "2368"
+  - external_id: "6980"
     order: 2
     required: true
-  - external_id: "6995"
-    order: 3
-    required: false
 tests:
   positive:
     - compre un auto usado

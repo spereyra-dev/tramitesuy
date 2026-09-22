@@ -22,22 +22,31 @@ keywords:
     type: ACTION
     weight: 15
     negative: true
+  # Superficie coloquial para la licencia de conducir: `manejar` no está en
+  # la sinonimia global, así que se declara aquí para que "perdí el documento
+  # para manejar" siga siendo una consulta de libreta y no de cédula.
+  - term: manejar
+    type: MODIFIER
+    weight: 4
 rules:
   - action: perder
     entity: licencia
     bonus: 15
+  - action: perder
+    entity: conducir
+    bonus: 15
 relations:
-  - external_id: "4327"
+  - external_id: "4428"
     order: 1
     required: true
-  - external_id: "4428"
-    order: 2
-    required: false
 tests:
   positive:
     - perdi mi libreta de conducir
     - perdi la licencia de conducir
     - se me perdio la libreta para manejar
+    - perdi mi documento de conducir
+    - se me perdio el documento para manejar
   negative:
     - cambiar la matricula de mi moto
     - quiero cambiar la matricula del auto
+    - perdi la cedula de identidad
