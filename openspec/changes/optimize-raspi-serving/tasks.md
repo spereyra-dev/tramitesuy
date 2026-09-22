@@ -282,12 +282,12 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: multi-byte characters are counted by Unicode scalar (510 chars / 1500 bytes passes; 513 chars fails).
   - Satisfies: OPT-10, api delta ("Query length limit validated before any processing").
 
-- [ ] 38. [S12] Admission control over total work: `tokio::sync::Semaphore(max_concurrent_searches)` (default 32) held across compute + log + payload in the search route, shared by `/search/debug` (read-only); saturation returns 503 + `Retry-After` with no unbounded queue, and cancellation releases the permit and the in-flight holders.
+- [x] 38. [S12] Admission control over total work: `tokio::sync::Semaphore(max_concurrent_searches)` (default 32) held across compute + log + payload in the search route, shared by `/search/debug` (read-only); saturation returns 503 + `Retry-After` with no unbounded queue, and cancellation releases the permit and the in-flight holders.
   - RED: `cargo test -p api --test admission` — the 33rd concurrent search receives 503 with `Retry-After` immediately; in-flight work never exceeds the limit while logs are still being persisted; a cancelled request leaves no unbounded work.
   - TRIANGULATE: `/search/debug` (read-only) shares the same limiter (no separate debug budget).
   - Satisfies: OPT-10, api delta ("Controlled overload response"), operations delta (admission counts log work), R11.
 
-- [ ] 39. [S12] Deadline and acquisition-timeout error contract: wrap all admitted work in `tokio::time::timeout(search_deadline)` (default 2 s) returning 504 with the documented structured error shape and no internal detail (no SQL text, stack, or timings); exhausting the pool within `acquire_timeout` (500 ms) returns the same 503 + `Retry-After` shape as overload; cache waits are bounded by the remaining deadline.
+- [x] 39. [S12] Deadline and acquisition-timeout error contract: wrap all admitted work in `tokio::time::timeout(search_deadline)` (default 2 s) returning 504 with the documented structured error shape and no internal detail (no SQL text, stack, or timings); exhausting the pool within `acquire_timeout` (500 ms) returns the same 503 + `Retry-After` shape as overload; cache waits are bounded by the remaining deadline.
   - RED: `cargo test -p api --test deadline` — a computation exceeding 2 s returns 504 with the documented body, distinct from the 503 overload response; the body contains no internals; an exhausted pool returns 503 + `Retry-After` rather than waiting 30 s.
   - GREEN: shared error constructors in `apps/api/src/error.rs`; the API never invents 429 (an explicit proxy policy may).
   - TRIANGULATE: a request cancelled by the deadline releases its permit, single-flight holder, and generation `Arc`.

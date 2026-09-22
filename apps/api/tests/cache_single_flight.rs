@@ -118,7 +118,7 @@ async fn hundred_identical_concurrent_requests_share_one_computation() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_waiter_whose_window_elapses_recomputes_instead_of_hanging() {
+async fn an_expired_waiter_is_bounded_by_the_deadline_never_hangs() {
     let (pool, db_name) = fresh_migrated_db().await;
     seed_search_fixture(&pool).await;
     let metrics = Arc::new(MemoryMetrics::new());
@@ -145,7 +145,7 @@ async fn a_waiter_whose_window_elapses_recomputes_instead_of_hanging() {
         .map(|_| {
             let app = app.clone();
             tokio::spawn(async move {
-                request(
+                request_with_headers(
                     &app,
                     "GET",
                     &format!("{SEARCH}?q=compre%20un%20auto%20usado"),
@@ -156,25 +156,37 @@ async fn a_waiter_whose_window_elapses_recomputes_instead_of_hanging() {
         .collect();
     wait_for_misses(&metrics, 2).await;
     // Hold the lock past the 100 ms window: the waiter's window elapses
-    // while the leader is still computing.
+    // while the leader is still computing. Under the S12 deadline
+    // contract (task 39) the cache wait shares the request's REMAINING
+    // deadline budget, and the whole admitted work sits inside the same
+    // deadline — so an expired waiter never recomputes into fresh time:
+    // the documented 504 answers BOTH requests while the barrier is
+    // still held. The old pre-S12 behavior (recompute into fresh time,
+    // then succeed) would hang here instead; bounded termination is the
+    // contract this test now pins.
     tokio::time::sleep(Duration::from_millis(300)).await;
-    lock_tx.commit().await.expect("release the barrier");
-
+    for handle in &handles {
+        assert!(
+            handle.is_finished(),
+            "the expired waiter is terminated by the deadline, never hangs"
+        );
+    }
     for handle in handles {
-        let (status, _) = handle.await.expect("request task completes");
+        let (status, _headers, _body) = handle.await.expect("request task completes");
         assert_eq!(
             status,
-            axum::http::StatusCode::OK,
-            "the expired waiter recomputes and succeeds within its deadline"
+            axum::http::StatusCode::GATEWAY_TIMEOUT,
+            "the exhausted deadline answers the documented 504"
         );
     }
 
-    // Two computations: the leader's, plus the expired waiter's own. The
-    // waiter was NOT served by the group.
-    assert_eq!(
-        metrics.cache_total(CacheEvent::Compute),
-        2,
-        "the expired waiter recomputed on its own account"
+    // The waiter was NOT served by the group (it expired, never grouped);
+    // the leader's computation started. The expired waiter's own
+    // recompute races the outer deadline (remaining budget is spent), so
+    // its Compute count is not deterministic — only the leader's is.
+    assert!(
+        metrics.cache_total(CacheEvent::Compute) >= 1,
+        "the leader computed past the miss"
     );
     assert_eq!(
         metrics.cache_total(CacheEvent::Grouped),
@@ -182,6 +194,7 @@ async fn a_waiter_whose_window_elapses_recomputes_instead_of_hanging() {
         "the expired waiter was never served by the group"
     );
 
+    lock_tx.commit().await.expect("release the barrier");
     common_drop(&db_name).await;
 }
 

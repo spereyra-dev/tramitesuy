@@ -26,6 +26,11 @@ pub enum ApiError {
     /// body — distinct from the deadline 504, and never a 429 (the API
     /// does not invent rate-limit codes; an explicit proxy policy may).
     Overloaded { retry_after_seconds: u64 },
+    /// S12 task 39 (design §7.2): the request deadline elapsed with the
+    /// work unfinished. Answers 504 with the documented body — proxies
+    /// may retry a 503 but MUST NOT be led to retry a 504, so no
+    /// `Retry-After` is ever attached. No internal detail is exposed.
+    DeadlineExceeded,
 }
 
 impl ApiError {
@@ -35,6 +40,23 @@ impl ApiError {
     pub fn overload(retry_after_seconds: u64) -> ApiError {
         ApiError::Overloaded {
             retry_after_seconds,
+        }
+    }
+
+    /// The shared deadline constructor: 504 with the documented body.
+    pub fn deadline() -> ApiError {
+        ApiError::DeadlineExceeded
+    }
+
+    /// Maps a direct sqlx failure (task 39): pool exhaustion within the
+    /// acquire timeout (`PoolTimedOut`) is the documented overload
+    /// contract — the SAME 503 + `Retry-After` shape as saturation —
+    /// while everything else stays a structural 500. The detail is
+    /// logged server-side, never serialized (leak-none clause).
+    pub fn from_sqlx(error: sqlx::Error, retry_after_seconds: u64) -> ApiError {
+        match error {
+            sqlx::Error::PoolTimedOut => ApiError::overload(retry_after_seconds),
+            other => ApiError::InternalServerError(format!("database operation failed: {other}")),
         }
     }
 }
@@ -63,6 +85,10 @@ impl IntoResponse for ApiError {
                     response.headers_mut().insert(RETRY_AFTER, value);
                 }
                 response
+            }
+            ApiError::DeadlineExceeded => {
+                eprintln!("api deadline exceeded");
+                public_error(StatusCode::GATEWAY_TIMEOUT, "search deadline exceeded")
             }
         }
     }

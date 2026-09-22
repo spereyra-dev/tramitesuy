@@ -41,26 +41,14 @@ pub async fn search(
     let query = query_parameter(&params)?;
     validate_query_length(&state.limits, &query)?;
     let _admission = admit(&state)?;
-    let (outcome, cache_write, provider_ops) =
-        lookup_or_compute(&state, &generation, &query).await?;
-    // Task 1: the provider statements are consumed by the pipeline — ZERO
-    // on a cache hit (no providers ran), the generation's provider cost on
-    // a compute.
-    state.metrics.observe_sql_ops(ROUTE, provider_ops);
-
-    let log_ops = persist_log(&state, &query, &outcome).await?;
-    state.metrics.observe_sql_ops(ROUTE, log_ops);
-
-    // S9 task 28: the computation enters the cache only after the whole
-    // request succeeds (the log persistence is part of it), so a search
-    // that ends in a structural error caches nothing (search-cache delta).
-    cache_write_commit(cache_write, &generation, &state.metrics);
-
-    let payload = match outcome.selection.mode {
-        SelectionMode::Open => open_payload(&state, &generation, &outcome).await?,
-        SelectionMode::Disambiguation => disambiguation_payload(&generation, &outcome),
-        SelectionMode::Categories => categories_payload(&generation, &outcome),
-    };
+    let payload = admitted_work(
+        &state,
+        &generation,
+        &query,
+        request_deadline(&state),
+        PayloadRoute::Search,
+    )
+    .await?;
     Ok(Json(payload))
 }
 
@@ -76,18 +64,96 @@ pub async fn debug(
     let query = query_parameter(&params)?;
     validate_query_length(&state.limits, &query)?;
     let _admission = admit(&state)?;
-    let (outcome, cache_write, provider_ops) =
-        lookup_or_compute(&state, &generation, &query).await?;
-    state.metrics.observe_sql_ops(ROUTE, provider_ops);
-
-    let log_ops = persist_log(&state, &query, &outcome).await?;
-    state.metrics.observe_sql_ops(ROUTE, log_ops);
-
-    cache_write_commit(cache_write, &generation, &state.metrics);
-
-    Ok(Json(debug_payload(&generation, &outcome)))
+    let payload = admitted_work(
+        &state,
+        &generation,
+        &query,
+        request_deadline(&state),
+        PayloadRoute::Debug,
+    )
+    .await?;
+    Ok(Json(payload))
 }
 
+/// Which payload shape the admitted work builds once the outcome is
+/// known (the only difference between the two search routes — everything
+/// else shares the same deadline-bounded pipeline).
+enum PayloadRoute {
+    Search,
+    Debug,
+}
+
+/// The request's deadline instant (S12 task 39, design §7.2):
+/// `tokio::time::Instant::now() + search_deadline`, configuration-driven.
+/// One `Instant` is shared by the outer `timeout_at` AND the single-flight
+/// wait window, so a waiter never waits beyond its request's remaining
+/// budget (design §7.2 "esperas de caché acotadas").
+fn request_deadline(state: &AppState) -> tokio::time::Instant {
+    tokio::time::Instant::now() + state.limits.search_deadline
+}
+
+/// S12 task 39 (design §7.2): ALL admitted work — the bounded pool
+/// check, compute (lookup/join/compute), the log persistence, the cache
+/// commit, and the payload — runs inside ONE `timeout_at(search_deadline)`.
+/// Elapsing cancels the inner future (releasing the admission permit,
+/// single-flight holders, and the captured generation `Arc` with it) and
+/// answers 504 with the documented body, distinct from the overload 503;
+/// the error path exposes no internals (R14). The deadline never applies
+/// to admission itself: a saturated request is rejected immediately, not
+/// after the window.
+async fn admitted_work(
+    state: &AppState,
+    generation: &ActiveGeneration,
+    query: &str,
+    deadline: tokio::time::Instant,
+    route: PayloadRoute,
+) -> Result<serde_json::Value, ApiError> {
+    tokio::time::timeout_at(deadline, async {
+        ensure_pool_available(state).await?;
+        let (outcome, cache_write, provider_ops) =
+            lookup_or_compute(state, generation, query, deadline).await?;
+        // Task 1: the provider statements are consumed by the pipeline —
+        // ZERO on a cache hit (no providers ran), the generation's
+        // provider cost on a compute.
+        state.metrics.observe_sql_ops(ROUTE, provider_ops);
+
+        let log_ops = persist_log(state, query, &outcome).await?;
+        state.metrics.observe_sql_ops(ROUTE, log_ops);
+
+        // S9 task 28: the computation enters the cache only after the
+        // whole request succeeds (the log persistence is part of it), so
+        // a search that ends in a structural error caches nothing.
+        cache_write_commit(cache_write, generation, &state.metrics);
+
+        let payload = match route {
+            PayloadRoute::Search => match outcome.selection.mode {
+                SelectionMode::Open => open_payload(state, generation, &outcome).await?,
+                SelectionMode::Disambiguation => disambiguation_payload(generation, &outcome),
+                SelectionMode::Categories => categories_payload(generation, &outcome),
+            },
+            PayloadRoute::Debug => debug_payload(generation, &outcome),
+        };
+        Ok::<_, ApiError>(payload)
+    })
+    .await
+    .map_err(|_| ApiError::deadline())?
+}
+
+/// S12 task 39 (design §7.2): the bounded pool-acquisition check. Exhausting
+/// the pool within `acquire_timeout` (500 ms default, configuration-driven)
+/// answers the SAME 503 + `Retry-After` overload shape as admission
+/// saturation — never the pool's own default wait (the 30 s the pre-S12
+/// pipeline would suffer), and never a chained retry. The acquired
+/// connection is released immediately: the check proves availability
+/// without holding capacity (admission may hold up to 32 permits against
+/// a pool the operator sizes independently).
+async fn ensure_pool_available(state: &AppState) -> Result<(), ApiError> {
+    match tokio::time::timeout(state.limits.acquire_timeout, state.pool.acquire()).await {
+        Ok(Ok(_connection)) => Ok(()),
+        Ok(Err(error)) => Err(ApiError::from_sqlx(error, state.limits.retry_after_seconds)),
+        Err(_elapsed) => Err(ApiError::overload(state.limits.retry_after_seconds)),
+    }
+}
 /// Extracts the required `q` parameter (missing or blank → 400).
 fn query_parameter(params: &HashMap<String, String>) -> Result<String, ApiError> {
     params
@@ -182,6 +248,7 @@ pub(crate) async fn lookup_or_compute(
     state: &AppState,
     generation: &ActiveGeneration,
     query: &str,
+    deadline: tokio::time::Instant,
 ) -> Result<(SearchOutcome, CacheWrite, u64), ApiError> {
     // Design §3.2: the key hashes the EFFECTIVE trimmed q the engine
     // receives — the same string `SearchEngine::normalize` gets. The
@@ -217,16 +284,22 @@ pub(crate) async fn lookup_or_compute(
                 Err(error) => {
                     let error = Arc::new(error);
                     publisher.publish(SharedOutcome::Failed(Arc::clone(&error)));
-                    Err(provider_failure(&error))
+                    Err(provider_failure(&state.limits, &error))
                 }
             }
         }
         Flight::Wait(waiter) => {
-            // Bounded wait: the window is the request's deadline budget
-            // (S12 refines it to the REMAINING budget once the deadline
-            // wrapper lands). Elapsed → recompute on this request's own
-            // account, never hang.
-            match waiter.wait(state.limits.search_deadline).await {
+            // Bounded wait (S12 task 39, design §7.2 "esperas de caché
+            // acotadas"): the window is the request's REMAINING deadline
+            // budget — never more. A waiter whose remaining budget is
+            // already spent (or whose window elapses) recomputes on its
+            // own account, never hangs.
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                state.metrics.observe_cache(CacheEvent::Compute);
+                return recompute(state, generation, query).await;
+            }
+            match waiter.wait(remaining).await {
                 Some(outcome) => match &*outcome {
                     SharedOutcome::Computed(entry) => {
                         state.metrics.observe_cache(CacheEvent::Grouped);
@@ -236,7 +309,7 @@ pub(crate) async fn lookup_or_compute(
                             0,
                         ))
                     }
-                    SharedOutcome::Failed(error) => Err(provider_failure(error)),
+                    SharedOutcome::Failed(error) => Err(provider_failure(&state.limits, error)),
                     SharedOutcome::Abandoned => {
                         // The leader was cancelled mid-computation: this
                         // request recomputes fresh for itself.
@@ -286,7 +359,7 @@ async fn recompute(
             );
             Ok((outcome, CacheWrite::Pending { key, entry }, provider_ops))
         }
-        Err(error) => Err(provider_failure(&error)),
+        Err(error) => Err(provider_failure(&state.limits, &error)),
     }
 }
 
@@ -355,9 +428,25 @@ async fn fetch_candidates_with<F: CandidateProvider, T: CandidateProvider>(
 /// pipeline produced (search-engine delta: provider failure is structural,
 /// never a partial ranking). Takes the shared error by reference so the
 /// single-flight leader can broadcast the same failure to its waiters.
-fn provider_failure(error: &search::engine::EngineError) -> ApiError {
+/// S12 task 39: pool exhaustion within the acquire timeout surfaces
+/// INSIDE the provider's stringified engine error (`crates/db` providers
+/// wrap the sqlx `Display` into `EngineError::ProviderFailed`, so the
+/// variant itself is unreachable here); its message carries sqlx's
+/// `PoolTimedOut` Display text, which answers the SAME 503 + `Retry-After`
+/// overload shape as saturation instead of a structural 500. The marker
+/// is pinned to sqlx 0.9's `#[error("pool timed out while waiting for an
+/// open connection")]`; if sqlx ever changes the text this degrades to the
+/// old 500 behavior (never to a wrong success), which is safe.
+fn provider_failure(limits: &ApiLimits, error: &search::engine::EngineError) -> ApiError {
+    if error.to_string().contains(POOL_TIMED_OUT_MARKER) {
+        return ApiError::overload(limits.retry_after_seconds);
+    }
     ApiError::InternalServerError(format!("search pipeline failed: {error}"))
 }
+
+/// sqlx 0.9 `Error::PoolTimedOut`'s Display text (the marker matched in
+/// provider errors that were stringified inside `crates/db`).
+const POOL_TIMED_OUT_MARKER: &str = "pool timed out while waiting for an open connection";
 
 /// The provider statements the pipeline issues per captured generation
 /// (task 1 counts them at the call site): 2 on the legacy no-snapshot path
@@ -401,9 +490,9 @@ async fn persist_log(
     )
     .await
     .map(|_| ())
-    .map_err(|error| {
-        ApiError::InternalServerError(format!("search log persistence failed: {error}"))
-    })?;
+    // S12 task 39: pool exhaustion inside the log insert is the overload
+    // contract (503 + Retry-After), not a structural 500.
+    .map_err(|error| ApiError::from_sqlx(error, state.limits.retry_after_seconds))?;
     Ok(sql_ops)
 }
 
@@ -451,10 +540,10 @@ async fn open_payload(
                 dto::procedure_cards_from_event_cards(cards)
             }
             Ok(None) => Vec::new(),
+            // S12 task 39: pool exhaustion inside the payload query is
+            // the overload contract (503 + Retry-After), not a 500.
             Err(error) => {
-                return Err(ApiError::InternalServerError(format!(
-                    "event procedures query failed: {error}"
-                )));
+                return Err(ApiError::from_sqlx(error, state.limits.retry_after_seconds));
             }
         },
     };

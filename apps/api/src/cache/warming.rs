@@ -48,7 +48,11 @@ pub async fn run(state: &AppState, queries: &[String]) -> usize {
         if effective.is_empty() {
             continue;
         }
-        match lookup_or_compute(state, &generation, effective).await {
+        // S12 task 39: the lookup is bounded by a per-query deadline —
+        // the serving search deadline, the same window a real request's
+        // computation would own (the single-flight wait shares it).
+        let deadline = tokio::time::Instant::now() + state.limits.search_deadline;
+        match lookup_or_compute(state, &generation, effective, deadline).await {
             // Computed fresh (or a wait window elapsed and this warming
             // recomputed): commit the pending write exactly like a real
             // miss would after its log. The oversized-drop and eviction
