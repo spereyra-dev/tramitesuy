@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: dev test lint fmt migrate ingest seed-taxonomy search validate-data db-down baseline load
+.PHONY: dev test lint fmt migrate ingest seed-taxonomy search validate-data db-down baseline load check-deploy image-arm64
 
 ## dev: start the dev database, apply migrations, and seed the taxonomy.
 ## The full compose stack (api + ingest daemon) is `docker compose up --build`.
@@ -64,3 +64,15 @@ baseline:
 load:
 	cargo test -p db --test fixture_catalog
 	cargo test -p db --test sql_counter
+
+## check-deploy: deployment-profile assertions (task 40/41, S13). Config-only
+## (compose config + committed-file greps): never builds, starts, stops or
+## touches running containers.
+check-deploy:
+	bash scripts/check-deploy.sh
+
+## image-arm64: build the release ARM64 (aarch64-unknown-linux-gnu) API/ingest
+## image off-device (design §8, task 40): built outside the service window and
+## shipped to the Raspberry Pi as ${TRAMITESUY_IMAGE}.
+image-arm64:
+	docker buildx build --platform linux/arm64 --load -t tramitesuy/api:arm64 .

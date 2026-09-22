@@ -293,7 +293,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: a request cancelled by the deadline releases its permit, single-flight holder, and generation `Arc`.
   - Satisfies: OPT-10, api delta (deadline 504 / overload 503), operations delta, R11.
 
-- [ ] 40. [S13] Raspi production profile, part 1: `docker-compose.yml` gains a `prod` profile where `db` is reachable only on the internal network (no published 5432), credentials come from an operator-managed `.env` outside the repo (read-only input: this change never writes it; `.env.example` committed), services use `restart: unless-stopped` with healthcheck-based readiness, and the `Dockerfile` builds a release ARM64 (`aarch64-unknown-linux-gnu`) API/ingest image.
+- [x] 40. [S13] Raspi production profile, part 1: `docker-compose.yml` gains a `prod` profile where `db` is reachable only on the internal network (no published 5432), credentials come from an operator-managed `.env` outside the repo (read-only input: this change never writes it; `.env.example` committed), services use `restart: unless-stopped` with healthcheck-based readiness, and the `Dockerfile` builds a release ARM64 (`aarch64-unknown-linux-gnu`) API/ingest image.
   - RED/verify: a `make check-deploy` target asserts `docker compose --profile prod config` publishes no `5432` port and that no committed file contains a credential value; the ARM64 image builds and boots and responds on the internal readiness endpoint.
   - TRIANGULATE: the dev profile is unchanged (`docker compose up -d db` still works for local development).
   - Satisfies: OPT-11, operations delta (Raspberry Pi production profile), R12.
