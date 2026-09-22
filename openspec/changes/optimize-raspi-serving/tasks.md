@@ -261,18 +261,18 @@ being merged; no slice weakens a guarantee published by an earlier slice
 
 ## Stage 5 — Operations
 
-- [ ] 34. [S11] Replace the `apps/ingest/src/daily_loop.rs` UTC day-seconds math with a timezone-aware pure `next_run(now: DateTime<Utc>, tz: Tz, at: NaiveTime) -> DateTime<Utc>` using `chrono-tz` (embedded tzdata), configured by `INGEST_TZ` (default `America/Montevideo`) and `INGEST_AT` (default `06:00`).
+- [x] 34. [S11] Replace the `apps/ingest/src/daily_loop.rs` UTC day-seconds math with a timezone-aware pure `next_run(now: DateTime<Utc>, tz: Tz, at: NaiveTime) -> DateTime<Utc>` using `chrono-tz` (embedded tzdata), configured by `INGEST_TZ` (default `America/Montevideo`) and `INGEST_AT` (default `06:00`).
   - RED: `cargo test -p ingest --test daily_loop` — the next run is 06:00 local (not 03:00 UTC), a time already past today schedules tomorrow, the loop never sleeps zero, and a DST transition of the zone is handled.
   - GREEN: `chrono-tz` dependency added; `chrono` reuses the workspace/sqlx feature set.
   - TRIANGULATE: restart at 08:00 after a successful 06:00 run schedules the next day and does not ingest again (run-record check).
   - Satisfies: OPT-02/OPT-03, ingestion delta (daily schedule).
 
-- [ ] 35. [S11] Ingestion exclusion shared by scheduled and manual runs: `pg_advisory_lock(hashtext('tramitesuy:ingestion'))` acquired by `apps/ingest/src/commands/{daemon,ingest}.rs`; a run that cannot acquire it terminates with a recorded `skipped` status and is not queued, while the API keeps serving.
+- [x] 35. [S11] Ingestion exclusion shared by scheduled and manual runs: `pg_advisory_lock(hashtext('tramitesuy:ingestion'))` acquired by `apps/ingest/src/commands/{daemon,ingest}.rs`; a run that cannot acquire it terminates with a recorded `skipped` status and is not queued, while the API keeps serving.
   - RED: `cargo test -p ingest --test ingestion_exclusion` — a manual run overlapping the scheduled run does not start processing until the lock is released; the API keeps serving the pre-existing generation throughout; the skipped run is recorded.
   - TRIANGULATE: the lock is released on panic/error paths (no stuck exclusion).
   - Satisfies: OPT-02, ingestion delta (exclusion).
 
-- [ ] 36. [S11] Bounded increasing retries: transient download/validation/persistence failures retried at +5, +15 and +30 minutes, then the failure is recorded operationally and the next attempt waits for the next scheduled daily run; the previously published generation stays active throughout.
+- [x] 36. [S11] Bounded increasing retries: transient download/validation/persistence failures retried at +5, +15 and +30 minutes, then the failure is recorded operationally and the next attempt waits for the next scheduled daily run; the previously published generation stays active throughout.
   - RED: `cargo test -p ingest --test retries` — with an injected failing download and a controllable clock, exactly three retries occur at the specified offsets, `attempt` records 1..3, then no further retry before the next day; the active generation is unchanged at every step.
   - TRIANGULATE: a transient failure that succeeds on the second attempt does not record a final failure.
   - Satisfies: OPT-03, ingestion delta (bounded increasing retries).

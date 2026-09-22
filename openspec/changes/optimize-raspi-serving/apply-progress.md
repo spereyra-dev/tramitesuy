@@ -1193,3 +1193,140 @@ No S10 task remains unchecked (49 total, 33 complete).
   `cache_warming` config field drop additively, and no migration or
   `.sqlx` change exists to unwind (S10 changed no SQL).
 
+
+## Slice S11 — Stage 5 Operations (tasks 34–36) — branch `opt/s11-schedule-exclusion-retries`
+
+Status: **complete; slice gates green**. Delivery: auto-chain,
+stacked-to-main, branch cut from fresh `master` (349a976). Structured
+status consumed before work: `gentle-ai.sdd-status` v2, change
+`optimize-raspi-serving`, `applyState: ready`, `nextRecommended: apply`,
+33/49 tasks, no native blockers, repo-local mode, whole workspace as the
+granted edit root (`.gentle-ai-instance` marker present, left untracked —
+the gga hook re-staged it during each of the three commits and each was
+amended out, matching the S8/S9/S10 recovery pattern). Review Workload
+Gate: `Decision needed before apply: Yes` / `Chained PRs recommended:
+Yes` / S11 budget risk Medium — resolved by the maintainer-resolved
+pattern in the parent prompt (`auto-chain`, `stacked-to-main`).
+
+### Completed tasks and proof
+
+| Task | Proof (exact commands, results) |
+|---|---|
+| 34 timezone-aware daily schedule | `cargo test -p ingest --test daily_loop` → 8 passed: the next run is 06:00 America/Montevideo (09:00 UTC), never the old 03:00 UTC day-seconds instant; a run time already past today schedules tomorrow; the loop never sleeps zero (at the exact run instant the next run is tomorrow; every probe lands on a local 06:00); a DST transition of the zone is honored (America/Santiago's April transition: the run after the boundary keeps its LOCAL 06:00, the UTC instant moves with the offset change — 10:00 UTC, not a fixed-offset 09:00); `INGEST_TZ`/`INGEST_AT` parse (defaults Montevideo/06:00, explicit Europe/Madrid/07:30 honored, invalid values fail-fast); TRIANGULATE (DB-backed): with a successful scheduled 06:00 run recorded in `ingestion_runs`, a restart at 08:00 schedules TOMORROW's run (run-record check), while a yesterday-success (or empty history) catches up immediately. |
+| 35 shared ingestion exclusion | `cargo test -p ingest --test ingestion_exclusion` → 3 passed: a manual run invoked while the scheduled run holds the exclusion (`IngestionExclusion::try_acquire`, the same `hashtext('tramitesuy:ingestion')` lock) does not start processing — it terminates recorded `skipped` (trigger `manual`, not queued) while the API keeps serving the pre-existing generation (`AppState::boot` snapshot still G1, `newest_published` still G1); a NEW manual run after the release processes normally (it reaches the source and fails at the unreachable base — the opposite of the blocked invocation); TRIANGULATE: no stuck exclusion on panic paths (a run that panics holding the guard releases it — the next run acquires) and on error paths (a publish that errors mid-flow with the exclusion held releases it — the next run acquires). |
+| 36 bounded increasing retries | `cargo test -p ingest --test retries` → 2 passed: with an injected failing download and a controllable clock (test-stepped `SchedulerState`), exactly three retries occur at +5, +15 and +30 minutes after the initial 06:00 failure (four executions: 06:00, 06:05, 06:15, 06:30), the run records carry attempt 1, 2, 3 (and the capped 3 on the fourth — see deviation 2), then no further retry before the next day's 06:00 (the exhaustion wake is TOMORROW 06:00 and no retry lands before it); the active generation is unchanged at every step (booted API snapshot + `newest_published` = G1 throughout); TRIANGULATE: a transient failure that succeeds on the second attempt records no final failure — run records are exactly [1 failed, 2 success], the succeeded cycle waits for the NEXT day's run, and the publication flow ran for real (identical content → the already-published generation, no new manifest row). |
+
+### TDD Cycle Evidence (strict TDD, runner `cargo test`)
+
+| Task | RED (failing test first) | GREEN (minimal implementation) | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| 34 | `cargo test -p ingest --test daily_loop` → E0433/E0432: `next_run`/`restart_wake`/`ScheduleConfig` unresolved, `chrono_tz` unlinked (the old day-seconds API was replaced by the new test's imports) | `apps/ingest/src/daily_loop.rs` rewritten: pure `next_run(now, tz, at)` over chrono-tz's embedded tzdata (`local_to_utc` resolves Single/first-of-Ambiguous/DST-gap), `ScheduleConfig` (`INGEST_TZ`/`INGEST_AT`, fail-fast typed error, defaults Montevideo 06:00), `restart_wake` (last successful scheduled run ≥ today's scheduled instant ⇒ tomorrow; overdue ⇒ catch up now; fresh install ⇒ catch up); `chrono-tz` added to `apps/ingest`; `daemon.rs` boot gate + wake loop | the DB-backed restart test (success today ⇒ no duplicate daily ingestion) | clippy collapsed an if-let chain; unused `next_day_run` helper removed at the slice end (subsumed by the scheduler); fmt + clippy green |
+| 35 | `cargo test -p ingest --test ingestion_exclusion` → E0432 `ingest::exclusion` unresolved | `apps/ingest/src/exclusion.rs` (new): `IngestionExclusion` — TRANSACTION-scoped advisory lock (`pg_try_advisory_xact_lock(hashtext('tramitesuy:ingestion'))`) held by the guard's transaction, released with it on every exit path (commit/rollback/drop/unwind); `commands/ingest.rs`: the manual pass acquires the exclusion (a held exclusion records a `skipped` run and is not queued); `commands/publish.rs`: the session-level try-lock + explicit unlock replaced by the shared transaction-scoped guard, `publish_with_exclusion_held(pool, data_dir, trigger, attempt)` exposed for the daemon's cycle, the private run-record helpers moved to `run_records.rs` (one home for the SQL) | the panic-path release test (catch_unwind around the run; the guard's transaction rolls back during the unwind) + the error-path release test (a publish that fails mid-flow releases; the next run acquires) | runtime-context fix discovered by the test: a guard dropped OUTSIDE a Tokio context panics (sqlx PoolConnection Drop) and the pipeline's blocking reqwest must never run on an async worker — the manual pass restructured to acquire inside `block_on` → run the pipeline on the plain thread → release inside `block_on`; the same fix applies to the daemon cycle (its exclusion lives inside `block_on`) |
+| 36 | `cargo test -p ingest --test retries` → E0432/E0433: `CycleOutcome`/`SchedulerState`/`scheduled_cycle_with` unresolved, then behavioral RED ("No such local time" — a test-helper hour overflow, fixed in the test) | `daily_loop.rs`: `RETRY_OFFSET_MINUTES` (5/15/30, absolute from the initial failure), `CycleOutcome`, `SchedulerState` (execution index, failure anchor, retries used; `attempt()` capped at MAX_RECORDED_ATTEMPT=3 per migration 0014; `step()` computes the wake: retry instants, next-day after completed/skipped, next-day after exhaustion); `commands/daemon.rs`: `scheduled_cycle_with` (exclusion once around ingest + publish, run records per execution, publish under the held exclusion) + the daemon loop stepping the scheduler | the succeeds-on-second-attempt test (real publish on attempt 2, no final-failure record, next wake = tomorrow) | the production pass threaded through `ingest::run_pass_on_pool` (the cycle's phase B); unused `next_day_run` removed; fmt + clippy green |
+
+### Files changed (S11)
+
+- `apps/ingest/src/daily_loop.rs` (rewritten: `next_run`, `local_to_utc` DST resolution, `ScheduleConfig`, `restart_wake`, `RETRY_OFFSET_MINUTES`, `CycleOutcome`, `SchedulerState`; the UTC day-seconds math removed)
+- `apps/ingest/src/exclusion.rs` (new): the transaction-scoped ingestion exclusion
+- `apps/ingest/src/run_records.rs` (new): the restart gate read + terminal-run recording (moved from publish.rs)
+- `apps/ingest/src/commands/daemon.rs` (rewritten: restart gate, timezone-aware wake, the composed `scheduled_cycle{,_with}` under one exclusion, the scheduler loop)
+- `apps/ingest/src/commands/ingest.rs`: the manual path acquires the shared exclusion (acquire/release inside runtime contexts, pipeline off async workers), `run_pass_on_pool` extracted
+- `apps/ingest/src/commands/publish.rs`: the exclusion acquired through the shared guard; `publish_with_exclusion_held` (daemon path) + the `attempt` parameter threaded into the run-record insert
+- `apps/ingest/src/lib.rs`: `exclusion` + `run_records` modules
+- `apps/ingest/Cargo.toml`: `chrono-tz` (embedded tzdata; `chrono` unchanged, workspace feature set)
+- `apps/ingest/tests/daily_loop.rs` (rewritten), `apps/ingest/tests/ingestion_exclusion.rs` (new), `apps/ingest/tests/retries.rs` (new)
+- `.sqlx/` regenerated in the same change (one new query: the restart gate's last-success read; the moved record queries re-captured)
+- `openspec/changes/optimize-raspi-serving/tasks.md` (34–36 checked)
+
+### Test commands run
+
+- `cargo test -p ingest --test daily_loop` → RED first (unresolved API), then 8 passed
+- `cargo test -p ingest --test ingestion_exclusion` → RED first (unresolved `ingest::exclusion`), then 3 passed
+- `cargo test -p ingest --test retries` → RED first (unresolved scheduler APIs), then 2 passed
+- `cargo test -p ingest` → 13 suites `test result: ok`, 0 FAILED (S1–S8 suites green: the S8 failure-injection, publish and reconciliation contracts held — the publish skipped/exclusion test still passes under the transaction-scoped lock, whose lock tag conflicts with the test's held session lock exactly like the old mechanism)
+- `cargo test --workspace` (`make test`) → 101 suites `test result: ok`, 0 FAILED (full sweep at the boundary; one environmental retry: the compose db entered crash recovery mid-sweep — `PoolTimedOut` on two scratch-connect tests — recovered on its own and the re-run was green, the established scratch-database flake class)
+- `cargo test -p search --test golden` → 6 passed (golden gate green; no ranking change in S11)
+- `make validate-data` → green (104 events, 14 categories, 37 synonyms, 3501 external ids)
+- `make lint` → `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` green
+- `SQLX_OFFLINE=true cargo check --workspace --all-targets` → green against the committed root `.sqlx` cache
+- `cargo sqlx prepare --workspace` → regenerated in this change (the new restart-gate query; the moved record queries re-captured)
+
+### Deviations from design/tasks (recorded)
+
+1. **The exclusion is transaction-scoped, not session-scoped.** Task 35's
+   TRIANGULATE (the lock releases on panic/error paths — no stuck
+   exclusion) cannot be honored by a session-level lock held on a pooled
+   connection: sqlx returns the connection to the pool (lock still held)
+   or panics dropping it outside a runtime context. The guard's
+   transaction-scoped `pg_try_advisory_xact_lock` releases with the guard
+   on every exit path including an unwind. The lock tag
+   (`hashtext('tramitesuy:ingestion')`) is unchanged, so the S8-era
+   publish exclusion test (which holds a session-level lock with the same
+   tag) still passes.
+2. **The manual pass is restructured into acquire→pipeline→release
+   phases.** Two runtime constraints surfaced during the GREEN tests: a
+   sqlx `PoolConnection` (the guard's transaction) must be dropped inside
+   a Tokio context, and the pipeline's blocking reqwest client must never
+   run inside one (the pipeline runs on the caller's plain thread, as the
+   failure-injection tests already arrange). The manual pass and the
+   daemon cycle acquire and release inside `block_on` boundaries and run
+   the blocking pass between them; the exclusion still spans the whole
+   pass/cycle.
+3. **Retry attempts recorded with a capped attempt value.** The retry
+   schedule is 3 retries at absolute offsets +5/+15/+30 from the initial
+   failure (the spec delta's "retries at +5, +15, and +30 minutes"), so a
+   failed cycle runs 4 executions (06:00/06:05/06:15/06:30). Migration
+   0014 caps the recorded `attempt` at 3 (`attempt BETWEEN 1 AND 3`), so
+   the fourth execution records the capped attempt 3 — every execution is
+   still recorded, the values span 1..3, and the cap is asserted in the
+   test. Relaxing the check constraint would be a schema change outside
+   this slice's allowed edit surfaces; recorded for the maintainer.
+4. **The daemon's scheduled cycle now composes ingest + publish** (per
+   design §6.3's mandatory 06:00 flow: exclusión → descargar/procesar →
+   build → validate → promote): previously the daemon never published
+   (the generations flow was manual-CLI-only). The manual `ingest
+   publish` command remains for on-demand runs; the cycle records the
+   scheduled runs' attempt records (trigger `scheduled`), while the
+   manual ingest path keeps recording only the excluded/skipped case —
+   the S8 contract "no run record from a failed manual download pass" is
+   preserved (failure_injection.rs unchanged and green).
+5. **Restart-gate semantics**: a fresh install (no successful run ever)
+   catches up immediately (the compose service's bootstrap behavior);
+   yesterday's success booting before today's run time waits for today's
+   06:00 (not overdue); a success covering today skips to tomorrow — the
+   TRIANGULATE's no-duplicate-daily-ingestion check.
+6. **No schema/migration change**: the only new SQL is the restart gate's
+   read (`.sqlx` regenerated in the same change; `SQLX_OFFLINE=true
+   cargo check` green).
+
+### Remaining tasks (unchecked at the tasks locator)
+
+All tasks 37–49 (stages 5 continued–6) remain unchecked, starting with:
+
+- `- [ ] 37. [S12] Query-length validation before any side effect: validate q.chars().count() ≤ q_max_chars (512) ...`
+
+No S11 task remains unchecked (49 total, 36 complete).
+
+### Workload / PR boundary
+
+- Slice S11 = PR 12 of the 15-PR stacked chain (branch
+  `opt/s11-schedule-exclusion-retries`, cut from fresh master; merge/stack
+  at the gate — merge to master and push are the parent's, per the
+  delivery contract). Three work-unit commits:
+  `feat(ingest): timezone-aware daily schedule (S11 task 34)`,
+  `feat(ingest): shared ingestion exclusion for scheduled and manual runs
+  (S11 task 35)`,
+  `feat(ingest): bounded increasing retries after transient failures (S11
+  task 36)`.
+- Authored changed lines across the 3 commits: **~1,530 insertions / 176
+  deletions** — above the 400-line budget as tasks.md forecasts for S11
+  (Medium risk, ~380 est. before test coverage; the three new suites are
+  the bulk: ~770 test lines). Per the resolved delivery contract
+  (`auto-chain`, `stacked-to-main`), the slice lands as chained
+  work-unit commits; no comments, blank lines, docs, or tests were
+  compressed to reach the budget.
+- Rollback boundary: revert the three S11 commits — the daemon returns to
+  the 03:00-UTC UTC-day-seconds loop (no exclusion on the manual ingest,
+  no retries), `publish` returns to its session-lock implementation, and
+  the only `.sqlx` delta to unwind is the restart-gate read (no
+  migrations, no persisted data touched).
