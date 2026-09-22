@@ -24,6 +24,8 @@
 //! during stages 2–3), once per load — the per-request serving cost stays
 //! zero SQL, and the taxonomy remains the ranker's source of truth (TX-1).
 
+pub mod memory_budget;
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -263,6 +265,35 @@ impl ActiveGeneration {
     /// One organization by external id.
     pub fn organization(&self, external_id: &str) -> Option<Arc<OrganizationView>> {
         self.organizations.get(external_id).cloned()
+    }
+
+    // Sizing accessors (memory-budget module): read-only views over the
+    // generation-owned maps for the footprint estimator.
+
+    pub(crate) fn event_name_map(&self) -> &HashMap<String, String> {
+        &self.event_names
+    }
+
+    pub(crate) fn category_name_map(&self) -> &HashMap<String, String> {
+        &self.category_names
+    }
+
+    pub(crate) fn event_map(&self) -> &HashMap<String, Arc<EventSnapshot>> {
+        &self.events
+    }
+
+    pub(crate) fn card_map(&self) -> &HashMap<String, Arc<Vec<db::repos::procedures::EventCard>>> {
+        &self.cards
+    }
+
+    pub(crate) fn procedure_map(
+        &self,
+    ) -> &HashMap<String, Arc<db::repos::procedures::ProcedureDetail>> {
+        &self.procedures
+    }
+
+    pub(crate) fn organization_map(&self) -> &HashMap<String, Arc<OrganizationView>> {
+        &self.organizations
     }
 }
 

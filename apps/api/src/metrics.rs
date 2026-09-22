@@ -35,6 +35,19 @@ pub enum GenerationState {
     Active,
 }
 
+/// An operational alert (S8 tasks 23/25): a condition an operator must know
+/// about, emitted through the same privacy-safe seam (R14). Labels are
+/// fixed enum kinds — never query text or fingerprints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum OperationalAlert {
+    /// A newer generation is published but the API still serves an older
+    /// one past the configurable lag bound (10 minutes by default).
+    PublicationLag,
+    /// A candidate generation was rejected because the memory budget has no
+    /// room for it; the current generation keeps serving.
+    MemoryBudget,
+}
+
 /// The metric seam: sinks receive pre-aggregated, privacy-safe labels only.
 pub trait Metrics: Send + Sync + 'static {
     /// One served request: route pattern, HTTP status, wall latency (µs).
@@ -46,6 +59,8 @@ pub trait Metrics: Send + Sync + 'static {
     fn observe_cache(&self, event: CacheEvent);
     /// The serving-generation gauge (latest observed state wins).
     fn observe_generation_state(&self, state: GenerationState);
+    /// One operational alert (publication lag, memory-budget rejection).
+    fn observe_operational_alert(&self, alert: OperationalAlert);
 }
 
 /// In-memory metric sink: the boot default and the test-readable seam.
@@ -62,6 +77,7 @@ struct Memory {
     sql_ops: BTreeMap<String, u64>,
     cache: BTreeMap<CacheEvent, u64>,
     generation: GenerationState,
+    alerts: BTreeMap<OperationalAlert, u64>,
 }
 
 impl MemoryMetrics {
@@ -100,6 +116,11 @@ impl MemoryMetrics {
     /// The latest observed serving-generation state.
     pub fn generation_state(&self) -> GenerationState {
         self.lock().generation
+    }
+
+    /// Cumulative count for one operational alert kind.
+    pub fn alert_total(&self, alert: OperationalAlert) -> u64 {
+        self.lock().alerts.get(&alert).copied().unwrap_or(0)
     }
 
     /// Every string label the sink has ever been handed (routes only —
@@ -143,5 +164,9 @@ impl Metrics for MemoryMetrics {
 
     fn observe_generation_state(&self, state: GenerationState) {
         self.lock().generation = state;
+    }
+
+    fn observe_operational_alert(&self, alert: OperationalAlert) {
+        *self.lock().alerts.entry(alert).or_insert(0) += 1;
     }
 }
