@@ -1586,3 +1586,115 @@ No S13 task remains unchecked (49 total, 43 complete).
   slice) is untouched. No migrations, no `.sqlx`, no persisted data
   changes to unwind; the disposable rehearsal databases were dropped.
 
+
+---
+
+## Slice S14 (partial) — Stage 6 Validation (tasks 44, 45, 46, 49) — branch `opt/s14-validation`
+
+Cut from fresh master `126abff` (S13 merged and pushed). Scope: tasks 44,
+45, 46 and 49. **Task 48 is OUT OF SCOPE by the maintainer's recorded
+decision** (Raspberry Pi target hardware not available in this session) —
+it stays UNCHECKED with an explicit pending note in tasks.md and is listed
+as the explicitly unmet item of the final audit. Task 47 (load harness +
+sustained runs) was NOT dispatched in this slice either and is reported as
+remaining, not absorbed.
+
+Status consumed: native `gentle-ai.sdd-status` v2 — change
+`optimize-raspi-serving`, `applyState: ready`, `nextRecommended: apply`,
+43/49 complete, no blockedReasons, repo-local mode, edit roots granted over
+the workspace root (`.gentle-ai-instance` marker present, left untracked).
+Review Workload Gate: `Decision needed before apply: Yes` / `Chained PRs
+recommended: Yes` / S14 budget risk High — resolved by the parent prompt's
+maintainer-resolved delivery path (`auto-chain`, `stacked-to-main`).
+
+### Completed tasks and proof
+
+| Task | Proof (exact commands, results) |
+|---|---|
+| 44 SQL-budget acceptance | RED leg: `the_budget_checker_rejects_the_pre_optimization_baseline_numbers` applies the budget predicate to the task-4 recorded baselines (open 7, catalog 2, disambiguation 4 — `tests/load/BASELINE.md`) and asserts every one of them violates its budget (7 > 4, 7 > 3, 2 > 0, 4 > 3) plus the exact-budget boundary cases (cache-hit rejects 0 and 2). GREEN: `cargo test -p api --test sql_budget` → 5 passed — catalog reads (categories/event/procedure) 0 statements via snapshot; cache-hit search exactly 1 (consolidated log insert); new PostgreSQL-provider search ≤3 data statements; intermediate no-snapshot `open` ≤4. The task names `crates/db/tests/sql_budget.rs` OR the task-2 API-level counter harness — the budgets run over the real HTTP surface, so the API harness alternative was used (recorded choice). Instrument: `crates/db/src/test_support/sql_counter.rs` gained the ceremony classification (`BEGIN`/`COMMIT` + the generation trigram provider's transaction-local `set_config('pg_trgm.similarity_threshold', ...)`, charged to the ONE trigram operation per design §2.2, matching `sql_ops_baseline`'s recorded "real data statements" accounting). TRIANGULATE: `/search/debug` and cache-hit paths remain covered by their dedicated suites (`search_debug.rs`, `cache_log_guarantee.rs`, `sql_ops_baseline.rs`) — referenced, not duplicated. No query changed ⇒ no `.sqlx` regen needed (offline build verified at the boundary). |
+| 45 functional matrix | Four gap-filling test surfaces, all gga-reviewed: `apps/api/tests/generation_swap.rs` → `concurrent_requests_during_a_swap_stay_coherent_with_one_generation` (24 searches overlapping the concurrent G1→G2 adoption: every in-flight response is G1-coherent — the renamed procedure never appears alone — and post-swap requests serve G2 in full); `apps/api/tests/db_down.rs` (new, 2 tests) → the database taken down for real (`ALTER DATABASE ... ALLOW_CONNECTIONS false` + `pg_terminate_backend`): snapshot reads (categories/events/procedures) keep serving 200 with zero SQL while a WARM cache-hit search still fails on its durable log dependency (log-before-respond) and feedback fails on persistence — structural 5xx (`admin_shutdown` → 500; the `PoolTimedOut`→503+`Retry-After` shape stays pinned by `deadline.rs`; the invariant pinned is "no success without the durable dependency"); `crates/db/tests/generation_content_changes.rs` (new, 5 tests) → cost change, deactivation, new arrival, taxonomy/synonym (canonical-term) change and no-content ingestion (only observable sync dates) each build a NEW generation (id + hash differ, counts/details update) while the published projections stay immutable; `crates/db/tests/generation_retention.rs` → `the_old_generations_providers_stay_usable_until_in_flight_drains_and_adoption_confirms` (the collector defers the in-flight-held generation AND the old generation's trigram provider still answers mid-flight from its retained surface; only after drain + confirmed adoption does collection remove it — probed with retention=1 and a passing retention window). Falsifiability probes per file (inverted assertions → RED → reverted): db_down 2/2 FAILED when inverted; content-changes RED on the cost card; retention RED on the retained-provider leg. TRIANGULATE (docs): the §7 matrix table (tests 1–10 → file paths) added to `tests/load/README.md`; tests 1, 5, 8, 9 referenced to tasks 28, 29/30, 34–36, 37–39, not duplicated. |
+| 46 mandatory gate + baseline guard | `.github/workflows/ci.yml` `golden-gate` job renamed to the mandatory `search equivalence gate (golden + real-PG providers, mandatory)`: `cargo test -p search --test golden` + `cargo test -p db --test providers` + `--test explain_trigram` against a Postgres service (stub harness alone insufficient for FTS/trigram changes) + `scripts/check-baselines.sh` on the PR-base diff (golden Top1/Top3 may not decrease, `max_no_result_rate`/`max_ambiguous_rate` may not rise, `tests/load/BASELINE.md` untouchable without an explicit reviewed decision). `make search-gate` runs the same gate locally → 6 + 13 + 1 passed, `OK(baselines)`. TRIANGULATE (both probes executed and reverted): perturbing a threshold (`max_ambiguous_rate: 0`) FAILED `cargo test -p search --test golden` (1/6 — `golden_gate_passes_over_the_real_seed`), reverted to 6 passed; a deliberately lowered `top1` (1.00 → 0.99) FAILED the guard in a throwaway clone (`FAIL(baselines): recorded baseline 'top1' was lowered`), guard exit 1; the committed state passes. |
+| 49 final stage-boundary audit | Full battery executed and recorded in `docs/capacity-raspi.md`: `cargo fmt --all -- --check` PASS; `cargo clippy --workspace --all-targets -- -D warnings` PASS; `SQLX_OFFLINE=true cargo test --workspace` PASS — **107 suites `test result: ok`, 0 FAILED** (offline = committed `.sqlx/` covers every query); `make validate-data` PASS (`taxonomy OK: 104 event(s), 14 category(ies), 37 synonym(s), 3501 external id(s)`); `make check-deploy` PASS; `docker compose --profile dev config --services` renders; migrations 0013–0017 verified additive-only (7 CREATE TABLE, no DROP of any legacy table — table allowlist grepped); `.sqlx` clean. Unmet items EXPLICITLY listed in the document: the task-48 capacity run (all six capacity targets NOT MEASURED, pending target hardware — maintainer decision recorded) and the task-47 harness/sustained runs (not dispatched in this slice). The container-level compose integration job was NOT re-run locally (the running dev API container serves the pre-change binary and this session forbids restarting/rebuilding it) — recorded honestly; the in-process equivalent (all DB-backed integration suites against the same compose Postgres + check-deploy assertions) is green. |
+
+### TDD Cycle Evidence (strict TDD; runner `cargo test`)
+
+| Task | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| 44 | the budget checker REJECTS the pre-optimization baseline numbers (open 7, catalog 2, disambiguation 4) recorded in task 4 — the thresholds are not vacuous, and stages 2–4 are what brought the served path inside them | `apps/api/tests/sql_budget.rs` → 5 passed over the real HTTP path (catalog 0, cache-hit 1, new ≤3, intermediate ≤4) with the ceremony-aware counter | cache-hit and `/search/debug` covered separately (dedicated suites referenced, not duplicated) | the dead `Budget::name` helper removed after the first fmt/clippy pass |
+| 45 | each new file's assertions probed RED by inversion (db_down: expect-success probe → 2/2 FAILED; content-changes: cost probe → FAILED; retention: expect-Err probe → FAILED), then reverted | generation_swap 4 passed (3 pre-existing + the during-swap storm); db_down 2 passed; generation_content_changes 5 passed; generation_retention 6 passed (5 pre-existing + the old-provider leg) | every matrix row maps to a file in the `tests/load/README.md` table | — |
+| 46 | perturbed threshold (`max_ambiguous_rate: 0`) → golden gate FAILED (proving not vacuous); lowered `top1` in a throwaway clone → guard FAILED (exit 1) | `make search-gate` → 6 + 13 + 1 passed + `OK(baselines)`; CI job made mandatory | both probes executed AND reverted to green | — |
+| 49 | Verify-only task (audit-first) | the full battery green (107 suites, offline; lint; validate-data; check-deploy) | unmet items listed instead of absorbed; container-level integration honestly recorded as not re-run | — |
+
+### Files changed (S14 partial)
+
+- `crates/db/src/test_support/sql_counter.rs`: ceremony classification + `SqlSection::data_count()` (S14 task 44 accounting rule, documented inline)
+- `apps/api/tests/sql_budget.rs` (new): the SQL-budget acceptance suite (RED leg + four GREEN legs)
+- `apps/api/tests/db_down.rs` (new): database-down with a warm cache (2 tests)
+- `apps/api/tests/generation_swap.rs`: during-swap concurrent-coherence test appended
+- `crates/db/tests/generation_content_changes.rs` (new): the five content-change classes
+- `crates/db/tests/generation_retention.rs`: old-provider retention leg appended
+- `tests/load/README.md`: the spec §7 functional matrix table (tests 1–10 → file paths)
+- `.github/workflows/ci.yml`: `golden-gate` → mandatory search-equivalence gate (golden + real-PG providers + baseline guard)
+- `scripts/check-baselines.sh` (new), `Makefile` (+`search-gate` target)
+- `docs/capacity-raspi.md` (new): the final stage-boundary audit record with explicitly unmet items
+- `openspec/changes/optimize-raspi-serving/tasks.md`: tasks 44, 45, 46, 49 checked; task 48 annotated as pending target hardware
+- No production Rust source, no SQL, no `.sqlx/` change (instrument-only `test_support` change)
+
+### Test commands run
+
+- `cargo test -p api --test sql_budget` → 5 passed (initial run), re-run green after the dead-code removal
+- `cargo test -p db --test sql_counter` → 1 passed (instrument intact)
+- `cargo test -p api --test db_down` → RED via the inverted-assertion probe (2 FAILED), then 2 passed
+- `cargo test -p api --test generation_swap` → 4 passed
+- `cargo test -p db --test generation_content_changes` → 5 passed (+ cost-probe RED run)
+- `cargo test -p db --test generation_retention` → 6 passed
+- `cargo test -p search --test golden` → perturbed RED (1/6 FAILED), reverted → 6 passed
+- `make search-gate` → 6 + 13 + 1 passed + `OK(baselines)`
+- `SQLX_OFFLINE=true cargo test --workspace` → 107 suites ok, 0 FAILED
+- `make lint` → green; `make validate-data` → PASS; `make check-deploy` → OK
+- `docker compose --profile dev config --services` → db api ingest web; `--profile prod config` renders with only internal `db-prod:5432` references (no published port)
+
+### Deviations from design/tasks (recorded)
+
+1. **`sql_budget.rs` lives in `apps/api/tests/`, not `crates/db/tests/`** — the task allows either the db-level file OR the task-2 API-level counter harness; the budgets assert the real HTTP surface (catalog reads, cache hits, snapshot cards), which only the API harness can drive. The task-2 instrument itself lives in `crates/db` and is reused.
+2. **Budget accounting includes an explicit ceremony rule** (task 44): the operations delta's "≤3 (FTS, trigram, log)" is asserted on DATA statements via the new `SqlSection::data_count()`; the generation trigram provider's transaction ceremony (`BEGIN` + transaction-local `set_config`, mandated by design §2.2 — never pool session state) is charged to its one trigram operation, exactly the "real data statements = 4" accounting `sql_ops_baseline` already records for the intermediate ≤4 budget. The traced numbers stay recorded in `sql_ops_baseline` (5 traced), not re-asserted here. Absorbing the ceremony into a single statement is a further equivalence-gated optimization (spec §9), not a silent regression.
+3. **The db-down failure shape is structural 5xx, not always 503** — a terminated pooled connection dies with `admin_shutdown` (→ structural 500); the `PoolTimedOut`→503+`Retry-After` overload shape applies when the pool cannot acquire within 500 ms and is already pinned by the deadline suite. The test pins the invariant that matters (no success without the durable dependency) instead of an incidental status code.
+4. **Retro-slice RED discipline** — the referenced behaviors (stages 2–4 optimizations) already landed in S2–S10, so per-file RED was demonstrated by falsifiability probes (deliberately inverted assertions executed → RED → reverted) plus the durable baseline-numbers RED leg of task 44, rather than re-running against pre-slice code. Recorded honestly; every probe is logged above.
+5. **The container-level compose integration job was not re-executed locally** (the running dev API container must not be restarted/rebuilt this session); its in-process equivalent and the config-level deployment assertions were verified instead, as recorded in the audit.
+
+### Remaining tasks (unchecked at the tasks locator)
+
+- `- [ ] 47. [S14] Build the load harness and plan ...` — NOT dispatched in this slice (the maintainer's permissive "may create" was not exercised; the ≥10-min-per-level sustained runs belong to a dedicated dispatch). Reported as remaining, not absorbed.
+- `- [ ] 48. [S14] Run the load plan on the target hardware ...` — explicitly UNMET, pending target hardware (maintainer decision recorded this session; annotated in tasks.md and `docs/capacity-raspi.md`).
+
+No S14-assigned task remains unchecked (47 total lines: 47 of 49 tasks complete; 44/45/46/49 all verified `- [x]` at the tasks locator before this report).
+
+### Workload / PR boundary
+
+- Slice S14 partial = PR 15 of the 15-PR stacked chain (branch
+  `opt/s14-validation`, cut from fresh master 126abff; merge/stack at the
+  gate — merge to master and push are the parent's, per the delivery
+  contract). Five work-unit commits: `feat(api): SQL-budget acceptance
+  suite over the task-2 counter (S14 task 44)`, `test(db,api): complete
+  the spec 7 functional matrix gaps (S14 task 45)`, `ci: make the
+  search-equivalence gate and baseline guard mandatory (S14 task 46)`,
+  `docs(capacity): final stage-boundary audit with unmet items reported
+  (S14 task 49)`, plus the apply-progress/tasks record commit closing the
+  slice.
+- Authored changed lines across the code commits: task 44 ~318
+  (+317/−1), task 45 ~885 (+885), task 46 ~113 (+110/−3), task 49 ~106 —
+  the slice exceeds the 400-line budget as tasks.md forecasts for S14
+  (High risk, ~470 est. across ALL of 44–49; the matrix-test surface is
+  inherently test-heavy). Per the resolved delivery path (`auto-chain`,
+  `stacked-to-main`), each commit is a cohesive reviewable work unit;
+  no comments, blank lines, docs, or tests were compressed, and no
+  `size:exception` was invoked by this phase.
+- gga review PASSED on every Rust commit (task-44 files; task-45 files:
+  swap/db_down/content-changes/retention all reviewed); the docs/CI
+  commits carry no `*.rs`/`*.ts`/`*.tsx`/`*.js`/`*.jsx` files.
+- Rollback boundary: revert the five S14 commits — every new test file
+  and the CI gate disappear, the instrument's `data_count()` addition
+  is removed, and no migration, `.sqlx` entry or persisted data changes
+  to unwind. The compose dev stack was never touched; the compose db
+  stayed running; scratch databases were dropped by their tests.
+

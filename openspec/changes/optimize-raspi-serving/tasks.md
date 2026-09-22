@@ -314,17 +314,17 @@ being merged; no slice weakens a guarantee published by an earlier slice
 
 ## Stage 6 — Validation
 
-- [ ] 44. [S14] SQL-budget acceptance test: `crates/db/tests/sql_budget.rs` (or the API-level counter harness from task 2) asserting catalog read 0, cache-hit search 1, new PostgreSQL-provider search ≤3, and intermediate-phase `open` ≤4, in normal operation excluding publication controls and metrics.
+- [x] 44. [S14] SQL-budget acceptance test: `crates/db/tests/sql_budget.rs` (or the API-level counter harness from task 2) asserting catalog read 0, cache-hit search 1, new PostgreSQL-provider search ≤3, and intermediate-phase `open` ≤4, in normal operation excluding publication controls and metrics.
   - RED: the test fails against the pre-optimization baseline numbers recorded in task 4 and passes after stages 2–4.
   - TRIANGULATE: `/search/debug` (read-only) and cache-hit paths are covered separately.
   - Satisfies: OPT-06, operations delta (SQL budget per request), spec §7 test 10.
 
-- [ ] 45. [S14] Complete the spec §7 functional matrix (tests 1–10) as named test files, filling the gaps not covered by earlier slices: concurrent-update coherence during a swap (`apps/api/tests/generation_swap.rs`), database-down behavior with a warm cache (`apps/api/tests/db_down.rs`: snapshot reads work, search and feedback fail on their durable dependency), content-change cases (`crates/db/tests/generation_content_changes.rs`: cost change, deactivation, new arrival, taxonomy/synonym change, no-content ingestion updating only observable sync dates), and old-provider retention until in-flight requests and adoption confirmation (`crates/db/tests/generation_retention.rs`).
+- [x] 45. [S14] Complete the spec §7 functional matrix (tests 1–10) as named test files, filling the gaps not covered by earlier slices: concurrent-update coherence during a swap (`apps/api/tests/generation_swap.rs`), database-down behavior with a warm cache (`apps/api/tests/db_down.rs`: snapshot reads work, search and feedback fail on their durable dependency), content-change cases (`crates/db/tests/generation_content_changes.rs`: cost change, deactivation, new arrival, taxonomy/synonym change, no-content ingestion updating only observable sync dates), and old-provider retention until in-flight requests and adoption confirmation (`crates/db/tests/generation_retention.rs`).
   - RED: each file's assertions fail before its slice lands and pass after; tests 1, 5, 8, 9 are already covered by tasks 28, 29, 34–36, 37–39 and are referenced, not duplicated.
   - TRIANGULATE: every matrix row maps to a concrete file path in a table added to `tests/load/README.md`.
   - Satisfies: spec §7 tests 1–10, OPT-02…OPT-05, OPT-09.
 
-- [ ] 46. [S14] Make the golden-dataset gate and real-PostgreSQL provider comparison mandatory in `.github/workflows/ci.yml`: run `cargo test -p search --test golden` plus the fixture-backed provider equivalence tests (stub harness alone is insufficient for FTS/trigram changes), and assert no recorded baseline was lowered anywhere in the diff.
+- [x] 46. [S14] Make the golden-dataset gate and real-PostgreSQL provider comparison mandatory in `.github/workflows/ci.yml`: run `cargo test -p search --test golden` plus the fixture-backed provider equivalence tests (stub harness alone is insufficient for FTS/trigram changes), and assert no recorded baseline was lowered anywhere in the diff.
   - Verify: `make lint`, `cargo test --workspace`, `make validate-data` and the compose integration job pass; Top1/Top3/no-result/ambiguous are non-regressive and baselines are unchanged.
   - TRIANGULATE: a deliberately perturbed threshold makes the gate fail (proving it is not vacuous), then is reverted.
   - Satisfies: OPT-07/OPT-08, operations delta (golden baselines hold), R6.
@@ -335,11 +335,12 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - Satisfies: spec §7 load plan, OPT-10/OPT-11.
 
 - [ ] 48. [S14] Run the load plan on the target hardware (Raspberry Pi 4B, 8 GB, ARM64, SSD USB 3, Ethernet) using release builds, and produce `docs/capacity-raspi.md` reporting each target as met or missed: 20 searches/s sustained with p95 < 500 ms and < 1 % unexpected errors (repeated and unique queries), catalog reads p95 < 100 ms on LAN, memory stable with no OOM and no sustained swap growth, thermal throttling checked, and the maximum sustained level that meets the goals with a recommendation to operate at ≥30 % margin below saturation.
+  - > **PENDING TARGET HARDWARE (maintainer decision recorded in the S14 session, 2026):** the Raspberry Pi is not available in this session; task 48 stays UNCHECKED and is the explicitly unmet item of the stage-6 audit (`docs/capacity-raspi.md`). The archive waits for it — gaps are reported, not absorbed.
   - Verify: every reported figure records commit, hardware, disk, parameters, data size, and network path; equivalent active users are derived as searches/s × seconds between searches (20 rps ≈ 200 active users at one search per 10 s), never as concurrent requests; the frontend is excluded from the capacity figures.
   - TRIANGULATE: at least one level above saturation is exercised to demonstrate controlled rejection rather than degradation.
   - Satisfies: OPT-10/OPT-11, spec §7 (capacity targets demonstrably met or missed), R12.
 
-- [ ] 49. [S14] Final stage-boundary audit: confirm `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `make validate-data` and the compose integration job pass; `.sqlx/` matches every changed query; migrations are additive-only with no legacy table dropped; gaps and unmet targets are reported instead of absorbed.
+- [x] 49. [S14] Final stage-boundary audit: confirm `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `make validate-data` and the compose integration job pass; `.sqlx/` matches every changed query; migrations are additive-only with no legacy table dropped; gaps and unmet targets are reported instead of absorbed.
   - Verify: the audit result is recorded in `docs/capacity-raspi.md` (or the change's final report) with unmet items explicitly listed.
   - Satisfies: compatibility and guardrails section of the proposal, stage 6 exit criteria.
 
