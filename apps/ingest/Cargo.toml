@@ -15,6 +15,7 @@ name = "ingest"
 path = "src/lib.rs"
 
 [dependencies]
+chrono = "0.4"
 clap.workspace = true
 db = { path = "../../crates/db" }
 ingestion = { path = "../../crates/ingestion", features = ["live-ckan"] }
@@ -25,6 +26,12 @@ taxonomy = { path = "../../crates/taxonomy" }
 thiserror.workspace = true
 tokio.workspace = true
 uuid = { workspace = true, features = ["v7"] }
+
+[dev-dependencies]
+# The cross-process reconciliation tests (S8 task 23) exercise the true
+# worker→API publication flow: the test binary boots the API state against
+# the scratch database and drives its reconciliation tick directly.
+api = { path = "../api" }
 
 [lints]
 workspace = true

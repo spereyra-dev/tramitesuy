@@ -141,3 +141,9 @@ pub async fn seed_procedures(pool: &PgPool, external_ids: &[&str]) {
         .expect("seed procedure");
     }
 }
+
+/// The scratch database URL for a created name (notification listeners in
+/// the reconciliation tests connect to it directly).
+pub fn database_url_for(name: &str) -> String {
+    format!("{}/{}", admin_url().trim_end_matches("/postgres"), name)
+}

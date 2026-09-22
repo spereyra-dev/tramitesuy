@@ -42,6 +42,39 @@ pub fn run() {
             .expect("embedded migrations apply cleanly");
     });
 
+    // Manifest reconciliation (S8 task 23): a background thread confirms
+    // the API's adoption of publications, alerts on the lagging bound, and
+    // runs the gated retention collection — off the request path, never
+    // touching the active or previous generation.
+    let reconcile_pool = pool.clone();
+    let reconcile_config =
+        crate::reconciliation::ReconcileConfig::from_env().unwrap_or_else(|error| {
+            // Panic justification: boot composition root of the daemon; an
+            // invalid environment is a fatal boot failure (compose restarts
+            // it) rather than reconciling with a policy the operator did
+            // not choose.
+            panic!("daemon reconciliation config: {error}")
+        });
+    std::thread::spawn(move || {
+        loop {
+            let outcome = support::block_on(async {
+                crate::reconciliation::run_pass(&reconcile_pool, &reconcile_config).await
+            });
+            match outcome {
+                Ok(report) => {
+                    eprintln!(
+                        "daemon reconciliation: {}",
+                        crate::reconciliation::summarize(&report)
+                    );
+                }
+                Err(error) => {
+                    eprintln!("daemon reconciliation pass failed: {error}");
+                }
+            }
+            std::thread::sleep(reconcile_config.interval);
+        }
+    });
+
     loop {
         match crate::commands::ingest::run_once() {
             Ok(()) => eprintln!("daemon: ingestion pass completed"),

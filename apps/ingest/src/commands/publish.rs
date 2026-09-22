@@ -297,6 +297,8 @@ async fn publish_locked(
     )
     .await?;
 
+    notify_publication(pool, built.generation_id).await?;
+
     Ok(PublishReport {
         run_id,
         status: "success".to_string(),
@@ -306,6 +308,24 @@ async fn publish_locked(
         counts,
         validation_failures: Vec::new(),
     })
+}
+
+/// The cross-process notification hint (S8 task 23, `LISTEN`/`NOTIFY`):
+/// published after a successful promotion so a listening API detects the
+/// publication faster than the next reconciliation tick. Only an
+/// accelerator — a lost hint changes nothing: the durable manifest is the
+/// correctness source and the reconciliation interval the fallback.
+async fn notify_publication(pool: &PgPool, generation_id: Uuid) -> Result<(), PublishError> {
+    let payload = generation_id.to_string();
+    sqlx::query!(
+        "SELECT pg_notify($1, $2) AS \"notified!\"",
+        crate::reconciliation::PUBLICATION_CHANNEL,
+        payload,
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| PublishError::Promotion(e.to_string()))?;
+    Ok(())
 }
 
 /// Finishes one run record with a terminal status, timestamps, counts, and
