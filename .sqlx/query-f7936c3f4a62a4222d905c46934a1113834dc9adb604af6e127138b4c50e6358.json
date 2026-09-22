@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT max(started_at) AS \"max: Option<DateTime<Utc>>\" FROM ingestion_runs WHERE trigger = 'scheduled' AND status = 'success'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "max: Option<DateTime<Utc>>",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f7936c3f4a62a4222d905c46934a1113834dc9adb604af6e127138b4c50e6358"
+}

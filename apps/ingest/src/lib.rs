@@ -8,4 +8,5 @@ pub mod daily_loop;
 pub mod errors;
 pub mod pool_config;
 pub mod reconciliation;
+pub mod run_records;
 pub mod support;

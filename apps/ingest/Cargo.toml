@@ -16,6 +16,9 @@ path = "src/lib.rs"
 
 [dependencies]
 chrono = "0.4"
+# Timezone-aware daily scheduling (task 34, design §6.1): embedded tzdata,
+# deterministic, no container tzdb dependency.
+chrono-tz = "0.10"
 clap.workspace = true
 db = { path = "../../crates/db" }
 ingestion = { path = "../../crates/ingestion", features = ["live-ckan"] }
