@@ -21,12 +21,13 @@
 //! `query.original`, normalized text, or a full HTTP response.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use search::engine::SearchEngine;
 use search::types::{Candidate, ScoredEvent, SearchOutcome, Selection};
 use sha2::{Digest, Sha256};
+use tokio::sync::watch;
 use uuid::Uuid;
 
 /// One entry's retained byte accounting overhead: the fixed per-item cost
@@ -203,6 +204,127 @@ pub fn rebuild(engine: &SearchEngine, effective_q: &str, entry: &CachedEntry) ->
     }
 }
 
+/// The result one shared computation hands to its waiters (design §3.3).
+pub enum SharedOutcome {
+    /// The leader's computation succeeded; every grouped request rebuilds
+    /// its own response from this entry (never from another request's
+    /// text — task 28's reconstruction contract).
+    Computed(Arc<CachedEntry>),
+    /// The computation itself failed (e.g. a provider error): the same
+    /// structural failure every grouped request would have hit on its own.
+    Failed(Arc<search::engine::EngineError>),
+    /// The leader disappeared (request cancelled) without publishing:
+    /// waiters recompute on their own account instead of hanging (the
+    /// in-flight holder is released, so a later identical request leads).
+    Abandoned,
+}
+
+impl std::fmt::Debug for SharedOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SharedOutcome::Computed(_) => f.write_str("Computed"),
+            SharedOutcome::Failed(_) => f.write_str("Failed"),
+            SharedOutcome::Abandoned => f.write_str("Abandoned"),
+        }
+    }
+}
+
+/// One shared computation holder (design §3.3): registered under its key at
+/// the first miss, holds a `watch` channel the leader publishes the result
+/// through. Waiters clone the holder and wait within their remaining
+/// deadline budget — never unbounded.
+pub struct SharedCompute {
+    result: watch::Sender<Option<Arc<SharedOutcome>>>,
+}
+
+/// What [`SearchCache::join_or_lead`] hands back: either run the
+/// computation yourself and publish it, or wait for the holder's result.
+pub enum Flight {
+    /// The caller is this key's leader: run the computation, then
+    /// [`FlightPublisher::publish`] the outcome (success or failure) so
+    /// the waiters are served. Dropping the publisher without publishing
+    /// abandons the holder (waiters recompute, the key is released).
+    Lead(FlightPublisher),
+    /// The caller joins an already-running computation for this key.
+    Wait(FlightWaiter),
+}
+
+/// The leader's handle: publishing delivers the outcome to every waiter
+/// AND releases the in-flight holder, so a request arriving after the
+/// publish but before the cache commit becomes a fresh leader instead of
+/// joining a finished group.
+pub struct FlightPublisher {
+    key: CacheKey,
+    shared: Arc<SharedCompute>,
+    inflight: Weak<Mutex<HashMap<CacheKey, Arc<SharedCompute>>>>,
+    published: bool,
+}
+
+impl FlightPublisher {
+    /// Publishes the computation outcome to the waiters and releases the
+    /// in-flight holder. `publishing is not caching`: the cache entry is
+    /// committed by the handler only after its own log persists (task 30).
+    pub fn publish(self, outcome: SharedOutcome) {
+        let mut publisher = self;
+        publisher.deliver(outcome);
+    }
+
+    fn deliver(&mut self, outcome: SharedOutcome) {
+        if !self.published {
+            let _ = self.shared.result.send(Some(Arc::new(outcome)));
+            self.published = true;
+            if let Some(inflight) = self.inflight.upgrade() {
+                let mut inflight = lock_inflight(&inflight);
+                inflight.remove(&self.key);
+            }
+        }
+    }
+}
+
+impl Drop for FlightPublisher {
+    fn drop(&mut self) {
+        // Cancellation safety: a leader whose request future is dropped
+        // mid-computation (client disconnect) abandons its waiters with a
+        // recomputable outcome instead of leaving the holder stuck.
+        if !self.published {
+            self.deliver(SharedOutcome::Abandoned);
+        }
+    }
+}
+
+/// The waiter's handle: waits for the holder's result within a bounded
+/// window (`None` = the window elapsed — the caller recomputes on its own
+/// account, never hangs).
+pub struct FlightWaiter {
+    result: watch::Receiver<Option<Arc<SharedOutcome>>>,
+}
+
+impl FlightWaiter {
+    /// Waits up to `window` for the leader's published result. The wait
+    /// never exceeds the window: on expiry the caller recomputes.
+    pub async fn wait(mut self, window: Duration) -> Option<Arc<SharedOutcome>> {
+        match tokio::time::timeout(window, self.result.wait_for(|option| option.is_some())).await {
+            Ok(Ok(received)) => Some(received.clone().unwrap_or_else(|| {
+                // Justified inline: wait_for above holds the guard while the
+                // predicate `option.is_some()` matched, so the seen value is
+                // always Some.
+                Arc::new(SharedOutcome::Abandoned)
+            })),
+            // Window elapsed, or the sender was dropped without publishing
+            // (defensive: the publisher's Drop covers that case too).
+            _ => None,
+        }
+    }
+}
+
+fn lock_inflight(
+    inflight: &Mutex<HashMap<CacheKey, Arc<SharedCompute>>>,
+) -> std::sync::MutexGuard<'_, HashMap<CacheKey, Arc<SharedCompute>>> {
+    inflight
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// One retained record: the shared computational entry plus its cache
 /// metadata (insertion instant for the lazy TTL, byte size, and the LRU
 /// stamp matching the newest `order` tuple for this key).
@@ -268,6 +390,10 @@ impl LruIndex {
 pub struct SearchCache {
     limits: CacheLimits,
     inner: Mutex<LruIndex>,
+    // Single-flight (design §3.3): an in-flight holder per key being
+    // computed right now. First miss leads; concurrent identical keys
+    // clone the holder and wait within their remaining deadline budget.
+    inflight: Arc<Mutex<HashMap<CacheKey, Arc<SharedCompute>>>>,
 }
 
 impl SearchCache {
@@ -281,7 +407,38 @@ impl SearchCache {
                 next_stamp: 0,
                 bytes: 0,
             }),
+            inflight: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Single-flight join-or-lead (design §3.3): if a computation for
+    /// `key` is already in flight, the caller becomes a waiter on the
+    /// holder; otherwise the caller leads — it runs the computation and
+    /// publishes the outcome through the returned handle. The decision is
+    /// atomic under the in-flight mutex, so exactly ONE leader exists per
+    /// key no matter how many concurrent requests miss simultaneously.
+    pub fn join_or_lead(&self, key: &CacheKey) -> Flight {
+        let mut inflight = lock_inflight(&self.inflight);
+        if let Some(shared) = inflight.get(key) {
+            return Flight::Wait(FlightWaiter {
+                result: shared.result.subscribe(),
+            });
+        }
+        let (result, _) = watch::channel(None::<Arc<SharedOutcome>>);
+        let shared = Arc::new(SharedCompute { result });
+        inflight.insert(key.clone(), Arc::clone(&shared));
+        Flight::Lead(FlightPublisher {
+            key: key.clone(),
+            shared,
+            inflight: Arc::downgrade(&self.inflight),
+            published: false,
+        })
+    }
+
+    /// The number of keys with a running (or abandoned-but-not-yet-reaped)
+    /// computation (test/observability surface).
+    pub fn inflight_count(&self) -> usize {
+        lock_inflight(&self.inflight).len()
     }
 
     /// Returns the cached computation for `key`, bumping it to most
@@ -313,22 +470,31 @@ impl SearchCache {
     /// least-recently-used entries until the new entry fits BOTH the byte
     /// and the entry limit. A single result larger than the whole byte
     /// limit is dropped without inserting (the caller serves it uncached).
-    pub fn insert(&self, key: CacheKey, entry: CachedEntry) {
+    /// Returns the number of entries evicted (task 33's eviction counter).
+    pub fn insert(&self, key: CacheKey, entry: CachedEntry) -> usize {
+        self.insert_shared(key, Arc::new(entry))
+    }
+
+    /// [`insert`] over an already-shared `Arc` entry (the single-flight
+    /// leader publishes its `Arc` and then commits the same shared entry).
+    pub fn insert_shared(&self, key: CacheKey, entry: Arc<CachedEntry>) -> usize {
         let byte_size = entry.byte_size();
         if byte_size > self.limits.max_bytes {
             // Oversized single result: served uncached, nothing inserted.
-            return;
+            return 0;
         }
         let mut index = self.lock();
         // Replacement first: the incoming record's own previous bytes must
         // not count against itself.
         index.remove(&key);
+        let mut evicted = 0usize;
         while index.bytes + byte_size > self.limits.max_bytes
             || index.entries.len() + 1 > self.limits.max_entries
         {
             if !index.evict_one() {
                 break;
             }
+            evicted += 1;
         }
         let stamp = index.next_stamp;
         index.next_stamp += 1;
@@ -336,13 +502,14 @@ impl SearchCache {
         index.entries.insert(
             key,
             EntryRecord {
-                entry: Arc::new(entry),
+                entry,
                 inserted_at: Instant::now(),
                 byte_size,
                 stamp,
             },
         );
         index.bytes += byte_size;
+        evicted
     }
 
     /// The number of live entries (test/observability surface).

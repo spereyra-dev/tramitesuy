@@ -9,6 +9,7 @@
 //! a failing log insert is a structural error → public 500 (design §3).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Query, State};
@@ -21,7 +22,7 @@ use search::engine::CandidateProvider;
 use search::normalizer::normalize;
 use search::types::{Candidate, NormalizedQuery, ScoredEvent, SearchOutcome, SelectionMode};
 
-use crate::cache::{self, CacheKey, CachedEntry};
+use crate::cache::{self, CacheKey, CachedEntry, Flight, SharedOutcome};
 use crate::dto;
 use crate::error::ApiError;
 use crate::generation::ActiveGeneration;
@@ -94,33 +95,37 @@ fn query_parameter(params: &HashMap<String, String>) -> Result<String, ApiError>
 /// The pending cache write of one compute-path request (S9 tasks 27/28):
 /// the computation is inserted into the CAPTURED generation's cache only
 /// after the request's log persists, so a structural error never leaves a
-/// cached entry behind. A cache hit carries nothing to write.
+/// cached entry behind. A cache hit (and a grouped single-flight join)
+/// carries nothing to write — the LEADER of the group commits.
 enum CacheWrite {
     None,
     Pending {
         key: CacheKey,
-        // Boxed: the cached computation is heap-sized and the write is
-        // optional, so the none variant must not pay its size.
-        entry: Box<CachedEntry>,
+        entry: Arc<CachedEntry>,
     },
 }
 
 /// Commits a pending cache write into the captured generation's cache
-/// (no-op on a cache hit). Oversized single results are dropped inside
-/// `SearchCache::insert` and served uncached by construction.
-fn cache_write_commit(write: CacheWrite, generation: &ActiveGeneration) {
+/// (no-op on a cache hit or a grouped join). Oversized single results are
+/// dropped inside `SearchCache::insert_shared` and served uncached by
+/// construction. Returns the number of entries evicted (task 33's
+/// observability seam reads it at the call site).
+fn cache_write_commit(write: CacheWrite, generation: &ActiveGeneration) -> usize {
     match write {
-        CacheWrite::None => {}
-        CacheWrite::Pending { key, entry } => generation.cache.insert(key, *entry),
+        CacheWrite::None => 0,
+        CacheWrite::Pending { key, entry } => generation.cache.insert_shared(key, entry),
     }
 }
 
-/// The search pipeline with the S9 cache in front (task 27/28): a cache
-/// hit rebuilds the outcome from the CURRENT request's text (its own
-/// `query`, `normalized_query`, and tokens — never another request's);
-/// a miss computes normalize → providers → score and hands back the
-/// pending write. Provider/log errors stay structural (public 500) and
-/// cache nothing.
+/// The search pipeline with the S9 cache in front (tasks 27/28) and the
+/// S10 single-flight on top (task 29, design §3.3): a cache hit rebuilds
+/// the outcome from the CURRENT request's text (its own `query`,
+/// `normalized_query`, and tokens — never another request's); a miss
+/// computes normalize → providers → score. Concurrent identical keys share
+/// ONE computation: the first miss leads, the others wait within the
+/// remaining deadline budget (timing out to their own computation, never
+/// hanging). Provider/log errors stay structural (public 500) and cache
+/// nothing.
 async fn lookup_or_compute(
     state: &AppState,
     generation: &ActiveGeneration,
@@ -144,18 +149,93 @@ async fn lookup_or_compute(
     }
 
     state.metrics.observe_cache(CacheEvent::Miss);
+    match generation.cache.join_or_lead(&key) {
+        Flight::Lead(publisher) => {
+            state.metrics.observe_cache(CacheEvent::Compute);
+            match compute_ranked(state, generation, query).await {
+                Ok((outcome, entry, provider_ops)) => {
+                    // Design §3.3: the outcome is broadcast to the waiters
+                    // at computation completion — BEFORE the leader's own
+                    // log, because each grouped request persists its OWN
+                    // log (task 30). The leader commits the cache entry
+                    // only after its log persists (the caller below).
+                    publisher.publish(SharedOutcome::Computed(Arc::clone(&entry)));
+                    Ok((outcome, CacheWrite::Pending { key, entry }, provider_ops))
+                }
+                Err(error) => {
+                    let error = Arc::new(error);
+                    publisher.publish(SharedOutcome::Failed(Arc::clone(&error)));
+                    Err(provider_failure(&error))
+                }
+            }
+        }
+        Flight::Wait(waiter) => {
+            // Bounded wait: the window is the request's deadline budget
+            // (S12 refines it to the REMAINING budget once the deadline
+            // wrapper lands). Elapsed → recompute on this request's own
+            // account, never hang.
+            match waiter.wait(state.limits.search_deadline).await {
+                Some(outcome) => match &*outcome {
+                    SharedOutcome::Computed(entry) => {
+                        state.metrics.observe_cache(CacheEvent::Grouped);
+                        Ok((
+                            cache::rebuild(&generation.engine, query, entry),
+                            CacheWrite::None,
+                            0,
+                        ))
+                    }
+                    SharedOutcome::Failed(error) => Err(provider_failure(error)),
+                    SharedOutcome::Abandoned => {
+                        // The leader was cancelled mid-computation: this
+                        // request recomputes fresh for itself.
+                        state.metrics.observe_cache(CacheEvent::Compute);
+                        recompute(state, generation, query).await
+                    }
+                },
+                None => {
+                    // The wait window elapsed: this request recomputes on
+                    // its own account (never hangs).
+                    state.metrics.observe_cache(CacheEvent::Compute);
+                    recompute(state, generation, query).await
+                }
+            }
+        }
+    }
+}
+
+/// Runs the ranking computation once over the CAPTURED generation
+/// (normalize → providers → score) and wraps the cached artifact.
+async fn compute_ranked(
+    state: &AppState,
+    generation: &ActiveGeneration,
+    query: &str,
+) -> Result<(SearchOutcome, Arc<CachedEntry>, u64), search::engine::EngineError> {
     let normalized = generation.engine.normalize(query);
     let candidates = fetch_candidates(state, generation, &normalized).await?;
     let outcome = generation.engine.score(&normalized, candidates.clone());
-    let entry = CachedEntry::from_outcome(&outcome, candidates);
-    Ok((
-        outcome,
-        CacheWrite::Pending {
-            key,
-            entry: Box::new(entry),
-        },
-        provider_sql_ops(generation),
-    ))
+    let entry = Arc::new(CachedEntry::from_outcome(&outcome, candidates));
+    Ok((outcome, entry, provider_sql_ops(generation)))
+}
+
+/// An expired waiter (or an abandoned leader's waiter) computes on its own
+/// account: no in-flight registration (the original leader still owns its
+/// holder), its own pending cache write, its own log.
+async fn recompute(
+    state: &AppState,
+    generation: &ActiveGeneration,
+    query: &str,
+) -> Result<(SearchOutcome, CacheWrite, u64), ApiError> {
+    match compute_ranked(state, generation, query).await {
+        Ok((outcome, entry, provider_ops)) => {
+            let key = CacheKey::new(
+                generation.generation_id(),
+                generation.engine_version().to_string(),
+                query,
+            );
+            Ok((outcome, CacheWrite::Pending { key, entry }, provider_ops))
+        }
+        Err(error) => Err(provider_failure(&error)),
+    }
 }
 
 /// Fetches the FTS + trigram candidates for an already-normalized query
@@ -163,12 +243,14 @@ async fn lookup_or_compute(
 /// orchestrator's fetch policy (S4b task 11) WITHOUT the scoring step:
 /// the cache needs the raw candidates to store them alongside the ranked
 /// result (task 28), so the decomposition lives at this boundary instead
-/// of `orchestrator::run_search`. Provider errors stay structural.
+/// of `orchestrator::run_search`. Failures stay typed (EngineError) so the
+/// single-flight leader can broadcast the SAME failure to its waiters
+/// (task 29) before the handler maps it to the structural 500.
 async fn fetch_candidates(
     state: &AppState,
     generation: &ActiveGeneration,
     normalized: &NormalizedQuery,
-) -> Result<Vec<Candidate>, ApiError> {
+) -> Result<Vec<Candidate>, search::engine::EngineError> {
     let fts = FtsProvider::new(state.pool.clone());
     let candidates = match generation.is_loaded() {
         true => {
@@ -195,18 +277,12 @@ async fn fetch_candidates_with<F: CandidateProvider, T: CandidateProvider>(
     generation: &ActiveGeneration,
     normalized: &NormalizedQuery,
     fetch: ProviderFetch,
-) -> Result<Vec<Candidate>, ApiError> {
+) -> Result<Vec<Candidate>, search::engine::EngineError> {
     let generation_id = generation.generation_id();
     let candidates = match fetch {
         ProviderFetch::Sequential => {
-            let mut candidates = fts
-                .candidates(generation_id, normalized)
-                .await
-                .map_err(provider_failure)?;
-            let trigram_candidates = trigram
-                .candidates(generation_id, normalized)
-                .await
-                .map_err(provider_failure)?;
+            let mut candidates = fts.candidates(generation_id, normalized).await?;
+            let trigram_candidates = trigram.candidates(generation_id, normalized).await?;
             candidates.extend(trigram_candidates);
             candidates
         }
@@ -215,8 +291,8 @@ async fn fetch_candidates_with<F: CandidateProvider, T: CandidateProvider>(
                 fts.candidates(generation_id, normalized),
                 trigram.candidates(generation_id, normalized),
             );
-            let mut candidates = fts_candidates.map_err(provider_failure)?;
-            candidates.extend(trigram_candidates.map_err(provider_failure)?);
+            let mut candidates = fts_candidates?;
+            candidates.extend(trigram_candidates?);
             candidates
         }
     };
@@ -225,8 +301,9 @@ async fn fetch_candidates_with<F: CandidateProvider, T: CandidateProvider>(
 
 /// Maps a provider failure to the SAME structural error the pre-cache
 /// pipeline produced (search-engine delta: provider failure is structural,
-/// never a partial ranking).
-fn provider_failure(error: search::engine::EngineError) -> ApiError {
+/// never a partial ranking). Takes the shared error by reference so the
+/// single-flight leader can broadcast the same failure to its waiters.
+fn provider_failure(error: &search::engine::EngineError) -> ApiError {
     ApiError::InternalServerError(format!("search pipeline failed: {error}"))
 }
 

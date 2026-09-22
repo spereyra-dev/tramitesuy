@@ -170,6 +170,25 @@ pub async fn spawn_app_with_generation(pool: PgPool) -> Router {
     api::build_router(state)
 }
 
+/// [`spawn_app_with_generation`] with an injected metrics sink AND the
+/// returned state — the S10 tests inspect the active generation's cache
+/// (single-flight holders, entries) directly instead of reconstructing boot
+/// state. `limits` drives the configured serving budget (e.g. the search
+/// deadline that bounds the single-flight wait window).
+pub async fn spawn_app_with_generation_state_and_metrics(
+    pool: PgPool,
+    metrics: std::sync::Arc<dyn api::metrics::Metrics>,
+    limits: api::config::ApiLimits,
+) -> (Router, api::state::AppState) {
+    publish_sample_generation(&pool).await;
+    let state =
+        api::state::AppState::boot_with_metrics(pool, &repo_root().join("data"), limits, metrics)
+            .await
+            .expect("boot AppState from the published generation");
+    let router = api::build_router(state.clone());
+    (router, state)
+}
+
 /// [`spawn_app_with_generation`] with an injected metrics sink.
 pub async fn spawn_app_with_generation_and_metrics(
     pool: PgPool,

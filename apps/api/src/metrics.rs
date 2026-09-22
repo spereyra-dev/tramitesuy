@@ -24,6 +24,15 @@ pub enum CacheEvent {
     Hit,
     Miss,
     Eviction,
+    /// A request actually ran the ranking computation (the single-flight
+    /// leader of its key, or a waiter whose wait window elapsed and
+    /// recomputed on its own account — S10 task 29). One grouped key
+    /// contributes exactly one Compute, never one per waiter.
+    Compute,
+    /// A request was served by a shared in-flight computation: it joined
+    /// the key's holder and consumed the leader's published result (S10
+    /// task 29/33).
+    Grouped,
 }
 
 /// The serving-generation gauge. Stage 3 wires a real generation; until
