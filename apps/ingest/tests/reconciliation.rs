@@ -355,3 +355,124 @@ async fn the_worker_publish_hints_the_notification_channel() {
 
     drop_test_db(&db_name).await;
 }
+
+/// A taxonomy-only YAML change (content_hash unchanged) is reconciled
+/// without a new generation: the worker's publish re-validates the
+/// published manifest against the current YAML and re-stamps its
+/// `taxonomy_version`, so the API's load gate accepts it (S7 recorded gap;
+/// task 23 reconciliation decision, design §6.4).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_taxonomy_only_yaml_change_is_adopted_without_a_new_generation() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_source_catalog(&pool).await;
+
+    // A temp copy of the real data seed: the worker publishes from it and
+    // the API boots from the same bytes.
+    let data_dir = temp_taxonomy_copy().await;
+    let version_before = ingest::support::compute_taxonomy_version(&data_dir)
+        .expect("taxonomy version from the temp copy");
+
+    let first = ingest::commands::publish::publish(&pool, &data_dir, Trigger::Manual)
+        .await
+        .expect("publish G1");
+    let g1 = first.published_generation_id.expect("G1 published");
+
+    // Taxonomy-only change: a comment line changes the YAML bytes (and the
+    // version hash) without touching any catalog content.
+    let synonym_file = std::fs::read_dir(data_dir.join("synonyms"))
+        .expect("synonyms dir")
+        .next()
+        .expect("a synonym file exists")
+        .expect("entry readable")
+        .path();
+    let yaml = std::fs::read_to_string(&synonym_file).expect("synonym yaml readable");
+    std::fs::write(
+        &synonym_file,
+        format!("{yaml}\n# taxonomy-only reconciliation probe\n"),
+    )
+    .expect("synonym file updated");
+    let version_after = ingest::support::compute_taxonomy_version(&data_dir)
+        .expect("taxonomy version after the change");
+    assert_ne!(
+        version_before, version_after,
+        "the YAML bytes changed the version"
+    );
+
+    // The republish: same content, changed taxonomy metadata.
+    let report = ingest::commands::publish::publish(&pool, &data_dir, Trigger::Manual)
+        .await
+        .expect("republish runs");
+    assert_eq!(
+        report.status, "success",
+        "the taxonomy-only republish succeeds: {report:?}"
+    );
+    assert!(
+        report.already_published,
+        "identical content produces no new generation"
+    );
+    assert_eq!(
+        report.published_generation_id,
+        Some(g1),
+        "the same content keeps the same generation id"
+    );
+    let recorded: String = sqlx::query_scalar(
+        "SELECT taxonomy_version FROM catalog_generations WHERE generation_id = $1",
+    )
+    .bind(g1)
+    .fetch_one(&pool)
+    .await
+    .expect("manifest row");
+    assert_eq!(
+        recorded, version_after,
+        "the manifest is re-stamped with the current taxonomy version"
+    );
+
+    // The API (booting with the same YAML bytes) now loads the manifest —
+    // the old version would have been rejected forever.
+    let state = api::state::AppState::boot(pool.clone(), &data_dir, Default::default())
+        .await
+        .expect("API boot with the re-stamped manifest");
+    assert_eq!(
+        state.active.load_full().generation_id(),
+        g1,
+        "the API adopts the re-stamped manifest"
+    );
+
+    drop_test_db(&db_name).await;
+}
+
+/// Copies the repository's real `data/` seed into a temp directory (the
+/// taxonomy-only-change tests must not mutate the committed seed).
+async fn temp_taxonomy_copy() -> std::path::PathBuf {
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("repo root")
+        .join("data");
+    let target = std::env::temp_dir().join(format!(
+        "s8-taxonomy-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos()
+    ));
+    copy_dir_recursive(&source, &target).expect("data seed copied");
+    target
+}
+
+/// Recursively copies a directory tree (tiny, tests only).
+fn copy_dir_recursive(source: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(target)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let path = entry.path();
+        let destination = target.join(entry.file_name());
+        if path.is_dir() {
+            copy_dir_recursive(&path, &destination)?;
+        } else {
+            std::fs::copy(&path, &destination)?;
+        }
+    }
+    Ok(())
+}

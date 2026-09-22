@@ -211,8 +211,74 @@ async fn publish_locked(
         "procedures": built.procedure_count,
     });
 
-    // Identical content already published: no new content version.
+    // Identical content already published: no new content version. A
+    // taxonomy-only YAML change (content_hash unchanged) re-validates the
+    // published manifest against the CURRENT taxonomy and re-stamps its
+    // `taxonomy_version`: the API's load gate (pinned to the boot YAML)
+    // would otherwise reject the manifest forever. The re-stamp is a
+    // manifest metadata correction — the content-derived generation_id and
+    // every projection row are untouched (task 23 reconciliation decision,
+    // design §6.4; recorded in the change's apply-progress).
     if built.already_published {
+        let recorded: String = sqlx::query_scalar!(
+            "SELECT taxonomy_version FROM catalog_generations WHERE generation_id = $1",
+            built.generation_id,
+        )
+        .fetch_one(pool)
+        .await
+        .map_err(|e| PublishError::Promotion(e.to_string()))?;
+        if recorded != taxonomy_version {
+            let restamp_gate = db::generations::validate::validate_generation(
+                pool,
+                built.generation_id,
+                Some(taxonomy),
+            )
+            .await
+            .map_err(|e| PublishError::Validation(e.to_string()))?;
+            if !restamp_gate.passed() {
+                let counts = serde_json::json!({
+                    "content_hash": built.content_hash,
+                    "events": built.event_count,
+                    "procedures": built.procedure_count,
+                    "validation_failures": restamp_gate
+                        .failures
+                        .iter()
+                        .map(|f| format!("{}: {}", f.kind, f.detail))
+                        .collect::<Vec<_>>(),
+                });
+                finish_run(
+                    pool,
+                    run_id,
+                    "validation_failed",
+                    counts.clone(),
+                    Some(built.generation_id),
+                    None,
+                )
+                .await?;
+                return Ok(PublishReport {
+                    run_id,
+                    status: "validation_failed".to_string(),
+                    candidate_generation_id: Some(built.generation_id),
+                    published_generation_id: None,
+                    already_published: true,
+                    counts,
+                    validation_failures: restamp_gate
+                        .failures
+                        .iter()
+                        .map(|f| format!("{}: {}", f.kind, f.detail))
+                        .collect(),
+                });
+            }
+            sqlx::query!(
+                "UPDATE catalog_generations SET taxonomy_version = $2 \
+                 WHERE generation_id = $1 AND status = 'published'",
+                built.generation_id,
+                taxonomy_version,
+            )
+            .execute(pool)
+            .await
+            .map_err(|e| PublishError::Promotion(e.to_string()))?;
+        }
         finish_run(
             pool,
             run_id,
