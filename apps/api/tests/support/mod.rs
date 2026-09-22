@@ -5,6 +5,13 @@
 //! provisions the extensions the docker init SQL provides on a real dev
 //! instance (`pg_trgm`, `unaccent`), applies the embedded migrations, seeds
 //! the read-surface fixture, and drops the database at the end.
+//!
+//! `allow(dead_code)` is justified: this module is compiled into EVERY api
+//! test binary while each helper is consumed by only some of them —
+//! `assert_hyphen_slugs`/`request_json`/`seed_read_fixture` are unused in
+//! the cache suites, the SQL-counter helpers are unused in the read
+//! suites, and so on; the allow is per-file test support, never a lint
+//! escape on production code.
 #![allow(dead_code)]
 
 use axum::Router;
@@ -164,9 +171,10 @@ pub fn spawn_app_with_state_and_metrics(
 /// restarted production API. Requires `seed_read_fixture` to have run.
 pub async fn spawn_app_with_generation(pool: PgPool) -> Router {
     publish_sample_generation(&pool).await;
-    let state = api::state::AppState::boot(pool, &repo_root().join("data"), Default::default())
-        .await
-        .expect("boot AppState from the published generation");
+    let state =
+        api::state::AppState::boot(pool, &repo_root().join("data"), limits_without_warming())
+            .await
+            .expect("boot AppState from the published generation");
     api::build_router(state)
 }
 
@@ -198,7 +206,7 @@ pub async fn spawn_app_with_generation_and_metrics(
     let state = api::state::AppState::boot_with_metrics(
         pool,
         &repo_root().join("data"),
-        api::config::ApiLimits::default(),
+        limits_without_warming(),
         metrics,
     )
     .await
@@ -650,4 +658,16 @@ pub async fn projection_row_count(pool: &PgPool) -> i64 {
         total += rows;
     }
     total
+}
+
+/// [`api::config::ApiLimits`] with background cache warming disabled (S10
+/// task 32): the serving default warms the cache after every adoption as a
+/// background task, and tests that measure statement counts or cache
+/// counters call the warming pass explicitly instead — so the background
+/// task can never race a measured window.
+pub fn limits_without_warming() -> api::config::ApiLimits {
+    api::config::ApiLimits {
+        cache_warming: false,
+        ..api::config::ApiLimits::default()
+    }
 }

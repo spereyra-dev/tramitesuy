@@ -143,6 +143,9 @@ pub async fn tick(state: &AppState) -> Result<TickReport, sqlx::Error> {
                 &state.retained_inflight_ids(),
             )
             .await?;
+            // Cache warming (S10 task 32): a background task after the
+            // confirmed adoption — never a publication condition.
+            crate::cache::warming::spawn(state);
             report.adopted = Some(adopted_id);
         }
         Ok(None) => {

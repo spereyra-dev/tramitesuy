@@ -55,6 +55,10 @@ pub enum OperationalAlert {
     /// A candidate generation was rejected because the memory budget has no
     /// room for it; the current generation keeps serving.
     MemoryBudget,
+    /// A cache-warming pass failed (S10 task 32): reported operationally,
+    /// never a publication condition — the current generation keeps
+    /// serving and the query simply stays uncached.
+    WarmingFailed,
 }
 
 /// The metric seam: sinks receive pre-aggregated, privacy-safe labels only.

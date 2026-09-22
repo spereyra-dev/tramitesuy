@@ -26,7 +26,7 @@ async fn a_cache_hit_executes_exactly_one_sql_statement() {
     let (app, _state) = spawn_app_with_generation_state_and_metrics(
         pool.clone(),
         metrics.clone(),
-        api::config::ApiLimits::default(),
+        limits_without_warming(),
     )
     .await;
 
@@ -108,7 +108,7 @@ async fn hundred_concurrent_identical_requests_produce_hundred_logs() {
     let (app, _state) = spawn_app_with_generation_state_and_metrics(
         pool.clone(),
         metrics.clone(),
-        api::config::ApiLimits::default(),
+        limits_without_warming(),
     )
     .await;
 
@@ -154,7 +154,7 @@ async fn a_forced_log_failure_returns_the_structural_error_and_caches_nothing() 
     let (app, state) = spawn_app_with_generation_state_and_metrics(
         pool.clone(),
         metrics.clone(),
-        api::config::ApiLimits::default(),
+        limits_without_warming(),
     )
     .await;
 
@@ -218,7 +218,7 @@ async fn a_failure_after_a_confirmed_log_write_is_still_a_write_documented_limit
     let (app, _state) = spawn_app_with_generation_state_and_metrics(
         pool.clone(),
         metrics.clone(),
-        api::config::ApiLimits::default(),
+        limits_without_warming(),
     )
     .await;
 

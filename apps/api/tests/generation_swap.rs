@@ -95,10 +95,16 @@ async fn the_captured_arc_keeps_the_old_generation_alive_until_the_request_drops
     let (pool, _db) = fresh_migrated_db().await;
     seed_read_fixture(&pool).await;
     publish_sample_generation(&pool).await;
-    let state =
-        api::state::AppState::boot(pool.clone(), &repo_root().join("data"), Default::default())
-            .await
-            .expect("boot loads G1");
+    let state = api::state::AppState::boot(
+        pool.clone(),
+        &repo_root().join("data"),
+        // Warming off: a background warming pass would legitimately hold a
+        // generation Arc of its own and inflate the strong-count contract
+        // this test pins (task 20's captured-Arc boundary).
+        limits_without_warming(),
+    )
+    .await
+    .expect("boot loads G1");
 
     let late = state.active.load_full();
     let captured_count = Arc::strong_count(&late);

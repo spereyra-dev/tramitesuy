@@ -97,7 +97,7 @@ fn query_parameter(params: &HashMap<String, String>) -> Result<String, ApiError>
 /// after the request's log persists, so a structural error never leaves a
 /// cached entry behind. A cache hit (and a grouped single-flight join)
 /// carries nothing to write — the LEADER of the group commits.
-enum CacheWrite {
+pub(crate) enum CacheWrite {
     None,
     Pending {
         key: CacheKey,
@@ -110,7 +110,7 @@ enum CacheWrite {
 /// dropped inside `SearchCache::insert_shared` and served uncached by
 /// construction. Returns the number of entries evicted (task 33's
 /// observability seam reads it at the call site).
-fn cache_write_commit(write: CacheWrite, generation: &ActiveGeneration) -> usize {
+pub(crate) fn cache_write_commit(write: CacheWrite, generation: &ActiveGeneration) -> usize {
     match write {
         CacheWrite::None => 0,
         CacheWrite::Pending { key, entry } => generation.cache.insert_shared(key, entry),
@@ -126,7 +126,7 @@ fn cache_write_commit(write: CacheWrite, generation: &ActiveGeneration) -> usize
 /// remaining deadline budget (timing out to their own computation, never
 /// hanging). Provider/log errors stay structural (public 500) and cache
 /// nothing.
-async fn lookup_or_compute(
+pub(crate) async fn lookup_or_compute(
     state: &AppState,
     generation: &ActiveGeneration,
     query: &str,

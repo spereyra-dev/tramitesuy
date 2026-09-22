@@ -45,7 +45,7 @@ async fn hundred_identical_concurrent_requests_share_one_computation() {
     let (app, _state) = spawn_app_with_generation_state_and_metrics(
         pool.clone(),
         metrics.clone(),
-        ApiLimits::default(),
+        limits_without_warming(),
     )
     .await;
 
@@ -124,7 +124,7 @@ async fn a_waiter_whose_window_elapses_recomputes_instead_of_hanging() {
         // compute on its own account instead of hanging forever.
         ApiLimits {
             search_deadline: Duration::from_millis(100),
-            ..ApiLimits::default()
+            ..limits_without_warming()
         },
     )
     .await;
@@ -187,7 +187,7 @@ async fn two_different_keys_compute_concurrently_without_grouping() {
     let (app, _state) = spawn_app_with_generation_state_and_metrics(
         pool.clone(),
         metrics.clone(),
-        ApiLimits::default(),
+        limits_without_warming(),
     )
     .await;
 

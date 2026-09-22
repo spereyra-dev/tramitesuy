@@ -24,6 +24,7 @@
 //! | `API_CACHE_MAX_BYTES` | 67108864 (64 MiB) | search-cache byte limit |
 //! | `API_CACHE_MAX_ENTRIES` | 10000 | search-cache entry limit |
 //! | `API_CACHE_TTL_SECS` | 86400 (24 h) | search-cache entry TTL |
+//! | `API_CACHE_WARMING` | on | cache warming after adoption (`0`/`false` disables) |
 
 use std::time::Duration;
 
@@ -61,6 +62,11 @@ pub struct ApiLimits {
     /// The search-cache limits (S9 task 27, design §3.4): 64 MiB / 10,000
     /// entries / 24 h TTL by default, all overridable via configuration.
     pub cache: CacheLimits,
+    /// Cache warming (S10 task 32): the committed non-sensitive list runs
+    /// through the normal computation path after every confirmed adoption.
+    /// On by default (production behavior per design §3.5); a deployment
+    /// that does not want warming turns it off (`API_CACHE_WARMING=0`).
+    pub cache_warming: bool,
 }
 
 impl Default for ApiLimits {
@@ -82,6 +88,7 @@ impl Default for ApiLimits {
             lag_alert_after: Duration::from_secs(600),
             memory_budget: None,
             cache: CacheLimits::default(),
+            cache_warming: true,
         }
     }
 }
@@ -175,7 +182,25 @@ impl ApiLimits {
                     defaults.cache.ttl.as_secs(),
                 )?),
             },
+            cache_warming: parse_bool(&lookup, "API_CACHE_WARMING", defaults.cache_warming)?,
         })
+    }
+}
+
+/// Parses a boolean serving flag: absent keeps the default; `1`/`true`
+/// enable, `0`/`false` disable, anything else is a configuration error.
+fn parse_bool(
+    lookup: &impl Fn(&str) -> Option<String>,
+    field: &'static str,
+    default: bool,
+) -> Result<bool, ConfigError> {
+    match lookup(field) {
+        None => Ok(default),
+        Some(raw) => match raw.as_str() {
+            "1" | "true" => Ok(true),
+            "0" | "false" => Ok(false),
+            _ => Err(ConfigError { field, value: raw }),
+        },
     }
 }
 

@@ -34,6 +34,33 @@ use crate::metrics::{GenerationState, Metrics};
 /// `upgrade()` succeeds while any request holds its captured `Arc`).
 type RetiredRegistry = Mutex<Vec<(uuid::Uuid, Weak<Arc<ActiveGeneration>>)>>;
 
+/// Typed boot error (AGENTS.md: typed errors per crate): the taxonomy
+/// bundle failed to load, or the confirmed-adoption write-back failed.
+#[derive(Debug)]
+pub enum BootError {
+    /// The YAML taxonomy bundle failed to load from the configured
+    /// `data_dir` (the engine's source of truth is unloadable).
+    Taxonomy(String),
+    /// The adoption write-back after the boot load failed: the manifest
+    /// record the worker's collector reads was not confirmed.
+    Adoption(sqlx::Error),
+}
+
+impl std::fmt::Display for BootError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BootError::Taxonomy(error) => {
+                write!(f, "taxonomy bundle load failed: {error}")
+            }
+            BootError::Adoption(error) => {
+                write!(f, "adoption write-back failed: {error}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for BootError {}
+
 #[derive(Clone)]
 pub struct AppState {
     /// The active generation holder (design §1.4): every handler captures
@@ -76,7 +103,7 @@ impl AppState {
     /// (the `taxonomy-validate` CLI owns validation in CI; boot requires
     /// only a loadable taxonomy). No snapshot is loaded — use [`boot`] for
     /// the durable-generation load path.
-    pub fn build(pool: sqlx::PgPool, data_dir: &Path) -> Result<Self, String> {
+    pub fn build(pool: sqlx::PgPool, data_dir: &Path) -> Result<Self, BootError> {
         Self::build_with_metrics(
             pool,
             data_dir,
@@ -91,7 +118,7 @@ impl AppState {
         data_dir: &Path,
         limits: ApiLimits,
         metrics: Arc<dyn Metrics>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, BootError> {
         let bundle = load_bundle(data_dir)?;
         Ok(Self::from_bundle(bundle, pool, limits, metrics))
     }
@@ -107,7 +134,7 @@ impl AppState {
         pool: sqlx::PgPool,
         data_dir: &Path,
         limits: ApiLimits,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, BootError> {
         Self::boot_with_metrics(
             pool,
             data_dir,
@@ -123,7 +150,7 @@ impl AppState {
         data_dir: &Path,
         limits: ApiLimits,
         metrics: Arc<dyn Metrics>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, BootError> {
         let bundle = load_bundle(data_dir)?;
         let state = Self::from_bundle(bundle.clone(), pool, limits, metrics);
         match generation::load_published_with_bundle_and_limits(
@@ -143,7 +170,11 @@ impl AppState {
                 let in_flight = state.retained_inflight_ids();
                 db::generations::adopt::confirm_adoption(&state.pool, adopted, &in_flight)
                     .await
-                    .map_err(|error| format!("adoption write-back: {error}"))?;
+                    .map_err(BootError::Adoption)?;
+                // Cache warming (S10 task 32): a background task after the
+                // confirmed adoption — never a publication condition (the
+                // publication above already completed).
+                crate::cache::warming::spawn(&state);
             }
             Ok(None) => {
                 // Cold start: nothing published yet (S7 task 22 semantics).
@@ -257,6 +288,7 @@ impl AppState {
     }
 }
 
-fn load_bundle(data_dir: &Path) -> Result<TaxonomyBundle, String> {
-    generation::load_taxonomy_bundle(data_dir).map_err(|error| error.to_string())
+fn load_bundle(data_dir: &Path) -> Result<TaxonomyBundle, BootError> {
+    generation::load_taxonomy_bundle(data_dir)
+        .map_err(|error| BootError::Taxonomy(error.to_string()))
 }

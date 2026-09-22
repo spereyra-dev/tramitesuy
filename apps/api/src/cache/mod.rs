@@ -20,6 +20,8 @@
 //! stores only the computational result (task 28) — never the request's
 //! `query.original`, normalized text, or a full HTTP response.
 
+pub mod warming;
+
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};

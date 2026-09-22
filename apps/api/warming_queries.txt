@@ -1,0 +1,16 @@
+# TrámitesUY cache warming list (S10 task 32, search-cache delta, design §3.5).
+#
+# A static, committed, NON-SENSITIVE list of example queries. No personal
+# data, no credentials, no user-derived content: every line is a generic
+# public-service phrase an operator chose in advance. One query per line;
+# `#` starts a comment; blank lines are ignored. Warming runs these through
+# the normal computation path (real providers, no fabricated user logs);
+# publication is never conditioned on warming.
+carnet de salud
+cédula de identidad
+comprar un vehículo
+licencia de conducir
+partida de nacimiento
+pasaporte
+turno de trámites
+certificado de residencia
