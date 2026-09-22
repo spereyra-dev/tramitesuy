@@ -1458,3 +1458,131 @@ No S12 task remains unchecked (49 total, 39 complete).
   hung provider query blocks its request until the sqlx 30 s pool wait),
   and over-length `q` values are processed normally. No `.sqlx`, schema,
   or data changes to unwind.
+
+## Slice S13 — Stage 5 Operations (tasks 40–43) — branch `opt/s13-raspi-profile`
+
+Status: **complete; slice gates green**. Delivery: auto-chain,
+stacked-to-main, branch cut from fresh `master` (dcdebe1). Structured
+status consumed before work: `gentle-ai.sdd-status` v2, change
+`optimize-raspi-serving`, `applyState: ready`, `nextRecommended: apply`,
+39/49 tasks, no native blockers, repo-local mode, whole workspace as the
+granted edit root (`.gentle-ai-instance` marker present, left untracked).
+Review Workload Gate: `Decision needed before apply: Yes` / `Chained PRs
+recommended: Yes` / S13 budget risk Medium — resolved by the
+maintainer-resolved pattern in the parent prompt (`auto-chain`,
+`stacked-to-main`).
+
+### Completed tasks and proof
+
+| Task | Proof (exact commands, results) |
+|---|---|
+| 40 prod profile, part 1 | RED: `make check-deploy` against the pre-change compose → `FAIL: the prod profile publishes the 5432 port`. GREEN: `make check-deploy` → OK — the prod model publishes no 5432 (`db-prod` has no `ports:`), no dev service would start under `--profile prod`, credentials are operator-managed `${POSTGRES_*}` interpolation (empty defaults; the postgres image itself refuses to start without a real password — the documented fail-safe; Compose v5 interpolates the whole file even for inactive profiles, so `:?` would have broken the dev flow), `.env` gitignored/untracked, every `${VAR}` declared in `.env.example`, and the Dockerfile wires `aarch64-unknown-linux-gnu` + `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER`. ARM64 rehearsal: `make image-arm64` → `tramitesuy/api:arm64` `linux/arm64` ~139 MB in ~1m52s (cross-toolchain path, native arm64 host; buildx v0.34.0-desktop.1); the image boots and `curl http://127.0.0.1:8080/ready` → HTTP 200 `status:"ready"` with the active generation. TRIANGULATE: plain `docker compose up -d db` (no profile, no .env) is a no-op against the running dev db (`Up 3 days (healthy)`) and `docker compose config db` still publishes 5432 — dev unchanged. |
+| 41 prod profile, part 2 | RED: extended `make check-deploy` proxy assertions → `FAIL: the HTTPS reverse proxy config … is missing`. GREEN: `docker/proxy/nginx.conf` — TLS termination (`listen 443 ssl`, operator-mounted material), privacy `log_format` (path via `$uri`; `$args`/`$query_string`/`$is_args`/`$request_uri`/`$http_referer` banned from logging), `location = /ready { return 404; }` (probes internal-only, outside the closed `/api/v1` inventory; no metrics route), upstream `api-prod:8080 max_fails=2 fail_timeout=10s` + `proxy_next_upstream … http_503` (readiness wiring), query-less proxy healthcheck. Executed rehearsal: `nginx -t` ok; a real search `?q=rehearsal%20un%20auto&marcador-q14=secreto` through the proxy (nginx:1.27-alpine against the running dev API, conf verified byte-identical modulo the upstream hostname) → HTTP 200, response served normally, access log carries exactly `GET /api/v1/search HTTP/2.0` — no `q=`, no query material; `/ready` publicly denied (404). TRIANGULATE: an upstream answering 503 (cold-start readiness state) withholds real traffic through the proxy — the client gets the 503 passthrough and the peer fails within `fail_timeout` (proxy healthcheck keeps failing in the same window). |
+| 42 backup and restore | `scripts/backup.sh` (pg_dump inside the container to an operator-configured target, gzip + integrity + near-empty guard + SHA-256 + retention) and `scripts/restore.sh` (checksum verify, `psql ON_ERROR_STOP` into an existing disposable target; never drops/creates databases). Executed rehearsal (disposable databases): `BACKUP_DIR=/private/tmp/s13-backup PROFILE=dev DATABASE=backup_rehearsal_a scripts/backup.sh` → 5,215,760 bytes + `.sha256`; restored into empty `backup_rehearsal_b` → restored counts 3,503 procedures / 1 published generation / 1 run record; a fresh `api:arm64` process booted against the restored db with an EMPTY search cache: `/ready` → HTTP 200 `status:"ready"` with the RESTORED manifest (generation `01a0c878-8672-…`), `/api/v1/categories` → 200, `/api/v1/search?q=compre%20un%20auto` → 200 `mode:"open"` — no recovery path relies on the search cache. TRIANGULATE: restoring the same backup WHILE that API ran left the active generation unchanged (generation id identical before/during/after; the manifest row's adoption write-back confirms the restored manifest); restoring over a non-empty db fails loudly (`ON_ERROR_STOP`: duplicate `unaccent_immutable`). Scratch rehearsal databases dropped afterwards. |
+| 43 rollback + configuration reset | Executed once and recorded in `docs/deploy-raspi.md`: non-default config (`API_Q_MAX_CHARS=64`, `API_MAX_CONCURRENT_SEARCHES=1`, `API_SEARCH_DEADLINE_MS=5000`) governs — a 100-char `q` answers HTTP 400 (prior default 512 would accept); removing the overrides restores the prior defaults with NO code change (same q → 200, mode open). Config-driven defaults pinned by their owning suites, all green at the rehearsal: `cargo test -p ingest --test daily_loop` → 8 passed (schedule/timezone), `--test retries` → 3 passed, `--test pool_config` → 2 passed, `cargo test -p api --test admission` → 4 passed, `--test deadline` → 6 passed, `--test config` → 4 passed. Retry offsets (`RETRY_OFFSET_MINUTES` 5/15/30) and the ingestion exclusion are code-level constants without an environment override — not resettable by configuration by design. Compose revert: `docker compose --profile prod config --services` → prod stack rendered (config-only, nothing started); `docker compose --profile dev config --services` → dev stack unchanged; plain `docker compose up -d db` → no-op (`Up 3 days (healthy)`). Run records and generation artifacts retained as data: 1 generation + 1 run before and after the whole rehearsal; no persistent data lost, dev stack never restarted. |
+
+### TDD Cycle Evidence (strict TDD; Rust untouched this slice — non-Rust surfaces use the `make check-deploy` RED + executed rehearsals)
+
+| Task | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| 40 | `make check-deploy` → FAIL "the prod profile publishes the 5432 port" (assertion target run against the unchanged compose) | `docker-compose.yml` prod profile (`db-prod` internal-only, `api-prod`/`ingest-prod`/`proxy` under `restart: unless-stopped` with healthchecks, `.env.example`), Dockerfile ARM64 cross path + curl runtime, Makefile `check-deploy`/`image-arm64`, CI `--profile dev` | dev TRIANGULATE asserted in check-deploy (`config db` still publishes 5432) and rehearsed as a real no-op `docker compose up -d db` | the `:?`-required interpolation was relaxed to `:-` empty defaults after discovering Compose v5 interpolates inactive-profile services and would have broken plain `docker compose up -d db` (dev TRIANGULATE); the fail-safe moved to the postgres image's own no-password refusal |
+| 41 | extended check-deploy proxy assertions → FAIL "the proxy config … is missing" | `docker/proxy/nginx.conf` + proxy compose service + check-deploy assertions | the privacy-search integration rehearsal (no `q=` in logs, response served) + the readiness-fails-no-routing 503-stub rehearsal | the initial check-deploy greps made whitespace-sensitive matches fail; loosened to `[[:space:]]+`-tolerant patterns |
+| 42 | RED is the executed rehearsal itself (no runner on this surface; the scripts did not exist) | `scripts/backup.sh` + `scripts/restore.sh` | restore-while-API-runs rehearsal (active generation unchanged until adoption confirms) + loud failure on non-empty-target restore | first restore attempt into the then-non-empty scratch db surfaced the ON_ERROR_STOP duplicate-function failure — kept as documented behavior |
+| 43 | Verify-only task (no behavior change; rehearsal-first) | the executed rehearsal recorded in `docs/deploy-raspi.md` | the config-governed 400→200 reset proof + the contract-pinning suites | — |
+
+### Files changed (S13)
+
+- `docker-compose.yml`: dev services gain `profiles: ["dev"]` (surface unchanged); prod stack `db-prod` (internal-only, SSD data dir via operator .env), `api-prod`, `ingest-prod`, `proxy` (all `restart: unless-stopped` + healthchecks; api-prod healthcheck on the internal `/ready`)
+- `Dockerfile`: release ARM64 (`aarch64-unknown-linux-gnu`) cross-build via the GNU toolchain on `$BUILDPLATFORM` (no QEMU in the Rust stage; plain builds keep the native target) + curl in the runtime image for the readiness healthchecks
+- `.env.example` (new): operator template, placeholders only, every `${VAR}` the prod profile interpolates
+- `docker/proxy/nginx.conf` (new): HTTPS reverse proxy (TLS termination, privacy log format, internal-only `/ready` deny, passive readiness wiring, query-less healthcheck)
+- `scripts/check-deploy.sh` (new), `scripts/backup.sh` (new), `scripts/restore.sh` (new)
+- `Makefile`: `check-deploy` + `image-arm64` targets
+- `.github/workflows/ci.yml`: the compose integration job pins `--profile dev` (services now declare profiles)
+- `docs/deploy-raspi.md` (new): the production runbook with all executed rehearsal evidence (tasks 40–43)
+- No Rust source, no SQL, no `.sqlx/` change: nothing in the Rust surface regressed (`cargo test --workspace` green at the boundary)
+
+### Test commands run
+
+- `make check-deploy` → RED first (5432 published), then OK; extended for task 41 → RED ("proxy config missing"), then OK
+- `make image-arm64` → image `tramitesuy/api:arm64` (`linux/arm64`, ~139 MB); boot + `/ready` → HTTP 200
+- Executed rehearsals: nginx `nginx -t` ok; search-over-proxy 200 with a query-free access log; 503-stub no-routing rehearsal; backup 5.2 MB + sha256; restore into disposable db; restored-catalog readiness/catalog/search 200; restore-while-API-runs (generation unchanged, adoption confirmed); config-reset 400→200 rehearsal; compose profile render + dev revert no-op
+- `cargo test --workspace` (`make test`) → 104 suites `test result: ok`, 0 FAILED
+- `cargo test -p search --test golden` → 6 passed (golden gate green)
+- `make lint` → `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` green
+- `make check-deploy` at the boundary → OK
+
+### Deviations from design/tasks (recorded)
+
+1. **Compose v5 profiles + interpolation semantics.** Docker Compose
+   v5.1.3 interpolates the whole file even for inactive profiles, so
+   `${POSTGRES_PASSWORD:?required}` would have broken the plain
+   `docker compose up -d db` dev flow (the task's TRIANGULATE). The prod
+   services default the credential variables to EMPTY instead; the
+   postgres image itself refuses to start without a real password — the
+   documented fail-safe — and the operator contract
+   (`--env-file /etc/tramitesuy/.env`) is asserted by `make check-deploy`.
+   Dev services carry `profiles: ["dev"]`: a plain named-service
+   invocation (`docker compose up -d db`) auto-activates the service's own
+   profile, so the dev flow is unchanged; the full dev stack is now
+   `docker compose --profile dev up --build` (compose header comment and
+   CI updated accordingly — the one intentional dev-surface change).
+2. **ARM64 rehearsal ran natively, not under QEMU.** The host is Apple
+   M1 (arm64): `make image-arm64` builds the `linux/arm64` target
+   natively, so the Dockerfile's cross-toolchain branch (for amd64 hosts)
+   was not executed here — recorded honestly; the target exists, the
+   image builds and boots, and the build attempt is recorded with its
+   outcome.
+3. **The restore rehearsal used scratch databases on the compose
+   Postgres instance** (disposable `backup_rehearsal_a/b`), and the
+   rehearsal API ran the `api:arm64` image on ports 18080–18082 — the
+   running dev containers were never restarted or rebuilt, and the
+   scratch databases were dropped afterwards. The production backup
+   target is operator configuration (`BACKUP_DIR`), documented as such.
+4. **`/ready` publicly denied at the proxy** (`return 404`): the task's
+   "readiness wiring to the internal /ready" is implemented via the
+   passive upstream checks + the proxy healthcheck probing the API's
+   `/ready` from INSIDE; the public surface never routes probes.
+5. **The task-43 "retry" surface** is not environment-configurable
+   (`RETRY_OFFSET_MINUTES` is a code constant) — the rehearsal covers the
+   configurable surfaces (schedule/timezone/pool/deadline/admission) and
+   records that retry/exclusion defaults cannot be drifted by
+   configuration at all.
+
+### Remaining tasks (unchecked at the tasks locator)
+
+All tasks 44–49 (stage 6 — Validation) remain unchecked, starting with:
+
+- `- [ ] 44. [S14] SQL-budget acceptance test: crates/db/tests/sql_budget.rs ...`
+
+No S13 task remains unchecked (49 total, 43 complete).
+
+### Workload / PR boundary
+
+- Slice S13 = PR 14 of the 15-PR stacked chain (branch
+  `opt/s13-raspi-profile`, cut from fresh master dcdebe1; merge/stack at
+  the gate — merge to master and push are the parent's, per the delivery
+  contract). Four work-unit commits: `feat(deploy): production compose
+  profile with release ARM64 image (S13 task 40)`,
+  `feat(deploy): HTTPS reverse proxy with privacy-safe access logs (S13
+  task 41)`, `feat(deploy): backup and restore scripts with executed
+  restore rehearsal (S13 task 42)`, `docs(deploy): stage rollback and
+  configuration reset rehearsal (S13 task 43)`; the S13 apply-progress
+  commit closes the slice.
+- Authored changed lines across the 4 commits: **~590 insertions /
+  ~16 deletions** — under the 400-line budget per commit boundary as
+  tasks.md forecasts for S13 (~320 est.; ~330 lines of it are the new
+  runbook + scripts + check script). No comments, blank lines, docs, or
+  tests were compressed to reach the number; no `size:exception` is
+  needed this slice.
+- gga: no `*.rs`/`*.ts`/`*.tsx`/`*.js`/`*.jsx` files changed in S13
+  (compose/YAML/shell/docs only) — the gga staged-file hook had no
+  in-scope files; a manual review pass was done on each commit (shell
+  quoting, compose model, nginx config, privacy assertions) and is
+  recorded here as the review evidence for this slice.
+- Rollback boundary: revert the four S13 commits — the dev stack returns
+  to the pre-S13 compose model (no profiles), the proxy/backup/restore
+  surfaces disappear, and the running dev stack (never restarted this
+  slice) is untouched. No migrations, no `.sqlx`, no persisted data
+  changes to unwind; the disposable rehearsal databases were dropped.
+
