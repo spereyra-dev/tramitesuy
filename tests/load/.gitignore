@@ -1,0 +1,5 @@
+# Load-harness local artifacts (S14 task 47): bytecode cache and the
+# per-run API/publish process logs stay local; the JSON results,
+# RESULTS.md and plan.log are committed evidence.
+__pycache__/
+results/logs/
