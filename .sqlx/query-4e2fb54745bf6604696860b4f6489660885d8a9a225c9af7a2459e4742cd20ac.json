@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ingestion_runs (run_id, trigger, started_at, status, attempt) VALUES ($1, $2, $3, 'running', $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4e2fb54745bf6604696860b4f6489660885d8a9a225c9af7a2459e4742cd20ac"
+}

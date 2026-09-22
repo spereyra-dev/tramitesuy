@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ingestion_runs (run_id, trigger, started_at, finished_at, status, counts, candidate_generation_id, published_generation_id, attempt) VALUES ($1, $2, now(), now(), $3, $4, NULL, NULL, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c7a74a189ad2220adea3c8c5745aee642eb5962b4ebd4c36fdd03e83fbd7b55"
+}

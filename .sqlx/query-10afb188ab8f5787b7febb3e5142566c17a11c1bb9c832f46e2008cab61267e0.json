@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT pg_advisory_unlock(hashtext('tramitesuy:ingestion')) AS \"released!\"",
+  "query": "SELECT pg_try_advisory_xact_lock(hashtext('tramitesuy:ingestion')) AS \"acquired!\"",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "released!",
+        "name": "acquired!",
         "type_info": "Bool",
         "origin": "Expression"
       }
@@ -17,5 +17,5 @@
       null
     ]
   },
-  "hash": "a6ae951f3caadb2f1be51aa61ede27d72d92a63abff4f84a56f004f96926a1ab"
+  "hash": "10afb188ab8f5787b7febb3e5142566c17a11c1bb9c832f46e2008cab61267e0"
 }

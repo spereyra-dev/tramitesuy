@@ -22,6 +22,7 @@
 //!   attempt; error paths record a terminal `failed` status.
 
 use crate::errors::PublishError;
+use crate::exclusion::IngestionExclusion;
 use sqlx::PgPool;
 use sqlx::types::chrono::{DateTime, Utc};
 use std::path::Path;
@@ -94,9 +95,12 @@ fn run_once(data_dir: &str, database_url: Option<&str>) -> Result<(), PublishErr
     Ok(())
 }
 
-/// The full promotion flow over one pool. A validation failure is recorded
-/// on the run record, not propagated as a panic; other failures mark the
-/// run `failed` before propagating.
+/// The full promotion flow over one pool. The ingestion exclusion is
+/// acquired first (transaction-scoped, released with the guard on every
+/// exit path); a run that cannot acquire it records a `skipped` status and
+/// is not queued. A validation failure is recorded on the run record, not
+/// propagated as a panic; other failures mark the run `failed` before
+/// propagating.
 pub async fn publish(
     pool: &PgPool,
     data_dir: &Path,
@@ -109,33 +113,22 @@ pub async fn publish(
         .map_err(|e| PublishError::Taxonomy(e.to_string()))?;
     let taxonomy_version = crate::support::compute_taxonomy_version(data_dir)?;
 
-    // The ingestion exclusion is held for the whole flow on one dedicated
-    // connection (session-level advisory lock, unlocked on the same session).
-    let mut exclusivity = pool
-        .acquire()
+    // The ingestion exclusion is held for the whole flow on the guard's
+    // transaction (released with the guard — commit, rollback, drop, or an
+    // unwind — so no path leaves a stuck exclusion).
+    let held = IngestionExclusion::try_acquire(pool)
         .await
         .map_err(|e| PublishError::Exclusion(e.to_string()))?;
-    let lock_acquired = sqlx::query_scalar!(
-        "SELECT pg_try_advisory_lock(hashtext('tramitesuy:ingestion')) AS \"acquired!\"",
-    )
-    .fetch_one(&mut *exclusivity)
-    .await
-    .map_err(|e| PublishError::Exclusion(e.to_string()))?;
-
-    let run_id = Uuid::now_v7();
-    let started_at = Utc::now();
-    if !lock_acquired {
-        record_terminal_run(
+    let Some(exclusion) = held else {
+        let run_id = crate::run_records::record_terminal_run(
             pool,
-            RunStart {
-                run_id,
-                trigger,
-                started_at,
-            },
+            trigger.as_str(),
             "skipped",
             serde_json::json!({ "reason": "ingestion exclusion held by another run" }),
+            1,
         )
-        .await?;
+        .await
+        .map_err(|e| PublishError::RunRecord(e.to_string()))?;
         return Ok(PublishReport {
             run_id,
             status: "skipped".to_string(),
@@ -145,18 +138,49 @@ pub async fn publish(
             counts: serde_json::json!({ "reason": "exclusion held" }),
             validation_failures: Vec::new(),
         });
-    }
+    };
 
-    let result = publish_locked(
+    let result = publish_locked(pool, &taxonomy, &taxonomy_version, trigger, 1).await;
+    drop(exclusion);
+    result
+}
+
+/// The promotion flow over a directory for a run that ALREADY holds the
+/// ingestion exclusion (the daemon's scheduled cycle acquires it once
+/// around ingest + publish): the flow body with the run record carrying
+/// the cycle's attempt number.
+pub async fn publish_with_exclusion_held(
+    pool: &PgPool,
+    data_dir: &Path,
+    trigger: Trigger,
+    attempt: i16,
+) -> Result<PublishReport, PublishError> {
+    let taxonomy = taxonomy::loader::load_data_dir(data_dir)
+        .map_err(|e| PublishError::Taxonomy(e.to_string()))?;
+    let taxonomy_version = crate::support::compute_taxonomy_version(data_dir)?;
+    publish_locked(pool, &taxonomy, &taxonomy_version, trigger, attempt).await
+}
+
+/// The flow body, called with the exclusion held.
+async fn publish_locked(
+    pool: &PgPool,
+    taxonomy: &taxonomy::model::Taxonomy,
+    taxonomy_version: &str,
+    trigger: Trigger,
+    attempt: i16,
+) -> Result<PublishReport, PublishError> {
+    let run_id = Uuid::now_v7();
+    let started_at = Utc::now();
+    let result = publish_run(
         pool,
-        &taxonomy,
-        &taxonomy_version,
+        taxonomy,
+        taxonomy_version,
         trigger,
+        attempt,
         run_id,
         started_at,
     )
     .await;
-
     if let Err(error) = &result {
         // Error paths mark the run `failed`: no run record is left `running`.
         let counts = serde_json::json!({ "error": error.to_string() });
@@ -170,31 +194,25 @@ pub async fn publish(
         .execute(pool)
         .await;
     }
-
-    sqlx::query!("SELECT pg_advisory_unlock(hashtext('tramitesuy:ingestion')) AS \"released!\"",)
-        .fetch_one(&mut *exclusivity)
-        .await
-        .map_err(|e| PublishError::Exclusion(e.to_string()))?;
-    drop(exclusivity);
-
     result
 }
 
-/// The flow body, called with the exclusion held.
-async fn publish_locked(
+async fn publish_run(
     pool: &PgPool,
     taxonomy: &taxonomy::model::Taxonomy,
     taxonomy_version: &str,
     trigger: Trigger,
+    attempt: i16,
     run_id: Uuid,
     started_at: DateTime<Utc>,
 ) -> Result<PublishReport, PublishError> {
     sqlx::query!(
         "INSERT INTO ingestion_runs (run_id, trigger, started_at, status, attempt) \
-         VALUES ($1, $2, $3, 'running', 1)",
+         VALUES ($1, $2, $3, 'running', $4)",
         run_id,
         trigger.as_str(),
         started_at,
+        attempt,
     )
     .execute(pool)
     .await
@@ -428,37 +446,4 @@ async fn finish_run(
     .await
     .map_err(|e| PublishError::RunRecord(e.to_string()))?;
     Ok(())
-}
-
-/// Records one terminal run row for the flows that never start work
-/// (excluded runs are recorded as `skipped`, not queued).
-async fn record_terminal_run(
-    pool: &PgPool,
-    run: RunStart,
-    status: &str,
-    counts: serde_json::Value,
-) -> Result<(), PublishError> {
-    sqlx::query!(
-        "INSERT INTO ingestion_runs \
-         (run_id, trigger, started_at, finished_at, status, counts, \
-          candidate_generation_id, published_generation_id, attempt) \
-         VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, 1)",
-        run.run_id,
-        run.trigger.as_str(),
-        run.started_at,
-        Utc::now(),
-        status,
-        counts,
-    )
-    .execute(pool)
-    .await
-    .map_err(|e| PublishError::RunRecord(e.to_string()))?;
-    Ok(())
-}
-
-/// The identity fields a run record is opened with.
-struct RunStart {
-    run_id: Uuid,
-    trigger: Trigger,
-    started_at: DateTime<Utc>,
 }

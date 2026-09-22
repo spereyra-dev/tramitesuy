@@ -6,6 +6,7 @@
 //! Configuration is environment-only (IN-2): no URL literal may exist in
 //! source, so the catalog base URL MUST come from `CKAN_BASE_URL`.
 
+use crate::exclusion::IngestionExclusion;
 use crate::support;
 use ingestion::pipeline;
 use ingestion::summary::RunStamp;
@@ -20,9 +21,12 @@ pub fn run() {
     }
 }
 
-/// One ingestion pass: build the fetcher, run the pipeline, print the
-/// deterministic run summary. Returns a message on configuration or run
-/// failure so the daemon loop can log and retry without exiting.
+/// One ingestion pass: build the fetcher, acquire the ingestion exclusion
+/// (task 35: manual runs share the scheduled runs' exclusion — a blocked
+/// run records a `skipped` status and is not queued), run the pipeline,
+/// print the deterministic run summary. Returns a message on
+/// configuration or run failure so the daemon loop can log and retry
+/// without exiting.
 pub fn run_once() -> Result<(), String> {
     let base = std::env::var("CKAN_BASE_URL")
         .unwrap_or_default()
@@ -31,16 +35,80 @@ pub fn run_once() -> Result<(), String> {
     run_once_with_base(&base)
 }
 
-/// One ingestion pass over an explicit catalog base URL (the failure-
-/// injection tests drive it directly; the production path reads
-/// `CKAN_BASE_URL` — IN-2: no URL literals in code).
+/// The production-path alias: the database URL arrives from the
+/// environment (IN-2).
 pub fn run_once_with_base(base: &str) -> Result<(), String> {
+    run_once_with_url(base, None)
+}
+
+/// One ingestion pass over an explicit catalog base URL and an explicit
+/// database URL (None = the environment chain, IN-2; the failure-injection
+/// and exclusion tests drive both explicitly). The ingestion exclusion is
+/// held for the whole pass on the guard's transaction: the acquisition and
+/// the release both run on the shared runtime (the transaction-scoped lock
+/// rolls back with the guard), while the pipeline's blocking HTTP client
+/// stays off async workers.
+pub fn run_once_with_url(base: &str, database_url: Option<&str>) -> Result<(), String> {
     let fetcher = build_fetcher_with(base)?;
-    let repo = support::repository_for(None);
-    let summary =
-        pipeline::run_csv(&fetcher, &repo, now_stamp()).map_err(|error| error.to_string())?;
-    print!("{}", summary.report());
-    Ok(())
+    let acquired = support::block_on(async {
+        let pool = support::connect_pool(&support::database_url(database_url));
+        let held = IngestionExclusion::try_acquire(&pool).await;
+        let held = match held {
+            Ok(held) => held,
+            Err(error) => return Err(format!("ingestion exclusion check failed: {error}")),
+        };
+        match held {
+            None => {
+                // The exclusion is held by another run (scheduled or
+                // manual): this run terminates, is recorded `skipped`,
+                // and is not queued — the API keeps serving the current
+                // generation throughout.
+                let recorded = crate::run_records::record_terminal_run(
+                    &pool,
+                    "manual",
+                    "skipped",
+                    serde_json::json!({ "reason": "ingestion exclusion held by another run" }),
+                    1,
+                )
+                .await;
+                let run_id = recorded.map_err(|error| {
+                    format!("the skipped run record could not be written: {error}")
+                })?;
+                Ok(Acquired::Skipped(run_id))
+            }
+            Some(exclusion) => Ok(Acquired::Held(pool, exclusion)),
+        }
+    });
+    match acquired? {
+        Acquired::Skipped(run_id) => {
+            eprintln!(
+                "ingest skipped: the ingestion exclusion is held by another run (recorded run {run_id})"
+            );
+            Ok(())
+        }
+        Acquired::Held(pool, exclusion) => {
+            let repo = support::open_repository(pool.clone());
+            let ran = pipeline::run_csv(&fetcher, &repo, now_stamp());
+            // The exclusion is released on EVERY exit path (pipeline error
+            // included) and the release runs on the shared runtime, where
+            // the transaction-scoped lock rolls back with the guard.
+            support::block_on(async {
+                drop(exclusion);
+            });
+            let summary = ran.map_err(|error| error.to_string())?;
+            print!("{}", summary.report());
+            Ok(())
+        }
+    }
+}
+
+/// The outcome of the exclusion acquisition phase of one pass.
+enum Acquired {
+    /// The exclusion is held by another run; the skipped run record is
+    /// written and the run is not queued.
+    Skipped(uuid::Uuid),
+    /// This run holds the exclusion for the rest of the pass.
+    Held(sqlx::PgPool, IngestionExclusion),
 }
 
 fn build_fetcher_with(
