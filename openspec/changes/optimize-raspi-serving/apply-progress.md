@@ -1057,3 +1057,139 @@ No S9 task remains unchecked (49 total, 28 complete).
   structural errors, same SQL ops), the cache module/config fields drop
   additively, and no migration or `.sqlx` change exists to unwind (S9
   changed no SQL).
+
+## Slice S10 — Stage 4 Cache (tasks 29–33) — branch `opt/s10-cache-concurrency`
+
+Status: **complete; slice gates green**. Delivery: auto-chain,
+stacked-to-main, branch cut from fresh `master` (1698d92). Structured
+status consumed before work: `gentle-ai.sdd-status` v2, change
+`optimize-raspi-serving`, `applyState: ready`, `nextRecommended: apply`,
+28/49 tasks, no native blockers, repo-local mode, whole workspace as the
+granted edit root (`.gentle-ai-instance` marker present, left untracked —
+the gga hook re-staged it during three commits and each was
+reset/amended out, matching the S8/S9 recovery pattern).
+
+### Completed tasks and proof
+
+| Task | Proof (exact commands, results) |
+|---|---|
+| 29 single-flight with bounded wait | `cargo test -p api --test cache_single_flight` → 5 passed: 100 identical concurrent requests (leader pinned mid-computation behind a `LOCK TABLE life_events IN ACCESS EXCLUSIVE MODE` barrier) produce exactly 1 ranking computation (`Compute` 1), 99 grouped requests (`Grouped` 99), 100 successful responses, and 100 `search_logs` rows, with 0 cache hits (no request was served from a completed cache); a waiter whose window elapses (search deadline configured to 100 ms, lock held 300 ms) recomputes on its own account and both requests succeed (`Compute` 2, `Grouped` 0) instead of hanging; TRIANGULATE: two different keys (matching and zero-match) compute concurrently without grouping (`Compute` 2, `Grouped` 0); unit-level: the wait window never exceeds its budget (50 ms window observed in [50 ms, 2 s)) and an abandoned leader releases the in-flight holder so a later identical request leads fresh. |
+| 30 log-before-respond on the cached path | `cargo test -p api --test cache_log_guarantee` → 4 passed: a cache hit executes exactly 1 SQL statement (the consolidated log insert; SqlCounter over the counting pool) and the metrics SQL-op seam accounts for the same 1 (admission counts log work); 100 concurrent identical requests produce exactly 100 `search_logs` rows (each request persists its OWN log — one per request, never one per group); a forced log failure (`search_logs` dropped) returns the structural public 500 on both grouped requests and caches nothing (`entry_count() == 0`); TRIANGULATE: a transport failure after a confirmed log write is not reported as "no write" — the documented at-most-once limit asserted in the test name and comment, with the persisted row surviving a dropped unread response. |
+| 31 generation isolation for late requests | `cargo test -p api --test cache_generation_isolation` → 2 passed: a G1 request pinned mid-flight (its pool's only connection held by the test) finishes after G2 is adopted, answers coherently with G1 data (the OLD procedure name — never G2's ` (cambiado)` content) and commits its entry only into G1's cache, while G2's cache stays empty before, during, and after the late insert; TRIANGULATE: with G2 warmed by its own query, the late G1 insert cannot evict it — G2's entry count and byte accounting are untouched and the G2 entry still serves as a hit. |
+| 32 cache warming | `cargo test -p api --test cache_warming` → 3 passed: after adoption (publication already complete — generation active and snapshot serving BEFORE warming runs), the committed list (`apps/api/warming_queries.txt`, embedded via `include_str!`) is warmed through the normal computation path (`lookup_or_compute`): every listed query ends up cached (`entry_count() == committed.len()`), NO `search_logs` rows exist after warming (`count == 0`), and a warmed query serves as a hit (no computation); a failing warming (database dropped under the running state) warms nothing, is reported through the `WarmingFailed` operational alert, and leaves serving unaffected (snapshot reads still 200); TRIANGULATE: warming an already-warm cache is a no-op — the second pass computes nothing (`warmed == 0`), the entry count and byte accounting are unchanged. |
+| 33 cache observability | `cargo test -p api --test cache_metrics` → 2 passed: after hits, misses, two evictions (one-entry limit) and a grouped computation, the counters match the observed behavior exactly (Hit 2, Miss 4, Compute 3, Grouped 1, Eviction 2) and the size gauges track the live cache (`cache_entries()/cache_bytes()` equal the cache's own `entry_count()`/`bytes()`); NO label carries the query text, its normalized form, its canonical tokens, or any of the three exercised fingerprints (hex renderings asserted absent via `all_labels()`); TRIANGULATE: the openapi-independent error path (a failing search, `search_logs` dropped) emits no query text — in no label AND not in the public error body (leak-none clause asserted on both surfaces). |
+
+### TDD Cycle Evidence (strict TDD, runner `cargo test`)
+
+| Task | RED (failing test first) | GREEN (minimal implementation) | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| 29 | `cargo test -p api --test cache_single_flight` → compile failure (E0599 `join_or_lead` not found on `SearchCache`, E0433 unresolved `api::cache::Flight`/`SharedOutcome`, E0425 missing `CacheEvent::Compute/Grouped` and the support helper), then the behavioral RED after the metric-variant fix | `apps/api/src/cache/mod.rs`: `inflight: Arc<Mutex<HashMap<CacheKey, Arc<SharedCompute>>>>` on `SearchCache`; `join_or_lead` (atomic under the mutex ⇒ exactly one leader per key), `SharedCompute` over `tokio::sync::watch` (`Option<Arc<SharedOutcome>>`), `Flight::{Lead, Wait}` with `FlightPublisher::publish` (broadcast + holder release) and cancellation-safe `Drop` → `Abandoned`, `FlightWaiter::wait(window)` bounded by the search-deadline budget (expiry → the caller's own computation); handler `lookup_or_compute` split into lead/wait/recompute paths; `CacheEvent::{Compute, Grouped}` counters | the two-different-keys end-to-end test (no grouping) and the end-to-end expiry test (expired waiter recomputes; `Compute` 2, `Grouped` 0) | watch `Ref` clone cleanup; unused const dropped; fmt + clippy workspace green |
+| 30 | `cargo test -p api --test cache_log_guarantee` → behavioral RED recorded as the test-bug sequence (mis-captured metric deltas), then green — the log-before-respond behavior itself was already in place from S9 (the pending write commits only after `persist_log`) | no production change needed — the suite pins the S9-established contract (hit cost 1 statement, 100 concurrent ⇒ 100 logs, log failure ⇒ structural error and no cached success) | the documented at-most-once limit (a failure AFTER a confirmed log write is still a write) asserted in the test name + comment, not re-implemented | n/a (test-only slice; fmt/clippy green) |
+| 31 | `cargo test -p api --test cache_generation_isolation` — the pool-pin harness and assertions; the isolation behavior itself was already structurally guaranteed by S9 (per-generation caches; the captured `Arc` is the only write target), so the tests pin the guarantee end-to-end | test-only slice: the pin-via-pool-exhaustion helper (one-connection API pool + a separate setup pool for adoption), G1-consistency assertions and the G2-cache-empty assertions | the late-insert-cannot-evict-a-G2-entry test (independent `SearchCache` objects ⇒ untouched byte accounting + a live G2 hit) | n/a (test-only) |
+| 32 | `cargo test -p api --test cache_warming` → E0433 `api::cache::warming` unresolved, then behavioral RED (the warming pass computed 8 with the background pass racing the explicit calls before the gate) | `apps/api/src/cache/warming.rs` (new): `committed_queries()` (`include_str!("../../warming_queries.txt")`, one query per line, `#` comments/blank lines ignored), `run(state, queries)` through `lookup_or_compute` + `cache_write_commit` (no user log ever written), per-query failure → `OperationalAlert::WarmingFailed` + contained, `warm(state)`, `spawn(state)` background task wired after EVERY confirmed adoption (`state.rs` boot branch + `reconcile.rs` adopted branch); `ApiLimits::cache_warming: bool` (default on, `API_CACHE_WARMING=0`/`false` disables, `parse_bool` fail-fast) | the already-warm no-op test (second pass computes nothing, entries/bytes unchanged) | run() counts only real computations (a cache hit commits nothing and is not a computation); background warming disabled in test boots via the shared `limits_without_warming()` helper |
+| 33 | `cargo test -p api --test cache_metrics` → E0599 `cache_entries`/`cache_bytes` not found (the size-gauge seam missing), then behavioral REDs (eviction counter unreported) | `apps/api/src/metrics.rs`: `observe_cache_size(bytes, entries)` on the trait seam + `MemoryMetrics` gauges with `cache_entries()`/`cache_bytes()` readers; `cache_write_commit(write, generation, metrics)` reports each eviction as a `CacheEvent::Eviction` and the live size gauges at every commit site (handlers + warming); no query text, normalized text, or fingerprint can enter any label (the seam's signatures make it unrepresentable) | the openapi-independent error-path test: a failing search emits no query text in any label OR in the public error body | commit-site reporting unified at `cache_write_commit` (handlers and warming report through one seam); fmt + clippy workspace green |
+
+### Files changed (S10)
+
+- `apps/api/src/cache/mod.rs`: single-flight core (`SharedCompute`, `SharedOutcome`, `Flight`, `FlightPublisher` with cancellation-safe `Drop`, `FlightWaiter`, `inflight` map + `join_or_lead`/`inflight_count`), `insert_shared` (Arc commit) with the eviction count returned, `warming` submodule wiring
+- `apps/api/src/handlers/search.rs`: `lookup_or_compute` rewritten around the single-flight (lead/broadcast/expiry-recompute paths), `CacheWrite::Pending` carrying `Arc<CachedEntry>`, `cache_write_commit` reporting evictions + size gauges, provider failures stay typed (`EngineError`) to the leader boundary
+- `apps/api/src/metrics.rs`: `CacheEvent::{Compute, Grouped}`, `OperationalAlert::WarmingFailed`, `observe_cache_size` seam + `MemoryMetrics` gauges and readers
+- `apps/api/src/config.rs`: `cache_warming: bool` (default on) + `API_CACHE_WARMING` env parsing (`parse_bool`, fail-fast)
+- `apps/api/src/state.rs`: `BootError` typed boot error (taxonomy/adoption variants — the AGENTS.md typed-errors rule, applied per the in-commit gga finding), warming spawn after the boot adoption
+- `apps/api/src/generation/reconcile.rs`: warming spawned after every confirmed adoption
+- `apps/api/warming_queries.txt` (new): the static non-sensitive committed warming list (8 generic queries)
+- `apps/api/tests/cache_single_flight.rs`, `cache_log_guarantee.rs`, `cache_generation_isolation.rs`, `cache_warming.rs`, `cache_metrics.rs` (new); `tests/support/mod.rs` (`spawn_app_with_generation_state_and_metrics`, `limits_without_warming`, justified `allow(dead_code)` header)
+- `openspec/changes/optimize-raspi-serving/tasks.md` (29–33 checked)
+
+### Test commands run (slice boundary)
+
+- `cargo test --workspace` → 99 suites `test result: ok`, 0 FAILED (full sweep at the boundary)
+- `cargo test -p search --test golden` → 6 passed (golden gate green; no ranking change in S10)
+- `make lint` → `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` green
+- `SQLX_OFFLINE=true cargo check --workspace --all-targets` → green against the committed root `.sqlx` cache (no SQL query changed in S10 ⇒ no `cargo sqlx prepare` needed)
+- `make validate-data` → green (104 events, 14 categories, 37 synonyms, 3501 external ids)
+
+### Deviations from design/tasks (recorded)
+
+1. **Tasks 30 and 31 pin behavior that S9 already established.** The
+   log-before-respond contract (the pending write commits only after the
+   log persists) and generation isolation (per-generation caches; the
+   captured `Arc` is the write target) were structural from S9 — the
+   strict-TDD RED for their assertions surfaced test-capture bugs (the
+   mis-captured metric delta; a later behavioral RED for the eviction
+   counter in task 33), not missing behavior. Recorded honestly: these
+   two slices' production behavior was already in place; the S10 suites
+   convert the guarantees into pinned end-to-end proof.
+2. **The single-flight wait window is the configured `search_deadline`
+   budget** (`state.limits.search_deadline`, default 2 s). Task 29's text
+   says "within the remaining request deadline"; the REMAINING budget
+   refinement belongs to S12's deadline wrapper (task 39, whose
+   TRIANGULATE releases the single-flight holder on cancellation) — the
+   wait is already bounded by exactly the deadline budget and never
+   unbounded.
+3. **Warming is config-gated (`API_CACHE_WARMING`, default on)**: the
+   design prescribes a background task after adoption; the gate exists so
+   tests that measure statement counts or cache counters (the S9/S10
+   suites) can boot the production default OFF and call the warming pass
+   explicitly — otherwise the background task races their measured
+   windows. Production behavior (the boot default) is unchanged from
+   design §3.5. The gate also caused the task-20 strong-count
+   TRIANGULATE (`generation_swap.rs`) to boot warm-free: a background
+   warming pass legitimately holds a generation `Arc` of its own.
+4. **Warming counts only real computations**: an already-cached query
+   serves as a hit through the normal path (nothing computed, nothing
+   committed) — that is what makes the second pass a no-op (task 32
+   TRIANGULATE). Failures are contained per query (operational alert,
+   no query-derived text) and the pass is never a publication condition.
+5. **Typed boot errors (`BootError`)**: state.rs's boot paths returned
+   `Result<Self, String>` (pre-existing since S7); the in-commit gga
+   review flagged it against the AGENTS.md typed-errors rule and it was
+   fixed in the same unit (enum with `Taxonomy`/`Adoption` variants; all
+   call sites keep working through `expect`/`unwrap_or_else` + `Display`).
+6. **Commit-boundary note**: task 31's commit (b26bb53) was lost to a
+   soft reset issued after a gga-blocked commit attempt; its content
+   (`cache_generation_isolation.rs`) landed complete inside the task-32
+   commit (a0df8cb). The chain has four work-unit commits instead of
+   five; every task's work is committed and each commit passed gga.
+7. **No `.sqlx` change**: S10 changed no SQL query; the committed cache
+   stays authoritative for offline builds (verified with
+   `SQLX_OFFLINE=true cargo check`).
+
+### Remaining tasks (unchecked at the tasks locator)
+
+All tasks 34–49 (stages 5–6) remain unchecked, starting with:
+
+- `- [ ] 34. [S11] Replace the apps/ingest/src/daily_loop.rs UTC day-seconds math ...`
+
+No S10 task remains unchecked (49 total, 33 complete).
+
+### Workload / PR boundary
+
+- Slice S10 = PR 11 of the 15-PR stacked chain (branch
+  `opt/s10-cache-concurrency`, cut from fresh master; merge/stack at the
+  gate — merge to master and push are the parent's, per the delivery
+  contract).
+- Authored changed lines across the 4 work-unit commits: **1,773
+  insertions / 64 deletions** (no `.sqlx`/lock churn) — above the
+  400-line budget as tasks.md forecasts for S10 (Medium risk, ~380 est.
+  before test coverage; the five concurrency/equivalence suites are the
+  bulk: ~1,180 test lines). Per the resolved delivery contract
+  (`auto-chain`, `stacked-to-main`), the slice lands as chained
+  work-unit commits; no comments, blank lines, docs, or tests were
+  compressed to reach the budget.
+- gga: per-commit reviews — WU1 (task 29) PASSED; WU2 (task 30) PASSED;
+  WU2+WU3's content rode the task-32 commit whose first attempt surfaced
+  two real findings (the stringly-typed boot errors and the unjustified
+  `allow(dead_code)`) — both fixed and re-reviewed PASSED; one review
+  hit the documented strict-mode provider-ambiguity flake and the retry
+  PASSED. The final task-33 review PASSED with two non-blocking notes
+  (the `debug()` prologue duplication — extracted if a third consumer
+  appears; `provider_failure` embedding the internal error string in the
+  500 detail — details are logged server-side and never serialize into
+  the body).
+- Rollback boundary: revert the four S10 commits — the serving path
+  returns to the S9 behavior (uncached compute per key, same structural
+  errors, same SQL ops), the single-flight/warming modules and the
+  `cache_warming` config field drop additively, and no migration or
+  `.sqlx` change exists to unwind (S10 changed no SQL).
+

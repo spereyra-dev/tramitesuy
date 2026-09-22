@@ -233,28 +233,28 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: cached and uncached debug token lists are identical for the same request, and an engine/taxonomy version change invalidates earlier keys.
   - Satisfies: OPT-05, search-engine delta ("Cached and uncached results are identical"), spec §7 test 1, R2/R6.
 
-- [ ] 29. [S10] Single-flight with bounded wait: `inflight: Mutex<HashMap<Key, Arc<SharedCompute>>>`; the first miss computes, concurrent identical keys clone the holder and wait within the remaining request deadline (timing out to their own computation), and the result is inserted into the cache for its own generation only.
+- [x] 29. [S10] Single-flight with bounded wait: `inflight: Mutex<HashMap<Key, Arc<SharedCompute>>>`; the first miss computes, concurrent identical keys clone the holder and wait within the remaining request deadline (timing out to their own computation), and the result is inserted into the cache for its own generation only.
   - RED: `cargo test -p api --test cache_single_flight` — 100 identical concurrent requests produce exactly 1 ranking computation, 100 successful responses, and 100 persisted log rows; a waiter whose window elapses recomputes within the request deadline instead of hanging.
   - GREEN: `tokio::sync::Notify`/`watch`-based shared result; the wait never exceeds the deadline budget.
   - TRIANGULATE: two different keys compute concurrently without grouping.
   - Satisfies: OPT-05/OPT-09, search-cache delta, spec §7 test 5, R7.
 
-- [ ] 30. [S10] Log-before-respond on the cached path: every successful search — compute, `/search/debug` (read-only) and cache hit — persists its log before responding, with redaction before persistence and the allowlisted fields; a log failure keeps the current structural error (public 500), never a silent success; admission accounts for log work.
+- [x] 30. [S10] Log-before-respond on the cached path: every successful search — compute, `/search/debug` (read-only) and cache hit — persists its log before responding, with redaction before persistence and the allowlisted fields; a log failure keeps the current structural error (public 500), never a silent success; admission accounts for log work.
   - RED: `cargo test -p api --test cache_log_guarantee` — a cache hit executes exactly 1 SQL statement (the consolidated log insert); 100 concurrent identical requests produce 100 logs; a forced log failure returns the structural error and does not cache a success.
   - TRIANGULATE: a transport failure after a confirmed log is not reported as "no write" (documented limit asserted in the test name/comment, not re-implemented).
   - Satisfies: OPT-09, operations delta ("Admission counts log work"), R7.
 
-- [ ] 31. [S10] Generation isolation for late requests: a request captured under G1 that finishes after G2 is adopted answers coherently with G1 and writes nothing into G2's cache.
+- [x] 31. [S10] Generation isolation for late requests: a request captured under G1 that finishes after G2 is adopted answers coherently with G1 and writes nothing into G2's cache.
   - RED: `cargo test -p api --test cache_generation_isolation` — the G1 late insert lands only in G1's cache (or is discarded with it), G2's cache stays empty until its own computations, and the response is G1-consistent.
   - TRIANGULATE: the late insert cannot evict a G2 entry.
   - Satisfies: OPT-05, search-cache delta, R3.
 
-- [ ] 32. [S10] Cache warming from a static non-sensitive committed list: `apps/api/src/cache/warming.rs` + `apps/api/warming_queries.txt`, run after adoption through the normal computation path without fabricating user logs; publication is never conditioned on warming.
+- [x] 32. [S10] Cache warming from a static non-sensitive committed list: `apps/api/src/cache/warming.rs` + `apps/api/warming_queries.txt`, run after adoption through the normal computation path without fabricating user logs; publication is never conditioned on warming.
   - RED: `cargo test -p api --test cache_warming` — after adoption the listed queries are cached, no `search_logs` rows are created by warming, a failing warming leaves serving unaffected, and the publication was already complete before warming ran.
   - TRIANGULATE: warming an already-warm cache is a no-op.
   - Satisfies: OPT-05, search-cache delta (warming).
 
-- [ ] 33. [S10] Cache observability: hits/misses/evictions/bytes/entries/grouped computations as counters with no query text, normalized text, or key fingerprint in any label, trace, or access log.
+- [x] 33. [S10] Cache observability: hits/misses/evictions/bytes/entries/grouped computations as counters with no query text, normalized text, or key fingerprint in any label, trace, or access log.
   - RED: `cargo test -p api --test cache_metrics` — after hits, misses, evictions and a grouped computation, no label or log field contains the query text or its fingerprint; counters match the observed behavior.
   - TRIANGULATE: the same assertion for the openapi-independent error path (a failing search emits no query text).
   - Satisfies: OPT-05/OPT-10, operations delta (privacy-safe observability), R14.
