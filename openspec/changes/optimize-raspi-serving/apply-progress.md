@@ -1330,3 +1330,131 @@ No S11 task remains unchecked (49 total, 36 complete).
   no retries), `publish` returns to its session-lock implementation, and
   the only `.sqlx` delta to unwind is the restart-gate read (no
   migrations, no persisted data touched).
+
+## Slice S12 — Stage 5 Operations (tasks 37–39) — branch `opt/s12-limits-admission-deadline`
+
+Status: **complete; slice gates green**. Delivery: auto-chain,
+stacked-to-main, branch cut from fresh `master` (2670804). Structured
+status consumed before work: `gentle-ai.sdd-status` v2, change
+`optimize-raspi-serving`, `applyState: ready`, `nextRecommended: apply`,
+36/49 tasks, no native blockers, repo-local mode, whole workspace as the
+granted edit root (`.gentle-ai-instance` marker present, left untracked).
+Review Workload Gate: `Decision needed before apply: Yes` / `Chained PRs
+recommended: Yes` / S12 budget risk Medium — resolved by the
+maintainer-resolved pattern in the parent prompt (`auto-chain`,
+`stacked-to-main`).
+
+### Completed tasks and proof
+
+| Task | Proof (exact commands, results) |
+|---|---|
+| 37 query-length validation before any side effect | `cargo test -p api --test query_limits` → 4 passed: a 600-character `q` answers 400 with ZERO SQL statements (the counting-pool section stays at 0), no `search_logs` row, no cache miss/hit/compute event and an empty cache — the check runs before normalization, cache lookup and any SQL; exactly 512 chars within 2 KiB proceeds through the normal pipeline (200 + a miss/compute + its log row); both limits are configuration-driven (`ApiLimits` with `q_max_chars: 10` / `q_max_bytes: 8` each reject what the default would accept); TRIANGULATE: multi-byte characters counted by Unicode scalar — 510 'á' chars (1020 bytes) pass, 513 fail, 512 boundary passes. |
+| 38 admission control over total work | `cargo test -p api --test admission` → 4 passed: with a 2-permit budget and both admitted searches pinned mid-computation on a locked FTS table, 3 more arrivals each get 503 with the configured `Retry-After: 3` immediately, only the 2 admitted ever started computing (Compute == 2), and after the barrier releases exactly the admitted two complete; admission counts LOG work: with both admitted requests blocked inside their log inserts (locked `search_logs`, proven in-flight past compute by the 6 reported provider statements), the third arrival is still 503 + `Retry-After` while no log row exists; cancellation: aborting the admitted request (1-permit budget) mid-computation releases its permit AND abandons its single-flight holder (`inflight_count() == 0`) — a fresh search is admitted again; TRIANGULATE: `/search/debug` shares the SAME limiter — both permits held by `/search` requests ⇒ the debug request is 503 + `Retry-After` (no separate debug budget). |
+| 39 deadline and acquisition-timeout error contract | `cargo test -p api --test deadline` → 4 passed: a computation blocked past the configured 300 ms deadline answers 504 `{"error": "search deadline exceeded"}` while the barrier is still held, with NO `Retry-After` (proxies may retry a 503 but must not be led to retry a 504) and a body distinct from the 503 overload shape; the 504 body is EXACTLY the documented shape (no SQL text, pool diagnostics, or timings); an exhausted 1-connection pool (sqlx acquire timeout left at its 30 s default, API `acquire_timeout` configured to 300 ms) answers 503 + `Retry-After: 7` within the acquire timeout — never the 30 s pool wait — and serves normally once a connection frees; TRIANGULATE: the deadline-cancelled request releases everything it held — single-flight holder (`inflight_count() == 0`), the captured generation `Arc` (strong count back to baseline), and the admission permit (a fresh search is admitted). |
+
+### TDD Cycle Evidence (strict TDD, runner `cargo test`)
+
+| Task | RED (failing test first) | GREEN (minimal implementation) | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| 37 | `cargo test -p api --test query_limits` → 3 failed behaviorally (600-char q returned 200 instead of 400, both configured limits ignored), boundary test passed | `validate_query_length` in `apps/api/src/handlers/search.rs`: the effective (trimmed) `q` checked against `limits.q_max_chars` (`chars().count()`) and `limits.q_max_bytes` (`len()`) in both `search` and `debug`, BEFORE `lookup_or_compute` — server-side detail only, public generic bad-request body (R14) | the multi-byte Unicode-scalar test (510 'á' passes / 513 fails) | fmt + clippy green |
+| 38 | `cargo test -p api --test admission` → behavioral RED: with no admission path the "rejected" requests ENTER the pipeline, exhaust the pool (`search pipeline failed: ... pool timed out while waiting for an open connection` in the server log) and the suite HANGS waiting for responses that never come — saturation was never rejected | `AppState.admission: Arc<tokio::sync::Semaphore(max_concurrent_searches)>` created in `from_bundle`; `admit()` takes one permit with `try_acquire_owned` — saturation answers `ApiError::overload(retry_after_seconds)` immediately (no enqueueing) — and the permit is held by the handler for the whole admitted work (dropped with the handler future on every exit path incl. cancellation); `/search` and `/search/debug` share it; the `Overloaded { retry_after_seconds }` variant + shared `ApiError::overload` constructor landed in `apps/api/src/error.rs` (503 + `Retry-After` header, public `overloaded` body, never a 429) | the admission-counts-log-work test (permits held while logs are blocked on a locked `search_logs`) and the debug-shares-the-limiter test | the 100-request suites (`cache_single_flight`, `cache_log_guarantee`) had their budgets raised to 100 — their limit under test is single-flight/per-request logs, not admission (admission default 32 would otherwise reject 68 of their requests); fmt + clippy green |
+| 39 | `cargo test -p api --test deadline` → 3 failed behaviorally (no deadline: the blocked computation never answers, the pool-exhausted request hangs on sqlx's 30 s default acquire) + 1 hang — all four RED without a bounded response | `admitted_work` in `search.rs`: ONE `tokio::time::timeout_at(deadline, …)` wraps the bounded pool check (new `ensure_pool_available`: a bounded `pool.acquire()` released immediately — exhaustion within `limits.acquire_timeout` answers the overload contract), lookup/compute, log persistence, cache commit, and payload; elapsed ⇒ `ApiError::deadline()` → 504 `{"error": "search deadline exceeded"}`, no `Retry-After`, no internals; shared constructors in `error.rs` (`ApiError::deadline`, `ApiError::from_sqlx` mapping sqlx `PoolTimedOut` → overload, everything else → structural 500); `provider_failure` classifies the sqlx `PoolTimedOut` Display marker inside `crates/db`'s stringified engine errors; `lookup_or_compute` now takes the request's deadline `Instant` and bounds the single-flight wait by the REMAINING budget (zero ⇒ immediate recompute); warming passes its own per-query deadline window (unchanged behavior) | the deadline-cancellation test (permit + holder + generation `Arc` all released after a 504) | the two handlers' duplicated lookup/log/commit/payload sequence collapsed into `admitted_work(state, generation, query, deadline, PayloadRoute)` (an explicit route enum — the only per-route difference is the payload shape), eliminating the duplication gga flagged in S12 task 37's review; fmt + clippy green |
+
+### Files changed (S12)
+
+- `apps/api/src/handlers/search.rs`: `validate_query_length` (task 37); `admit` permit + `admitted_work` deadline pipeline, `ensure_pool_available`, `request_deadline`, `PayloadRoute`, `provider_failure` pool-exhaustion classification + `POOL_TIMED_OUT_MARKER`, `lookup_or_compute` deadline-bounded single-flight wait, `persist_log`/`cards_by_event` errors through `ApiError::from_sqlx`
+- `apps/api/src/error.rs`: `Overloaded { retry_after_seconds }` (503 + `Retry-After` header) and `DeadlineExceeded` (504) variants; shared constructors `ApiError::overload`, `ApiError::deadline`, `ApiError::from_sqlx`
+- `apps/api/src/state.rs`: `admission: Arc<tokio::sync::Semaphore>` sized from `limits.max_concurrent_searches`
+- `apps/api/src/cache/warming.rs`: the per-query deadline window threaded through `lookup_or_compute`'s new signature
+- `apps/api/tests/query_limits.rs` (new), `apps/api/tests/admission.rs` (new), `apps/api/tests/deadline.rs` (new)
+- `apps/api/tests/support/mod.rs`: `request_with_headers` (header-reading requests for `Retry-After` assertions) + `spawn_app_with_limits_state_and_metrics` (explicit limits)
+- `apps/api/tests/cache_single_flight.rs`, `apps/api/tests/cache_log_guarantee.rs`: 100-request budgets raised (admission default is 32 — see deviations)
+- No SQL changed: `.sqlx/` untouched, no `cargo sqlx prepare` needed (`SQLX_OFFLINE=true cargo check --workspace --all-targets` green against the committed cache)
+
+### Test commands run
+
+- `cargo test -p api --test query_limits` → RED first (3 failed: no validation), then 4 passed
+- `cargo test -p api --test admission` → RED first (suite hangs: the 3rd+ request enters the pipeline, exhausts the 5-connection pool — the server log records `pool timed out while waiting for an open connection` — and never answers; saturation was not rejected), then 4 passed
+- `cargo test -p api --test deadline` → RED first (3 failed + 1 hang: no deadline wrap), then 4 passed
+- `cargo test -p api` → 33 suites `test result: ok`, 0 FAILED
+- `cargo test --workspace` (`make test`) → 104 suites `test result: ok`, 0 FAILED (full sweep at the slice boundary)
+- `cargo test -p search --test golden` → 6 passed (golden gate green; no ranking change in S12)
+- `make lint` → `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` green
+- `SQLX_OFFLINE=true cargo check --workspace --all-targets` → green against the committed `.sqlx` cache (no query change, no prepare needed)
+- (Environmental note: while debugging the admission RED hang, repeated SIGKILLs of hung test binaries left ~2,485 leaked `c1_*` scratch databases on the compose db; all were dropped with `DROP DATABASE ... WITH (FORCE)` and the compose db stayed healthy — no crash-recovery episode this slice. One transient git object-store corruption (`invalid object` for the staged tasks.md blob during the task-38 commit) self-resolved — a concurrent object-store maintenance race; the affected commit was retried and landed intact.)
+
+### Deviations from design/tasks (recorded)
+
+1. **Two pre-existing 100-concurrent-request suites raised their admission
+   budget.** `cache_single_flight`'s grouping test and
+   `cache_log_guarantee`'s hundred-logs test drive 100 concurrent requests
+   against the then-unlimited pipeline; with the new default of 32
+   admitted searches, 68 would be rejected 503 and their guarantees
+   (one computation / one hundred logs) unreachable. Their budgets are
+   raised to 100 via the configuration-driven `ApiLimits` — the limits
+   under test in those suites are single-flight and per-request logs, not
+   admission; the admission contract is owned by the new
+   `admission.rs` suite.
+2. **The S10 expired-waiter test's semantics were updated to the S12
+   contract.** `a_waiter_whose_window_elapses_recomputes_instead_of_hanging`
+   pinned the pre-S12 behavior "wait window elapses → recompute into fresh
+   time → succeed": task 39's third bullet makes the cache wait share the
+   request's REMAINING deadline budget, and the whole admitted work sits
+   inside the same deadline, so an expired waiter (budget spent) is
+   answered by the documented 504 — bounded termination, never a hang —
+   instead of a 200 from a recompute with no remaining budget. Renamed to
+   `an_expired_waiter_is_bounded_by_the_deadline_never_hangs`; the
+   never-served-by-the-group and bounded-termination guarantees are still
+   pinned. The abandonment path (leader cancelled mid-computation →
+   waiters recompute within their remaining budget) is unchanged and
+   green.
+3. **Pool-exhaustion detection spans two mechanisms.** The primary bound
+   is the pre-flight `ensure_pool_available` (bounded `pool.acquire()`
+   inside `limits.acquire_timeout`, connection released immediately — the
+   permit/pool independence keeps admission ≤ 32 safe against a smaller
+   pool). Direct sqlx failures (log insert, payload cards query) classify
+   `sqlx::Error::PoolTimedOut` → 503 + `Retry-After`. Provider failures
+   arrive as `crates/db` engine errors with the sqlx `Display`
+   stringified (the `EngineError::ProviderFailed` variant carries only a
+   `message: String`, and `crates/db` is outside this slice's allowed
+   edit surfaces), so `provider_failure` matches sqlx 0.9's
+   `PoolTimedOut` Display marker — pinned in a comment; if sqlx changes
+   the text it degrades to the old 500 (never to a wrong success).
+4. **`/search/debug` shares the deadline too** (it shares the admission
+   limiter per task 38 and runs the same `admitted_work` pipeline): a
+   debug computation past the deadline answers the same 504. The design's
+   "no separate debug budget" decision (§7.2) covers the whole shared
+   pipeline.
+5. **No schema/migration change, no `.sqlx` regeneration** — S12 adds no
+   SQL statements.
+
+### Remaining tasks (unchecked at the tasks locator)
+
+All tasks 40–49 (S13–S14) remain unchecked, starting with:
+
+- `- [ ] 40. [S13] Raspi production profile, part 1: docker-compose.yml gains a prod profile ...`
+
+No S12 task remains unchecked (49 total, 39 complete).
+
+### Workload / PR boundary
+
+- Slice S12 = PR 13 of the 15-PR stacked chain (branch
+  `opt/s12-limits-admission-deadline`, cut from fresh master 2670804;
+  merge/stack at the gate — merge to master and push are the parent's,
+  per the delivery contract). Three work-unit commits:
+  `feat(api): query-length validation before any side effect (S12 task
+  37)`, `feat(api): admission semaphore over total search work (S12 task
+  38)`, `feat(api): search deadline, pool-acquire overload and error
+  contract (S12 task 39)`; the S12 docs commit closes the slice.
+- Authored changed lines across the 3 commits: **~1,150 insertions /
+  ~70 deletions** — above the 400-line budget as tasks.md forecasts for
+  S12 (Medium risk, ~350 est. before test coverage; the three new suites
+  are the bulk: ~640 test lines). Per the resolved delivery contract
+  (`auto-chain`, `stacked-to-main`), the slice lands as chained
+  work-unit commits; no comments, blank lines, docs, or tests were
+  compressed to reach the budget.
+- Rollback boundary: revert the three S12 commits — the pipeline returns
+  to unlimited concurrent searches (no semaphore), no deadline wrap (a
+  hung provider query blocks its request until the sqlx 30 s pool wait),
+  and over-length `q` values are processed normally. No `.sqlx`, schema,
+  or data changes to unwind.
