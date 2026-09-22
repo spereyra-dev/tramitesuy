@@ -219,6 +219,7 @@ async fn publish_locked(
             "success",
             counts.clone(),
             Some(built.generation_id),
+            Some(built.generation_id),
         )
         .await?;
         return Ok(PublishReport {
@@ -255,6 +256,7 @@ async fn publish_locked(
             "validation_failed",
             counts.clone(),
             Some(built.generation_id),
+            None,
         )
         .await?;
         return Ok(PublishReport {
@@ -293,6 +295,7 @@ async fn publish_locked(
         run_id,
         "success",
         counts.clone(),
+        Some(built.generation_id),
         Some(built.generation_id),
     )
     .await?;
@@ -335,15 +338,17 @@ async fn finish_run(
     run_id: Uuid,
     status: &str,
     counts: serde_json::Value,
+    candidate: Option<Uuid>,
     published: Option<Uuid>,
 ) -> Result<(), PublishError> {
     sqlx::query!(
         "UPDATE ingestion_runs SET finished_at = $1, status = $2, counts = $3, \
-         candidate_generation_id = $4, published_generation_id = $4 \
-         WHERE run_id = $5",
+         candidate_generation_id = $4, published_generation_id = $5 \
+         WHERE run_id = $6",
         Utc::now(),
         status,
         counts,
+        candidate,
         published,
         run_id,
     )

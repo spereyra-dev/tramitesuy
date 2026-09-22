@@ -64,6 +64,9 @@ fn build_fetcher_with(
 fn now_stamp() -> RunStamp {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
+        // Justified: a wall clock before the UNIX epoch cannot occur on any
+        // supported platform; there is no meaningful typed-error caller to
+        // propagate to on this boundary.
         .expect("system clock");
     // RFC 3339 from the epoch seconds; the repository boundary parses it.
     format_rfc3339(now.as_secs())
