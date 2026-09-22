@@ -60,6 +60,8 @@ impl Default for ApiLimits {
         // Pool defaults come from the single source of truth in `db::pool`;
         // the rest match the design §7.1 initial trial values.
         ApiLimits {
+            // Justified: the default constant is a compile-time small integer,
+            // far below any usize boundary.
             pool_max: usize::try_from(DEFAULT_MAX_CONNECTIONS).expect("pool default fits usize"),
             acquire_timeout: DEFAULT_ACQUIRE_TIMEOUT,
             search_deadline: Duration::from_secs(2),

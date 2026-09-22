@@ -137,7 +137,7 @@ pub fn estimate(generation: &ActiveGeneration) -> Footprint {
         owned_or_shared_event(&mut shared, &source.event);
     }
     for source in &generation.taxonomy.categories {
-        owned_or_shared_category(&mut owned, &source.category);
+        owned_or_shared_category(&mut shared, &source.category);
     }
     owned += shared_bytes_of_synonyms(&generation.synonyms);
     Footprint {
