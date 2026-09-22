@@ -23,6 +23,7 @@ use search::normalizer::normalize;
 use search::types::{Candidate, NormalizedQuery, ScoredEvent, SearchOutcome, SelectionMode};
 
 use crate::cache::{self, CacheKey, CachedEntry, Flight, SharedOutcome};
+use crate::config::ApiLimits;
 use crate::dto;
 use crate::error::ApiError;
 use crate::generation::ActiveGeneration;
@@ -38,6 +39,7 @@ pub async fn search(
     // payload, log, and providers all use this one `Arc` (task 20).
     let generation = state.active.load_full();
     let query = query_parameter(&params)?;
+    validate_query_length(&state.limits, &query)?;
     let (outcome, cache_write, provider_ops) =
         lookup_or_compute(&state, &generation, &query).await?;
     // Task 1: the provider statements are consumed by the pipeline — ZERO
@@ -71,6 +73,7 @@ pub async fn debug(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let generation = state.active.load_full();
     let query = query_parameter(&params)?;
+    validate_query_length(&state.limits, &query)?;
     let (outcome, cache_write, provider_ops) =
         lookup_or_compute(&state, &generation, &query).await?;
     state.metrics.observe_sql_ops(ROUTE, provider_ops);
@@ -90,6 +93,30 @@ fn query_parameter(params: &HashMap<String, String>) -> Result<String, ApiError>
         .map(|q| q.trim().to_string())
         .filter(|q| !q.is_empty())
         .ok_or_else(|| ApiError::BadRequest("missing or empty q parameter".to_string()))
+}
+
+/// S12 task 37 (design §7.2): the length check runs BEFORE normalization,
+/// before any cache lookup or insertion, and before any SQL statement is
+/// issued — an over-length `q` reaches no side effect and answers 400. The
+/// effective (trimmed) query is validated, the same string the engine
+/// receives, by Unicode scalar count and UTF-8 byte length; both limits
+/// are configuration-driven (`ApiLimits::q_max_chars` / `q_max_bytes`),
+/// never hardcoded constants. The detail stays server-side (R14): the
+/// public body is the generic bad-request shape.
+fn validate_query_length(limits: &ApiLimits, query: &str) -> Result<(), ApiError> {
+    if query.chars().count() > limits.q_max_chars {
+        return Err(ApiError::BadRequest(format!(
+            "q exceeds the character limit ({})",
+            limits.q_max_chars
+        )));
+    }
+    if query.len() > limits.q_max_bytes {
+        return Err(ApiError::BadRequest(format!(
+            "q exceeds the byte limit ({})",
+            limits.q_max_bytes
+        )));
+    }
+    Ok(())
 }
 
 /// The pending cache write of one compute-path request (S9 tasks 27/28):

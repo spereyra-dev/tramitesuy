@@ -240,6 +240,54 @@ pub async fn request(app: &Router, method: &str, uri: &str) -> (StatusCode, Valu
     (status, body)
 }
 
+/// Sends one request and returns the status, the response headers, and the
+/// parsed JSON body (Null for empty bodies) — used by tests that must
+/// inspect response headers (S12: `Retry-After` on the overload contract).
+pub async fn request_with_headers(
+    app: &Router,
+    method: &str,
+    uri: &str,
+) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .body(Body::empty())
+                .expect("well-formed request"),
+        )
+        .await
+        .expect("router responds");
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body readable");
+    let body = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+    };
+    (status, headers, body)
+}
+
+/// [`spawn_app_with_state_and_metrics`] with explicit serving limits (S12):
+/// the query-length, admission, deadline, and retry-after limits are all
+/// configuration-driven, so the tests boot the router with exactly the
+/// limits under test.
+pub fn spawn_app_with_limits_state_and_metrics(
+    pool: PgPool,
+    metrics: std::sync::Arc<dyn api::metrics::Metrics>,
+    limits: api::config::ApiLimits,
+) -> (Router, api::state::AppState) {
+    let state =
+        api::state::AppState::build_with_metrics(pool, &repo_root().join("data"), limits, metrics)
+            .expect("boot AppState from the real data seed");
+    let router = api::build_router(state.clone());
+    (router, state)
+}
+
 /// Sends one request carrying a JSON body (content-type application/json)
 /// and returns the status plus the parsed JSON body.
 pub async fn request_json(
