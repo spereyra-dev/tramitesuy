@@ -80,13 +80,44 @@ jobs:
         run: cargo run -p taxonomy --bin taxonomy-validate -- data/ data/external_ids.snapshot.txt
 
   golden-gate:
-    name: golden dataset gate
+    name: search equivalence gate (golden + real-PG providers, mandatory)
+    # S14 task 46: the golden-dataset gate AND the fixture-backed provider
+    # equivalence tests are MANDATORY — the stub harness alone is
+    # insufficient for FTS/trigram changes, so the real-PostgreSQL provider
+    # equivalence suites run here against a Postgres service. The gate also
+    # asserts that no recorded baseline was lowered anywhere in the diff
+    # (scripts/check-baselines.sh).
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tramitesuy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TRAMITESUY_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The baseline guard diffs the change against its merge base.
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@1.94.1
-      - name: cargo test -p search --test golden
+      - name: golden dataset gate (Top1/Top3/no-result/ambiguous)
         run: cargo test -p search --test golden
+      - name: fixture-backed provider equivalence (real PostgreSQL)
+        run: |
+          cargo test -p db --test providers
+          cargo test -p db --test explain_trigram
+      - name: no recorded baseline was lowered in the diff
+        run: bash scripts/check-baselines.sh "${{ github.event.pull_request.base.sha || 'HEAD^' }}"
 
   baseline:
     name: baseline instruments (non-gating)

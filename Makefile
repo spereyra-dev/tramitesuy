@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: dev test lint fmt migrate ingest seed-taxonomy search validate-data db-down baseline load check-deploy image-arm64
+.PHONY: dev test lint fmt migrate ingest seed-taxonomy search validate-data db-down baseline load check-deploy image-arm64 search-gate
 
 ## dev: start the dev database, apply migrations, and seed the taxonomy.
 ## The full compose stack (api + ingest daemon) is `docker compose up --build`.
@@ -70,6 +70,16 @@ load:
 ## touches running containers.
 check-deploy:
 	bash scripts/check-deploy.sh
+
+## search-gate: the mandatory search-equivalence gate (S14 task 46): the
+## golden-dataset gate plus the fixture-backed provider equivalence tests
+## against real PostgreSQL (the stub harness alone is insufficient for
+## FTS/trigram changes), and the no-baseline-lowered diff guard.
+search-gate:
+	cargo test -p search --test golden
+	cargo test -p db --test providers
+	cargo test -p db --test explain_trigram
+	bash scripts/check-baselines.sh origin/master
 
 ## image-arm64: build the release ARM64 (aarch64-unknown-linux-gnu) API/ingest
 ## image off-device (design §8, task 40): built outside the service window and
