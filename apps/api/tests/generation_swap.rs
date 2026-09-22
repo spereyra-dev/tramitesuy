@@ -128,3 +128,81 @@ async fn the_captured_arc_keeps_the_old_generation_alive_until_the_request_drops
         "the holder serves the adopted generation after the request drains"
     );
 }
+
+/// S14 task 45 (spec §7 test 2, OPT-02/OPT-04): concurrent-update
+/// coherence DURING a swap. Search requests that overlap the G1→G2 swap
+/// each answer INTERNALLY coherent with exactly one generation: the
+/// procedure names in every response match G1 exactly or G2 exactly —
+/// never a mixture (G2 renames procedure 4551 only, so a hypothetical
+/// mix would pair the changed name with G1's unchanged companion). The
+/// atomic ArcSwap capture makes that true by construction; this test
+/// pins the invariant under real concurrency.
+#[tokio::test(flavor = "multi_thread")]
+async fn concurrent_requests_during_a_swap_stay_coherent_with_one_generation() {
+    let (pool, _db) = fresh_migrated_db().await;
+    seed_read_fixture(&pool).await;
+    publish_sample_generation(&pool).await;
+    let state =
+        api::state::AppState::boot(pool.clone(), &repo_root().join("data"), Default::default())
+            .await
+            .expect("boot loads G1");
+    let app = api::build_router(state.clone());
+
+    // G1 payload: procedure 4551 carries its original name everywhere.
+    let g1_name = "Solicitud de empadronamientos".to_string();
+    // G2 renames exactly that procedure.
+    let g2_name = format!("{g1_name} (cambiado)");
+    let companion = "Alta de vehículos ante la DNT".to_string();
+
+    // The swap runs CONCURRENTLY with the request storm: the adoption
+    // task executes while 24 searches are in flight over both
+    // generations.
+    let swap = tokio::spawn({
+        let state = state.clone();
+        let pool = pool.clone();
+        async move { adopt_changed_generation(&state, &pool).await }
+    });
+
+    let mut handles = Vec::new();
+    for _ in 0..24 {
+        let app = app.clone();
+        handles.push(tokio::spawn(async move {
+            request(&app, "GET", "/api/v1/search?q=compre%20un%20auto%20usado").await
+        }));
+    }
+    let _g2 = swap.await.expect("the swap completes");
+
+    for handle in handles {
+        let (status, body) = handle.await.expect("request task completes");
+        assert_eq!(status, axum::http::StatusCode::OK, "{body}");
+        assert_eq!(body["mode"], "open");
+        let names: Vec<String> = body["results"][0]["procedures"]
+            .as_array()
+            .expect("cards served")
+            .iter()
+            .map(|card| card["name"].as_str().expect("card name").to_string())
+            .collect();
+        assert_eq!(
+            names,
+            vec![g1_name.clone(), companion.clone()],
+            "the response is G1-coherent (a lone changed name would be a \
+             mixed-generation payload): {body}"
+        );
+    }
+
+    // After the swap, EVERY new request sees G2 in full — no response in
+    // the storm mixed G1's name with G2's.
+    let (status, body) = request(&app, "GET", "/api/v1/search?q=compre%20un%20auto%20usado").await;
+    assert_eq!(status, axum::http::StatusCode::OK, "{body}");
+    let names: Vec<String> = body["results"][0]["procedures"]
+        .as_array()
+        .expect("cards served")
+        .iter()
+        .map(|card| card["name"].as_str().expect("card name").to_string())
+        .collect();
+    assert_eq!(
+        names,
+        vec![g2_name, companion],
+        "new requests serve the adopted generation in full: {body}"
+    );
+}

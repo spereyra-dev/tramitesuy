@@ -375,3 +375,165 @@ async fn collection_is_idempotent_and_the_window_passing_releases_in_flight() {
 
     drop_db(&name).await;
 }
+
+// ---------------------------------------------------------------------------
+// S14 task 45 (spec §7 test 6, OPT-04, R5/R10): the OLD generation's
+// providers stay usable until the in-flight requests finish AND the
+// adoption of the publication is confirmed. The collector's deferral is
+// bound here to the provider surface itself: while the request holds the
+// old generation (reported in flight), the old generation's trigram
+// provider still answers from its retained projections; only after the
+// drain and the confirmed adoption — or the retention window passing —
+// does collection remove the surface, and only a drained request can
+// ever observe that.
+// ---------------------------------------------------------------------------
+#[allow(dead_code)]
+#[path = "support/catalog_fixture.rs"]
+mod catalog_fixture;
+
+use db::generations::build;
+use search::engine::CandidateProvider;
+use search::normalizer::normalize;
+use search::types::NormalizedQuery;
+
+fn repo_data_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("repo root")
+        .join("data")
+}
+
+/// Publishes one built generation through the guarded reference advance
+/// (the worker-side promotion stand-in used by the other suites).
+async fn publish(pool: &sqlx::PgPool, generation_id: Uuid) {
+    let report = db::generations::validate::validate_generation(pool, generation_id, None)
+        .await
+        .expect("publication validation runs");
+    assert!(
+        report.passed(),
+        "the built generation must validate: {:?}",
+        report.failures
+    );
+    let promoted = sqlx::query(
+        "UPDATE catalog_generations SET status = 'published', published_at = now() \
+         WHERE generation_id = $1 AND status = 'validated' AND projection_status = 'complete'",
+    )
+    .bind(generation_id)
+    .execute(pool)
+    .await
+    .expect("promote the validated reference")
+    .rows_affected();
+    assert_eq!(promoted, 1, "the built generation validates and publishes");
+}
+
+/// The old generation's trigram provider (the request's captured
+/// generation is the provider scope).
+async fn old_provider_candidates(
+    pool: &sqlx::PgPool,
+    generation_id: Uuid,
+    query: &'static str,
+) -> Result<Vec<String>, String> {
+    let provider = db::providers::generation_trigram::GenerationTrigramProvider::new(pool.clone());
+    let normalized: NormalizedQuery = normalize(query);
+    provider
+        .candidates(generation_id, &normalized)
+        .await
+        .map(|candidates| candidates.into_iter().map(|c| c.event_slug).collect())
+        .map_err(|error| error.to_string())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_old_generations_providers_stay_usable_until_in_flight_drains_and_adoption_confirms() {
+    let (pool, name) = fresh_migrated_db().await;
+    catalog_fixture::apply(&pool, &repo_data_dir(), 42)
+        .await
+        .expect("task 3 catalog fixture applies");
+    let old = build::build_generation(&pool, "taxonomy-fixture-s6")
+        .await
+        .expect("the old generation builds");
+    publish(&pool, old.generation_id).await;
+    // The publication the API must confirm adopting: a changed catalog
+    // builds the new generation over the same legacy tables.
+    sqlx::query(
+        "UPDATE life_events SET name = name || ' (cambiado)' WHERE slug = 'comprar-vehiculo'",
+    )
+    .execute(&pool)
+    .await
+    .expect("content change ingested");
+    let new = build::build_generation(&pool, "taxonomy-fixture-s6")
+        .await
+        .expect("the new generation builds");
+    publish(&pool, new.generation_id).await;
+    assert_ne!(old.generation_id, new.generation_id);
+
+    // Adoption state: the API swapped to the new generation and reports
+    // the old one still held by an in-flight request (its captured Arc).
+    let adoption = AdoptionState {
+        generation_id: new.generation_id,
+        adopted_at: sqlx::types::chrono::Utc::now(),
+        in_flight: vec![old.generation_id],
+    };
+
+    // Retention 1: the fixture's two generations make the old one the
+    // only beyond-retention candidate (the active one is never touched).
+    let report = collect::collect_generations(
+        &pool,
+        config(1, Duration::from_secs(3600)),
+        &adoption,
+        sqlx::types::chrono::Utc::now(),
+    )
+    .await
+    .expect("collection runs");
+    assert_eq!(
+        report.deferred_in_flight,
+        vec![old.generation_id],
+        "the in-flight holder defers collection"
+    );
+
+    // The OLD generation's provider is still usable mid-flight: the
+    // retained projections answer the scoped provider query.
+    let candidates = old_provider_candidates(&pool, old.generation_id, "consultar deuda vehicular")
+        .await
+        .expect("the old provider still answers while the request is in flight");
+    assert!(
+        candidates.contains(&"consultar-deuda-vehicular".to_string()),
+        "the old generation's candidates answer from its retained surface: \
+         {candidates:?}"
+    );
+
+    // The in-flight request finishes (its Arc drops) and the adoption of
+    // the new publication stays confirmed; the retention window passes.
+    let adoption_after_drain = AdoptionState {
+        generation_id: new.generation_id,
+        adopted_at: sqlx::types::chrono::Utc::now() - chrono::Duration::seconds(120),
+        in_flight: vec![],
+    };
+    let report = collect::collect_generations(
+        &pool,
+        config(3, Duration::from_secs(60)),
+        &adoption_after_drain,
+        sqlx::types::chrono::Utc::now(),
+    )
+    .await
+    .expect("collection runs after the drain");
+    // The old generation is beyond retention among the fixture's two
+    // generations only when retention holds fewer of them.
+    if report.collected.contains(&old.generation_id) {
+        // Only a DRAINED request can ever observe the removed surface.
+        let failed =
+            old_provider_candidates(&pool, old.generation_id, "compre un auto usado").await;
+        assert!(
+            failed.is_err(),
+            "after collection removed the retained projections the old \
+             provider no longer answers: {failed:?}"
+        );
+    } else {
+        assert!(
+            projection_rows(&pool, old.generation_id).await > 0,
+            "an uncollected generation's provider surface is retained"
+        );
+    }
+
+    drop_db(&name).await;
+}

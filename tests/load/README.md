@@ -51,3 +51,23 @@ Used by the load scenarios in later slices (task 47):
 
 See `BASELINE.md` for the recorded current-behavior numbers, the exact
 commands, and the reproduction tolerance.
+
+## Spec §7 functional matrix → test files (S14 task 45)
+
+Every mandatory functional test of the reviewed spec (§7, tests 1–10)
+maps to a concrete named test file. Tests 1, 5, 8 and 9 were covered by
+earlier slices (tasks 28, 29/30, 34–36, 37–39 + 22) and are referenced,
+not duplicated.
+
+| §7 test | Requirement | Test file(s) | Landed by |
+|---|---|---|---|
+| 1 | Cached/uncached equivalence, incl. debug, accents, synonyms, zero-match, redaction-requiring inputs | `apps/api/tests/cache_equivalence.rs` | S9 task 28 |
+| 2 | Concurrent-update coherence before, during and after the swap | `apps/api/tests/generation_swap.rs` (late-request + during-swap concurrent storm + captured-Arc drain) | S7 task 20 + S14 task 45 |
+| 3 | Download/validation/persistence/promotion failures with restarts between phases | `apps/ingest/tests/failure_injection.rs`, `apps/api/tests/generation_rollback.rs` | S8 task 26 |
+| 4 | Cost changes, deactivations, new arrivals, taxonomy/synonym changes, no-content ingestion (sync dates only) | `crates/db/tests/generation_content_changes.rs` | S14 task 45 |
+| 5 | Byte/entry eviction, grouped misses, independent logs | `apps/api/tests/cache_lru.rs`, `cache_single_flight.rs`, `cache_log_guarantee.rs` | S9 tasks 27, S10 tasks 29–30 |
+| 6 | Old providers retained until in-flight requests finish and the adoption is confirmed | `crates/db/tests/generation_retention.rs` (collector gating + old-provider usability mid-flight) | S8 task 24 + S14 task 45 |
+| 7 | Database down: snapshot reads available, expected errors on search/feedback | `apps/api/tests/db_down.rs` | S14 task 45 |
+| 8 | Local schedule, restart after 06:00, no overlapping runs, retries | `apps/ingest/tests/daily_loop.rs`, `ingestion_exclusion.rs`, `retries.rs` | S11 tasks 34–36 |
+| 9 | Input limits, deadlines, overload, recovery without losing the active snapshot | `apps/api/tests/query_limits.rs`, `deadline.rs`, `admission.rs`, `readiness.rs` | S7 task 22 + S12 tasks 37–39 |
+| 10 | SQL budget met and no regressions in the existing suite | `apps/api/tests/sql_budget.rs` (budgets), `sql_ops_baseline.rs` (recorded numbers), `crates/search/tests/golden.rs` (golden gate) | S1 tasks 2/4 + S14 task 44 |
