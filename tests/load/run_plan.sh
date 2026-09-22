@@ -122,7 +122,7 @@ wait_ready "$BASE_URL" 60
 T_READY=$(date -u +%s)
 log "api back after $((T_READY - T_DOWN))s downtime (restarted at +$((T_UP - T_DOWN))s)"
 wait "$GEN_PID" || { log "FAIL restart generator"; exit 2; }
-log "restart window: down +${T_DOWN}s, up +${T_UP}s, ready +${T_READY}s (see series in restart-10rps.json)"
+log "restart window: down at $(date -u -d "@$T_DOWN" +%H:%M:%S 2>/dev/null || date -u -r "$T_DOWN" +%H:%M:%S)Z, up after $((T_UP - T_DOWN))s, ready after $((T_READY - T_DOWN))s total downtime (see series in restart-10rps.json)"
 
 # --- 7. 200-request simultaneous burst -------------------------------------
 gen burst-200 --scenario burst --count 200 --warmup 0 --duration 0
