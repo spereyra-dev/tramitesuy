@@ -24,7 +24,18 @@ pub fn run() {
 /// deterministic run summary. Returns a message on configuration or run
 /// failure so the daemon loop can log and retry without exiting.
 pub fn run_once() -> Result<(), String> {
-    let fetcher = build_fetcher()?;
+    let base = std::env::var("CKAN_BASE_URL")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    run_once_with_base(&base)
+}
+
+/// One ingestion pass over an explicit catalog base URL (the failure-
+/// injection tests drive it directly; the production path reads
+/// `CKAN_BASE_URL` — IN-2: no URL literals in code).
+pub fn run_once_with_base(base: &str) -> Result<(), String> {
+    let fetcher = build_fetcher_with(base)?;
     let repo = support::repository_for(None);
     let summary =
         pipeline::run_csv(&fetcher, &repo, now_stamp()).map_err(|error| error.to_string())?;
@@ -32,12 +43,10 @@ pub fn run_once() -> Result<(), String> {
     Ok(())
 }
 
-fn build_fetcher() -> Result<ingestion::ckan::CkanFetcher<ingestion::ckan::ReqwestTransport>, String>
-{
-    let base = std::env::var("CKAN_BASE_URL")
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+fn build_fetcher_with(
+    base: &str,
+) -> Result<ingestion::ckan::CkanFetcher<ingestion::ckan::ReqwestTransport>, String> {
+    let base = base.trim();
     if base.is_empty() {
         // IN-2: no URL may be hardcoded in source — the caller configures it.
         return Err(
@@ -47,7 +56,7 @@ fn build_fetcher() -> Result<ingestion::ckan::CkanFetcher<ingestion::ckan::Reqwe
         );
     }
     Ok(ingestion::ckan::CkanFetcher::new(
-        &base,
+        base,
         "agesic-guia-de-tramites",
     ))
 }
