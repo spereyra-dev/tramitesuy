@@ -29,6 +29,8 @@ pub struct AdoptionState {
 pub struct PublishedReference {
     pub generation_id: Uuid,
     pub published_at: DateTime<Utc>,
+    pub event_count: i32,
+    pub procedure_count: i32,
 }
 
 /// Writes the adoption record onto one manifest row (the API's write-back
@@ -76,10 +78,12 @@ pub async fn latest_adoption(pool: &PgPool) -> Result<Option<AdoptionState>, sql
 /// The newest published generation (the candidate the API must adopt).
 /// Only rows that were actually promoted (`published` + a promotion stamp)
 /// qualify — an interrupted build never becomes the candidate (S6/S7
-/// contract).
+/// contract). The counts ride along so an adopting API can size its
+/// memory-budget projection without a second query.
 pub async fn newest_published(pool: &PgPool) -> Result<Option<PublishedReference>, sqlx::Error> {
     let row = sqlx::query!(
-        "SELECT generation_id, published_at AS \"published_at!\" \
+        "SELECT generation_id, published_at AS \"published_at!\", \
+                event_count, procedure_count \
          FROM catalog_generations \
          WHERE status = 'published' AND published_at IS NOT NULL \
          ORDER BY published_at DESC, created_at DESC \
@@ -90,6 +94,8 @@ pub async fn newest_published(pool: &PgPool) -> Result<Option<PublishedReference
     Ok(row.map(|row| PublishedReference {
         generation_id: row.generation_id,
         published_at: row.published_at,
+        event_count: row.event_count,
+        procedure_count: row.procedure_count,
     }))
 }
 

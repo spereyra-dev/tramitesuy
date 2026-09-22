@@ -983,6 +983,8 @@ dependencies = [
 name = "ingest"
 version = "0.1.0"
 dependencies = [
+ "api",
+ "chrono",
  "clap",
  "db",
  "ingestion",

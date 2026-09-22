@@ -175,3 +175,31 @@ fn shared_bytes_of_synonyms(synonyms: &HashMap<String, String>) -> u64 {
 fn str_bytes(value: &str) -> u64 {
     u64::try_from(value.len()).unwrap_or(u64::MAX)
 }
+
+/// Coarse pre-load projection of a candidate's owned bytes from its manifest
+/// counts, over the active snapshot's measured per-item rate. The guard
+/// runs BEFORE the candidate is materialized, so an over-budget adoption
+/// never allocates a second snapshot.
+pub fn project_candidate(
+    generation: &ActiveGeneration,
+    candidate_events: i32,
+    candidate_procedures: i32,
+) -> u64 {
+    let events = u64::try_from(candidate_events.max(0)).unwrap_or(0);
+    let procedures = u64::try_from(candidate_procedures.max(0)).unwrap_or(0);
+    let footprint = estimate(generation);
+    let units = u64::try_from(
+        generation
+            .manifest()
+            .map(|manifest| {
+                manifest
+                    .event_count
+                    .saturating_add(manifest.procedure_count)
+            })
+            .unwrap_or(0)
+            .max(1),
+    )
+    .unwrap_or(1);
+    let per_unit = footprint.owned_bytes / units;
+    per_unit.saturating_mul(events.saturating_add(procedures))
+}
