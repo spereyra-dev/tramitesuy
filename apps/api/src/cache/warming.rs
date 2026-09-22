@@ -58,7 +58,7 @@ pub async fn run(state: &AppState, queries: &[String]) -> usize {
                 if matches!(write, CacheWrite::Pending { .. }) {
                     computed += 1;
                 }
-                cache_write_commit(write, &generation);
+                cache_write_commit(write, &generation, &state.metrics);
             }
             // A failed warming is operational signal only (design §3.5):
             // reported, then dropped — serving is unaffected and the query

@@ -70,6 +70,10 @@ pub trait Metrics: Send + Sync + 'static {
     fn observe_sql_ops(&self, route: &str, ops: u64);
     /// One cache lifecycle event.
     fn observe_cache(&self, event: CacheEvent);
+    /// The live cache size gauges (current retained bytes / entries);
+    /// reported after every change (insert/evict) — never a label, never
+    /// query-derived (task 33).
+    fn observe_cache_size(&self, bytes: u64, entries: usize);
     /// The serving-generation gauge (latest observed state wins).
     fn observe_generation_state(&self, state: GenerationState);
     /// One operational alert (publication lag, memory-budget rejection).
@@ -89,6 +93,9 @@ struct Memory {
     /// route → cumulative SQL statements issued while serving it.
     sql_ops: BTreeMap<String, u64>,
     cache: BTreeMap<CacheEvent, u64>,
+    /// The live cache size gauges (latest reported state wins).
+    cache_bytes: u64,
+    cache_entries: usize,
     generation: GenerationState,
     alerts: BTreeMap<OperationalAlert, u64>,
 }
@@ -124,6 +131,16 @@ impl MemoryMetrics {
     /// Cumulative count for one cache lifecycle event.
     pub fn cache_total(&self, event: CacheEvent) -> u64 {
         self.lock().cache.get(&event).copied().unwrap_or(0)
+    }
+
+    /// The live cache entries gauge (latest reported state).
+    pub fn cache_entries(&self) -> usize {
+        self.lock().cache_entries
+    }
+
+    /// The retained-bytes gauge (latest reported state).
+    pub fn cache_bytes(&self) -> u64 {
+        self.lock().cache_bytes
     }
 
     /// The latest observed serving-generation state.
@@ -173,6 +190,12 @@ impl Metrics for MemoryMetrics {
 
     fn observe_cache(&self, event: CacheEvent) {
         *self.lock().cache.entry(event).or_insert(0) += 1;
+    }
+
+    fn observe_cache_size(&self, bytes: u64, entries: usize) {
+        let mut memory = self.lock();
+        memory.cache_bytes = bytes;
+        memory.cache_entries = entries;
     }
 
     fn observe_generation_state(&self, state: GenerationState) {

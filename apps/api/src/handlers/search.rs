@@ -51,7 +51,7 @@ pub async fn search(
     // S9 task 28: the computation enters the cache only after the whole
     // request succeeds (the log persistence is part of it), so a search
     // that ends in a structural error caches nothing (search-cache delta).
-    cache_write_commit(cache_write, &generation);
+    cache_write_commit(cache_write, &generation, &state.metrics);
 
     let payload = match outcome.selection.mode {
         SelectionMode::Open => open_payload(&state, &generation, &outcome).await?,
@@ -78,7 +78,7 @@ pub async fn debug(
     let log_ops = persist_log(&state, &query, &outcome).await?;
     state.metrics.observe_sql_ops(ROUTE, log_ops);
 
-    cache_write_commit(cache_write, &generation);
+    cache_write_commit(cache_write, &generation, &state.metrics);
 
     Ok(Json(debug_payload(&generation, &outcome)))
 }
@@ -108,13 +108,22 @@ pub(crate) enum CacheWrite {
 /// Commits a pending cache write into the captured generation's cache
 /// (no-op on a cache hit or a grouped join). Oversized single results are
 /// dropped inside `SearchCache::insert_shared` and served uncached by
-/// construction. Returns the number of entries evicted (task 33's
-/// observability seam reads it at the call site).
-pub(crate) fn cache_write_commit(write: CacheWrite, generation: &ActiveGeneration) -> usize {
-    match write {
+/// construction. The eviction counter and the live size gauges (task 33)
+/// are reported here — every commit site (handlers, warming) reports
+/// through the same privacy-safe seam, never a query-derived label.
+pub(crate) fn cache_write_commit(
+    write: CacheWrite,
+    generation: &ActiveGeneration,
+    metrics: &Arc<dyn crate::metrics::Metrics>,
+) {
+    let evictions = match write {
         CacheWrite::None => 0,
         CacheWrite::Pending { key, entry } => generation.cache.insert_shared(key, entry),
+    };
+    for _ in 0..evictions {
+        metrics.observe_cache(CacheEvent::Eviction);
     }
+    metrics.observe_cache_size(generation.cache.bytes(), generation.cache.entry_count());
 }
 
 /// The search pipeline with the S9 cache in front (tasks 27/28) and the
