@@ -172,9 +172,21 @@ fn parse_memory_budget(
     let reserve_mib = lookup("API_MEMORY_RESERVE_MB")
         .and_then(|raw| raw.parse::<u64>().ok())
         .unwrap_or(64);
+    // Byte arithmetic with checked overflow: an absurd-but-parseable MiB
+    // value is a configuration error, not a silent wrap that would corrupt
+    // the guard. `raw` was consumed by the MiB parse, so the overflow
+    // errors carry the parsed number instead of the raw text.
+    let total_bytes = mib.checked_mul(1024 * 1024).ok_or(ConfigError {
+        field: "API_MEMORY_BUDGET_MB",
+        value: mib.to_string(),
+    })?;
+    let reserve_bytes = reserve_mib.checked_mul(1024 * 1024).ok_or(ConfigError {
+        field: "API_MEMORY_RESERVE_MB",
+        value: reserve_mib.to_string(),
+    })?;
     Ok(Some(crate::generation::memory_budget::MemoryBudget {
-        total_bytes: mib * 1024 * 1024,
-        reserve_bytes: reserve_mib * 1024 * 1024,
+        total_bytes,
+        reserve_bytes,
     }))
 }
 
