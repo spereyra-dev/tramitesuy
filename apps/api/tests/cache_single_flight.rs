@@ -125,11 +125,14 @@ async fn an_expired_waiter_is_bounded_by_the_deadline_never_hangs() {
     let (app, _state) = spawn_app_with_generation_state_and_metrics(
         pool.clone(),
         metrics.clone(),
-        // A 100 ms search deadline IS the wait-window budget: the leader is
+        // A 3 s search deadline IS the wait-window budget: the leader is
         // pinned behind the lock past it, so the waiter must give up and
-        // compute on its own account instead of hanging forever.
+        // answer the documented 504 instead of hanging forever. The window
+        // must be long enough for BOTH requests to reach the cache-miss
+        // point even on a slow CI runner (cold pool, fresh scratch db) —
+        // the assertion targets bounded termination, not startup speed.
         ApiLimits {
-            search_deadline: Duration::from_millis(100),
+            search_deadline: Duration::from_secs(3),
             ..limits_without_warming()
         },
     )
@@ -155,7 +158,7 @@ async fn an_expired_waiter_is_bounded_by_the_deadline_never_hangs() {
         })
         .collect();
     wait_for_misses(&metrics, 2).await;
-    // Hold the lock past the 100 ms window: the waiter's window elapses
+    // Hold the lock past the full 3 s window: both waiters' windows elapse
     // while the leader is still computing. Under the S12 deadline
     // contract (task 39) the cache wait shares the request's REMAINING
     // deadline budget, and the whole admitted work sits inside the same
@@ -164,7 +167,7 @@ async fn an_expired_waiter_is_bounded_by_the_deadline_never_hangs() {
     // still held. The old pre-S12 behavior (recompute into fresh time,
     // then succeed) would hang here instead; bounded termination is the
     // contract this test now pins.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(Duration::from_millis(3_200)).await;
     for handle in &handles {
         assert!(
             handle.is_finished(),
