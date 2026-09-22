@@ -329,7 +329,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: a deliberately perturbed threshold makes the gate fail (proving it is not vacuous), then is reverted.
   - Satisfies: OPT-07/OPT-08, operations delta (golden baselines hold), R6.
 
-- [ ] 47. [S14] Build the load harness and plan: arrival-rate generator under `tests/load/` (closed-loop arrival rate, warm-up, no client-think-time masking), synthetic PII-free catalog from task 3, and separate scenarios for catalog reads, warm-cache repeated searches, unique non-hit searches, realistic mixed traffic, a 200-request burst, sustained load during ingestion/publication, and restart-with-recovery.
+- [x] 47. [S14] Build the load harness and plan: arrival-rate generator under `tests/load/` (closed-loop arrival rate, warm-up, no client-think-time masking), synthetic PII-free catalog from task 3, and separate scenarios for catalog reads, warm-cache repeated searches, unique non-hit searches, realistic mixed traffic, a 200-request burst, sustained load during ingestion/publication, and restart-with-recovery.
   - RED/verify: the harness runs `5 / 10 / 20 / 40` requests/s with ≥10 minutes sustained at each relevant level plus one long run including publication; overload tests are reported separately (controlled rejections and requests the generator never sent).
   - TRIANGULATE: the generator's observed arrival rate matches the configured rate within a stated tolerance at each level.
   - Satisfies: spec §7 load plan, OPT-10/OPT-11.

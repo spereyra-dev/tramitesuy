@@ -1,0 +1,55 @@
+{
+  "arrival": {
+    "never_sent": {},
+    "observed_rps": null,
+    "scheduled_measure": 200,
+    "sent": 200,
+    "within_tolerance": true
+  },
+  "configured_rps": null,
+  "duration_s": 0.0,
+  "expect_rps": 10.0,
+  "generator": {
+    "late_grace_s": 1.0,
+    "max_inflight": 512,
+    "request_timeout_s": 10.0,
+    "threads_spawned": 200
+  },
+  "label": "burst-200",
+  "measure": {
+    "classes": {
+      "controlled_rejection": 5,
+      "ok": 195
+    },
+    "latency_ms": {
+      "count": 195,
+      "max": 56.01162509992719,
+      "mean": 14.839020476509363,
+      "p50": 12.632374884560704,
+      "p95": 49.14408293552697,
+      "p99": 54.24645799212158
+    },
+    "modes": {
+      "categories": 7,
+      "disambiguation": 32,
+      "open": 62
+    },
+    "ok": 195,
+    "sent": 200,
+    "status_histogram": {
+      "200": 195,
+      "503": 5
+    }
+  },
+  "scenario": "burst",
+  "series": [],
+  "tolerance": 0.05,
+  "unexpected_error_rate": 0.0,
+  "unexpected_errors": 0,
+  "warmup": {
+    "never_sent": {},
+    "scheduled": 0,
+    "sent": 0
+  },
+  "warmup_s": 0.0
+}

@@ -1,0 +1,94 @@
+{
+  "arrival": {
+    "never_sent": {},
+    "observed_rps": 400.0,
+    "scheduled_measure": 24000,
+    "sent": 24000,
+    "within_tolerance": true
+  },
+  "configured_rps": 400.0,
+  "duration_s": 60.0,
+  "expect_rps": 400.0,
+  "generator": {
+    "late_grace_s": 1.0,
+    "max_inflight": 512,
+    "request_timeout_s": 10.0,
+    "threads_spawned": 28000
+  },
+  "label": "overload-400rps",
+  "measure": {
+    "classes": {
+      "controlled_rejection": 12083,
+      "ok": 11917
+    },
+    "latency_ms": {
+      "count": 11917,
+      "max": 19.42995795980096,
+      "mean": 0.44012494947771613,
+      "p50": 0.41195820085704327,
+      "p95": 0.5387919954955578,
+      "p99": 0.908917048946023
+    },
+    "modes": {},
+    "ok": 11917,
+    "sent": 24000,
+    "status_histogram": {
+      "200": 11917,
+      "503": 12083
+    }
+  },
+  "scenario": "mixed",
+  "series": [
+    {
+      "err": 0,
+      "ok": 2003,
+      "p95_ms": 0.5256249569356441,
+      "sent": 4000,
+      "t": 0
+    },
+    {
+      "err": 0,
+      "ok": 1953,
+      "p95_ms": 0.538000138476491,
+      "sent": 4000,
+      "t": 10
+    },
+    {
+      "err": 0,
+      "ok": 1989,
+      "p95_ms": 0.5610419902950525,
+      "sent": 4000,
+      "t": 20
+    },
+    {
+      "err": 0,
+      "ok": 1966,
+      "p95_ms": 0.5482090637087822,
+      "sent": 4000,
+      "t": 30
+    },
+    {
+      "err": 0,
+      "ok": 1989,
+      "p95_ms": 0.5221660248935223,
+      "sent": 4000,
+      "t": 40
+    },
+    {
+      "err": 0,
+      "ok": 2017,
+      "p95_ms": 0.5490421317517757,
+      "sent": 4000,
+      "t": 50
+    }
+  ],
+  "tolerance": 0.05,
+  "unexpected_error_rate": 0.0,
+  "unexpected_errors": 0,
+  "warmup": {
+    "never_sent": {},
+    "scheduled": 4000,
+    "sent": 4000
+  },
+  "warmup_s": 10.0
+}

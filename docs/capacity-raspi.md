@@ -82,12 +82,25 @@ absorbed**:
 | Memory stable, no OOM, no sustained swap growth | **NOT MEASURED** — pending task 48 |
 | Thermal throttling check | **NOT MEASURED** — pending task 48 |
 | Maximum sustained level + ≥30 % margin recommendation | **NOT MEASURED** — pending task 48 |
-| Overload-level test (controlled rejection above saturation) | **NOT MEASURED** — pending task 48 |
-| Load harness + sustained-load plan (task 47: 5/10/20/40 rps, ≥10 min per level, one long run with publication, restart-with-recovery, burst 200) | **NOT EXECUTED** — task 47 not dispatched in this slice; the harness, its scenarios and the arrival-rate tolerance probe remain to be built/run |
+| Overload-level test (controlled rejection above saturation) | **NOT MEASURED on target hardware** — pending task 48. A *local* constrained-instance overload probe executed (12,083 controlled 503+Retry-After, 0 unexpected — `tests/load/RESULTS.md`); target-hardware numbers still NOT MEASURED |
+| Load harness + sustained-load plan (task 47: 5/10/20/40 rps, ≥10 min per level, one long run with publication, restart-with-recovery, burst 200) | **EXECUTED locally** (2026-09-22, `make load-plan`): all four levels ≥10 min with observed arrival within ±5 % (recorded: exact), catalog/warm/unique scenarios ≥10 min each, publication long run (publish 3 s, adoption +4 s, 0 errors through the swap), restart recovery (6 s `/ready`, errors confined to the downtime window), burst 200, overload reported separately — **PROVISORY local evidence in `tests/load/RESULTS.md` + `tests/load/results/`; NEVER capacity results**. Capacity numbers remain task 48's on the target hardware |
 | Equivalent active users derivation (searches/s × seconds between searches) | Deferred with task 48's report — never as concurrent requests |
 
-Local (Apple M1) figures recorded in `tests/load/BASELINE.md` are
-**provisory instrument evidence only** and are NOT capacity results.
+Local (Apple M1) figures recorded in `tests/load/BASELINE.md` and
+`tests/load/RESULTS.md` are **provisory instrument evidence only** and
+are NOT capacity results.
+
+### Task 47 addendum (S14 corrective dispatch, 2026-09-22)
+
+Task 47 (arrival-rate harness + plan) was implemented and executed in
+full on the local machine: generator + unit tests under `tests/load/`,
+sustained runs at 5/10/20/40 rps (600 s measured each), catalog/warm/
+unique scenarios (600 s each), the publication long run, restart-with-
+recovery, the 200-request burst, and the separate overload probe.
+Evidence and exact figures: `tests/load/RESULTS.md`. All runs are local
+MacBook Air (M1) loopback figures — **explicitly not capacity results**;
+every capacity target in the table above stays **NOT MEASURED** pending
+task 48 on the Raspberry Pi.
 
 ## What this slice did verify (S14 partial)
 
@@ -101,6 +114,7 @@ Local (Apple M1) figures recorded in `tests/load/BASELINE.md` are
 - Final stage-boundary audit (this document): lint/tests/data/golden/
   deploy-profile all green; unmet items listed above.
 
-Remaining unchecked tasks of the change: **47** (load harness + sustained
-runs) and **48** (target-hardware capacity run). The archive waits for
-both; 48 additionally requires the maintainer's target hardware.
+Remaining unchecked task of the change: **48** (target-hardware
+capacity run — maintainer decision recorded: pending the Raspberry Pi).
+Task 47 is complete (executed 2026-09-22, see the addendum above). The
+archive waits for 48.

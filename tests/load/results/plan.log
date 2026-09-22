@@ -1,0 +1,86 @@
+[2026-09-22T13:02:14Z] boot api  → http://127.0.0.1:18080
+[2026-09-22T13:02:15Z] active generation: 01a0c92e-9b35-76f2-bd47-f479e0b2dfdf
+[2026-09-22T13:02:15Z] RUN mixed-05rps: --scenario mixed --rps 5 --warmup 60 --duration 600
+[mixed-05rps] scenario=mixed configured=5.0 rps warmup=60.0s duration=600.0s
+arrival: observed 5.00 rps vs expected 5.0 rps (±5%) → OK; sent 3000/3000 never-sent {}
+measure: ok 100.00% | p50 2.6 ms  p95 12.1 ms  p99 13.0 ms | classes {'ok': 3000} | unexpected errors 0 (0.000%)
+modes: {'open': 1018, 'disambiguation': 356, 'categories': 151}
+results → tests/load/results/mixed-05rps.json
+[2026-09-22T13:13:15Z] DONE mixed-05rps
+[2026-09-22T13:13:15Z] RUN mixed-10rps: --scenario mixed --rps 10 --warmup 60 --duration 600
+[mixed-10rps] scenario=mixed configured=10.0 rps warmup=60.0s duration=600.0s
+arrival: observed 10.00 rps vs expected 10.0 rps (±5%) → OK; sent 6000/6000 never-sent {}
+measure: ok 100.00% | p50 2.3 ms  p95 10.9 ms  p99 12.6 ms | classes {'ok': 6000} | unexpected errors 0 (0.000%)
+modes: {'disambiguation': 687, 'open': 2037, 'categories': 289}
+results → tests/load/results/mixed-10rps.json
+[2026-09-22T13:24:15Z] DONE mixed-10rps
+[2026-09-22T13:24:15Z] RUN mixed-20rps: --scenario mixed --rps 20 --warmup 60 --duration 600
+[mixed-20rps] scenario=mixed configured=20.0 rps warmup=60.0s duration=600.0s
+arrival: observed 20.00 rps vs expected 20.0 rps (±5%) → OK; sent 12000/12000 never-sent {}
+measure: ok 100.00% | p50 2.3 ms  p95 10.9 ms  p99 12.7 ms | classes {'ok': 12000} | unexpected errors 0 (0.000%)
+modes: {'open': 4113, 'disambiguation': 1377, 'categories': 578}
+results → tests/load/results/mixed-20rps.json
+[2026-09-22T13:35:15Z] DONE mixed-20rps
+[2026-09-22T13:35:15Z] RUN mixed-40rps: --scenario mixed --rps 40 --warmup 60 --duration 600
+[mixed-40rps] scenario=mixed configured=40.0 rps warmup=60.0s duration=600.0s
+arrival: observed 40.00 rps vs expected 40.0 rps (±5%) → OK; sent 24000/24000 never-sent {}
+measure: ok 100.00% | p50 2.1 ms  p95 9.6 ms  p99 12.2 ms | classes {'ok': 24000} | unexpected errors 0 (0.000%)
+modes: {'open': 8139, 'disambiguation': 2820, 'categories': 1177}
+results → tests/load/results/mixed-40rps.json
+[2026-09-22T13:46:16Z] DONE mixed-40rps
+[2026-09-22T13:46:16Z] RUN catalog-20rps: --scenario catalog --rps 20 --warmup 60 --duration 600
+[catalog-20rps] scenario=catalog configured=20.0 rps warmup=60.0s duration=600.0s
+arrival: observed 20.00 rps vs expected 20.0 rps (±5%) → OK; sent 12000/12000 never-sent {}
+measure: ok 100.00% | p50 0.7 ms  p95 0.9 ms  p99 1.2 ms | classes {'ok': 12000} | unexpected errors 0 (0.000%)
+modes: -
+results → tests/load/results/catalog-20rps.json
+[2026-09-22T13:57:16Z] DONE catalog-20rps
+[2026-09-22T13:57:16Z] RUN warm-20rps: --scenario warm --rps 20 --warmup 60 --duration 600
+[warm-20rps] scenario=warm configured=20.0 rps warmup=60.0s duration=600.0s
+arrival: observed 20.00 rps vs expected 20.0 rps (±5%) → OK; sent 12000/12000 never-sent {}
+measure: ok 100.00% | p50 4.4 ms  p95 5.3 ms  p99 6.1 ms | classes {'ok': 12000} | unexpected errors 0 (0.000%)
+modes: {'disambiguation': 3999, 'open': 6859, 'categories': 1142}
+results → tests/load/results/warm-20rps.json
+[2026-09-22T14:08:16Z] DONE warm-20rps
+[2026-09-22T14:08:16Z] RUN unique-20rps: --scenario unique --rps 20 --warmup 60 --duration 600
+[unique-20rps] scenario=unique configured=20.0 rps warmup=60.0s duration=600.0s
+arrival: observed 20.00 rps vs expected 20.0 rps (±5%) → OK; sent 12000/12000 never-sent {}
+measure: ok 100.00% | p50 10.5 ms  p95 12.5 ms  p99 13.2 ms | classes {'ok': 12000} | unexpected errors 0 (0.000%)
+modes: {'open': 10800, 'categories': 1200}
+results → tests/load/results/unique-20rps.json
+[2026-09-22T14:19:16Z] DONE unique-20rps
+[2026-09-22T14:19:16Z] RUN restart-recovery: generator in background, API killed mid-run
+[2026-09-22T14:20:47Z] kill api (pid 1679) — downtime window starts
+[2026-09-22T14:20:52Z] boot api  → http://127.0.0.1:18080
+[2026-09-22T14:20:53Z] api back after 6s downtime (restarted at +5s)
+[restart-10rps] scenario=mixed configured=10.0 rps warmup=30.0s duration=300.0s
+arrival: observed 10.00 rps vs expected 10.0 rps (±5%) → OK; sent 3000/3000 never-sent {}
+measure: ok 98.30% | p50 2.6 ms  p95 12.0 ms  p99 13.1 ms | classes {'ok': 2949, 'transport_error': 51} | unexpected errors 51 (1.700%)
+modes: {'open': 1002, 'disambiguation': 352, 'categories': 150}
+results → tests/load/results/restart-10rps.json
+[2026-09-22T14:24:47Z] restart window: down +1790086847s, up +1790086852s, ready +1790086853s (see series in restart-10rps.json)
+[2026-09-22T14:24:47Z] RUN burst-200: --scenario burst --count 200 --warmup 0 --duration 0
+[burst-200] scenario=burst configured=None rps warmup=0.0s duration=0.0s
+arrival: observed n/a (burst) vs expected n/a (burst) (±5%) → OK; sent 200/200 never-sent {}
+measure: ok 97.50% | p50 12.6 ms  p95 49.1 ms  p99 54.2 ms | classes {'ok': 195, 'controlled_rejection': 5} | unexpected errors 0 (0.000%)
+modes: {'open': 62, 'disambiguation': 32, 'categories': 7}
+results → tests/load/results/burst-200.json
+[2026-09-22T14:24:47Z] DONE burst-200
+[2026-09-22T14:24:47Z] RUN publication-longrun: content change + publish at measure +300 s
+[2026-09-22T14:30:47Z] publication trigger: bump last_seen_at on 50 synthetic procedures (same field the daily ingestion bumps) + ingest publish
+UPDATE 50
+[2026-09-22T14:30:50Z] publish finished in 3s (old gen 01a0c92e-9b35-76f2-bd47-f479e0b2dfdf)
+[2026-09-22T14:30:51Z] adoption observed +4s after trigger (new gen 01a0c986-c68a-70e5-8dbc-1906c90494b2)
+[publication-10rps] scenario=mixed configured=10.0 rps warmup=60.0s duration=600.0s
+arrival: observed 10.00 rps vs expected 10.0 rps (±5%) → OK; sent 6000/6000 never-sent {}
+measure: ok 100.00% | p50 2.3 ms  p95 12.4 ms  p99 14.2 ms | classes {'ok': 6000} | unexpected errors 0 (0.000%)
+modes: {'disambiguation': 687, 'open': 2037, 'categories': 289}
+results → tests/load/results/publication-10rps.json
+[2026-09-22T14:35:47Z] RUN overload: constrained instance (admission=1, pool=1) @ 400 rps
+[overload-400rps] scenario=mixed configured=400.0 rps warmup=10.0s duration=60.0s
+arrival: observed 400.00 rps vs expected 400.0 rps (±5%) → OK; sent 24000/24000 never-sent {}
+measure: ok 49.65% | p50 0.4 ms  p95 0.5 ms  p99 0.9 ms | classes {'controlled_rejection': 12083, 'ok': 11917} | unexpected errors 0 (0.000%)
+modes: -
+results → tests/load/results/overload-400rps.json
+[2026-09-22T14:36:59Z] DONE overload
+[2026-09-22T14:36:59Z] plan complete — results in tests/load/results/

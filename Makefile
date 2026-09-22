@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: dev test lint fmt migrate ingest seed-taxonomy search validate-data db-down baseline load check-deploy image-arm64 search-gate
+.PHONY: dev test lint fmt migrate ingest seed-taxonomy search validate-data db-down baseline load load-plan check-deploy image-arm64 search-gate
 
 ## dev: start the dev database, apply migrations, and seed the taxonomy.
 ## The full compose stack (api + ingest daemon) is `docker compose up --build`.
@@ -60,10 +60,18 @@ baseline:
 
 ## load: exercise the load surface available so far — the synthetic PII-free
 ## catalog fixture and the SQL-statement counter instrument (task 3/2).
-## The arrival-rate harness itself lands in stage 6 (task 47).
+## Measurement infrastructure, non-gating.
 load:
 	cargo test -p db --test fixture_catalog
 	cargo test -p db --test sql_counter
+
+## load-plan: run the full arrival-rate load plan (S14 task 47,
+## tests/load/run_plan.sh): seeds nothing — run `bash tests/load/seed.sh`
+## first, and build the release binaries (`cargo build --release -p api
+## -p ingest`). Long: ~100 minutes of sustained runs; results land in
+## tests/load/results/. Measurement infrastructure, non-gating.
+load-plan:
+	bash tests/load/run_plan.sh
 
 ## check-deploy: deployment-profile assertions (task 40/41, S13). Config-only
 ## (compose config + committed-file greps): never builds, starts, stops or
