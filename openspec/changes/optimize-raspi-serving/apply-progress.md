@@ -935,3 +935,125 @@ suites (`categories.rs::category_events_listing...`, then
 both green on immediate standalone re-run — the documented parallel
 scratch-database flake class, not a behavioral regression. Three consecutive
 full-workspace sweeps were green at the boundary.
+
+## Slice S9 — Stage 4 Cache (tasks 27–28) — branch `opt/s9-cache-core`
+
+Status: **complete; slice gates green**. Delivery: auto-chain,
+stacked-to-main, branch cut from fresh `master` (c06afdd). Structured
+status consumed before work: `gentle-ai.sdd-status` v2, change
+`optimize-raspi-serving`, `applyState: ready`, `nextRecommended: apply`,
+26/49 tasks, no native blockers, repo-local mode, whole workspace as the
+granted edit root (`.gentle-ai-instance` marker present, left untracked —
+the gga hook re-staged it during two commits and it was amended out each
+time, matching the S8 recovery pattern). Task 26's publication/rollback
+guarantees (S8) were merged first — the cache-activation gate.
+
+### Completed tasks and proof
+
+| Task | Proof (exact commands, results) |
+|---|---|
+| 27 bounded LRU cache | `cargo test -p api --test cache_lru` → 6 passed: eviction by bytes evicts the least-recently-used entry when the third result needs space (byte accounting asserted via `entry_count()` + `bytes()`); eviction by entries at the 10,000-… (test limit 2) bound; lazy TTL expiry drops the entry on READ after the TTL (no background sweeper); an oversized single result is never inserted (`entry_count() == 0`, `bytes() == 0`); a newly constructed generation starts with an empty cache (two `ActiveGeneration::cold` over the same bundle: the first holds 1 entry, the second 0); TRIANGULATE: `compré un auto` and `compre un coche` produce different fingerprints (SHA-256 over the effective trimmed q bytes, never over canonical tokens). |
+| 28 shapes + reconstruction | `cargo test -p api --test cache_equivalence` → 9 passed: cached vs uncached /search responses identical (same generation, same input) with the metrics seam proving exactly 1 miss + 1 hit; /search/debug cached vs uncached identical including the token list; accented query (`compré un auto usado`) hit is byte-identical; `compré un auto` and `compre un coche` occupy SEPARATE entries (`entry_count() == 2`), each hits its own entry, and the echoes never exchange text; zero-match input cached and served identically; a cédula-requiring input serves identically while `search_logs` carries only `<REDACTED>` (raw number asserted absent); a structural error (dropped `search_logs` → public 500 after computation) caches nothing; feedback (the write path) never adds to or mutates the cache; TRIANGULATE: an engine-version change invalidates earlier keys (E1 key never serves an E2 request, same fingerprint, unit-level over `SearchCache`). |
+
+### TDD Cycle Evidence (strict TDD, runner `cargo test`)
+
+| Task | RED (failing test first) | GREEN (minimal implementation) | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| 27 | `cargo test -p api --test cache_lru` → E0432/E0433/E0609: `api::cache` unresolved, no `cache` field on `ActiveGeneration`, no cache-limits parameter on `cold` | `apps/api/src/cache/mod.rs` (new): `CacheLimits` (64 MiB / 10,000 / 24 h defaults), `CacheKey::new` (SHA-256 over effective q bytes), own LRU (`HashMap` + lazy-tombstone `VecDeque`, stamp-matched eviction) with exact byte accounting, lazy TTL on `get`, oversized-insert drop; `SearchCache` field on `ActiveGeneration` (fresh per snapshot); `CacheLimits` threaded through `cold` / `load_published_with_bundle_and_limits` from the configured `ApiLimits` (env `API_CACHE_MAX_BYTES`, `API_CACHE_MAX_ENTRIES`, `API_CACHE_TTL_SECS`, fail-fast via the existing `parse_positive`) | fingerprint-distinctness test (`compré un auto` vs `compre un coche` — canonical tokens coincide, bytes never do) | mutex poisoning via `into_inner`; clippy clean first pass; gga per-commit review PASSED |
+| 28 | `cargo test -p api --test cache_equivalence` → 7 failed / 2 passed: every hit/miss/entry-count assertion failed (`cache_total(Hit)` 0 ≠ 1, `entry_count` 0 ≠ 1/2) — the serving path had no cache | handler integration: `lookup_or_compute` checks the CAPTURED generation's cache; hit → `cache::rebuild` (outcome's `query`/`normalized_query`/tokens rebuilt from the CURRENT request, explanations' token lists refilled for every result AND disambiguation option — the cached entry stores none); miss → decomposed normalize → providers → score at the handler boundary so the raw candidates travel with the ranked result; the pending insert commits only AFTER the log persists (structural errors cache nothing); provider failures map to the same structural 500; hits/misses reported through the S1 `observe_cache` seam | the synonym-variant end-to-end test (separate entries, per-variant hits, no text exchange) + the debug token-list equality and the engine-version invalidation tests | `CacheWrite`'s large variant boxed (clippy `large_size_difference`); fmt + clippy workspace green |
+
+### Files changed (S9)
+
+- `apps/api/src/cache/mod.rs` (new): `SearchCache`, `CacheLimits`, `CacheKey`, `fingerprint`, `CachedEntry`, `rebuild`
+- `apps/api/src/config.rs`: `cache: CacheLimits` on `ApiLimits` + the three env vars (doc table updated)
+- `apps/api/src/generation/mod.rs`: `cache: SearchCache` inside `ActiveGeneration`, `engine_version()` accessor, cache limits threaded through `cold`/`from_parts`/`load_candidate`/`load_published_with_bundle_and_limits`
+- `apps/api/src/generation/reconcile.rs`, `apps/api/src/state.rs`: adoption paths thread the configured cache limits into every constructed snapshot
+- `apps/api/src/lib.rs`: `pub mod cache`
+- `apps/api/src/handlers/search.rs`: cached pipeline (lookup-or-compute + deferred insert commit + hit/miss metrics; per-request reconstruction)
+- `apps/api/tests/cache_lru.rs`, `apps/api/tests/cache_equivalence.rs` (new), `apps/api/tests/support/mod.rs` (`spawn_app_with_state_and_metrics`)
+
+### Test commands run
+
+- `cargo test -p api --test cache_lru` → 6 passed (RED first: unresolved `api::cache`)
+- `cargo test -p api --test cache_equivalence` → RED 7 failed/2 passed → GREEN 9 passed
+- `cargo test --workspace` (`make test`) → 94 suites `test result: ok`, 0 FAILED
+- `cargo test -p search --test golden` → 6 passed (golden gate green; no ranking change in S9)
+- `SQLX_OFFLINE=true cargo check --workspace --all-targets` → green against the committed root `.sqlx` cache (no SQL query changed in S9 ⇒ no `cargo sqlx prepare` needed; the review harness generated an untracked `apps/api/.sqlx` with 6 test-target query captures — deleted, not committed, since the tracked cache lives at the repo root)
+- `make lint` → `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings` green
+
+### Deviations from design/tasks (recorded)
+
+1. **Cache limits are threaded through the generation load path** (not
+   module constants): `CacheLimits` defaults match the spec (64 MiB /
+   10,000 / 24 h) and the state boot/adoption paths pass the CONFIGURED
+   values into each snapshot's `SearchCache` — the cold baseline included.
+   The pre-existing `load_published_with_bundle` keeps its signature with
+   default limits for the existing test call sites; production paths
+   (`boot_with_metrics`, the reconciliation tick) use the new
+   `_and_limits` variant.
+2. **Candidate fetch decomposition lives at the handler boundary**: the
+   db-side orchestrator (`crates/db`, outside this slice's edit surfaces)
+   composes normalize → providers → score and returns only the final
+   outcome, so the raw candidates it consumes were unreachable. S9 mirrors
+   the orchestrator's fetch policy (sequential default, config-gated
+   concurrent join) in a small handler-side helper to obtain the ordered
+   candidates for `CachedEntry` — the engine's canonical sort inside
+   `score` is untouched, so fetch order never reaches the ranking. Single
+   source of truth for the fetch policy remains the orchestrator's policy
+   enum; S10 can unify the paths if it touches this code.
+3. **Cached explanations are token-free by construction**: `Explanation`
+   carries a per-request token list (always equal to the outcome's query
+   tokens), which is request text under the CachedEntry contract — so
+   `CachedEntry::from_outcome` strips it (empty) and `rebuild` refills it
+   from the CURRENT request for every result and selection option. The
+   cached per-event entries (`rule_name`/`term`/`canonical`/`value` —
+   keyword-side data, not query text) are retained: that is the
+   computational result the spec caches.
+4. **Cache insert commits after the log persists** (not inside the
+   pipeline): task 30 (S10) requires that a log failure not cache a
+   success, and the search-cache delta requires structural errors to cache
+   nothing — so the S9 miss path hands back a pending write that the
+   handler commits only after `persist_log` succeeds. Hit/miss counters go
+   through the existing S1 seam; eviction observability stays S10 (task
+   33).
+5. **Cold-baseline engine version**: the cache key's engine_version is the
+   loaded manifest's `engine_version`; the cold baseline (no manifest)
+   uses the build-time engine constant (`db::generations::ENGINE_VERSION`)
+   — its engine is exactly that version's code. Key collision across cold
+   generations is impossible anyway: each snapshot owns a fresh, empty
+   cache.
+
+### Remaining tasks (unchecked at the tasks locator)
+
+All tasks 29–49 (stages 4 continued–6) remain unchecked, starting with:
+
+- `- [ ] 29. [S10] Single-flight with bounded wait: inflight: Mutex<HashMap<Key, Arc<SharedCompute>>> ...`
+
+No S9 task remains unchecked (49 total, 28 complete).
+
+### Workload / PR boundary
+
+- Slice S9 = PR 10 of the 15-PR stacked chain (branch `opt/s9-cache-core`,
+  cut from fresh master; merge/stack at the gate — merge to master and
+  push are the parent's, per the delivery contract).
+- Authored changed lines across the 2 work-unit commits: **~1,199
+  insertions / 51 deletions** including the two new test suites
+  (cache_lru 232 lines, cache_equivalence ~352 lines) — above the
+  400-line budget as tasks.md forecasts for S9 (~420 est. before test
+  coverage; Medium risk). Per the resolved delivery contract
+  (`auto-chain`, `stacked-to-main`), the slice lands as chained
+  work-unit commits; no comments, blank lines, docs, or tests were
+  compressed to reach the budget. Production lines are the minority:
+  ~440 (cache module + config + generation wiring + handler
+  integration).
+- gga: per-commit reviews passed (WU1 PASSED on commit; WU2's first
+  in-hook run PASSED substantively but the strict-mode parser flagged the
+  provider's ambiguous response — the same boundary flake S7/S8 recorded —
+  and the retry PASSED; the review-harness `cargo sqlx prepare -- --tests`
+  left an untracked `apps/api/.sqlx` + re-staged the `.gentle-ai-instance`
+  marker, both cleaned/amended out each time).
+- Rollback boundary: revert the S9 commits — the serving path returns to
+  the S8 behavior (uncached compute through the orchestrator, same
+  structural errors, same SQL ops), the cache module/config fields drop
+  additively, and no migration or `.sqlx` change exists to unwind (S9
+  changed no SQL).

@@ -221,13 +221,13 @@ being merged; no slice weakens a guarantee published by an earlier slice
 
 ## Stage 4 — Cache
 
-- [ ] 27. [S9] Implement `apps/api/src/cache/mod.rs`: `SearchCache` living inside `ActiveGeneration`, `Key = (generation_id, engine_version, fingerprint)`, `fingerprint = SHA-256(effective trimmed q bytes)`, simultaneous byte (64 MiB) / entry (10,000) / TTL (24 h) limits — all configurable parameters — with LRU eviction, and an oversized single result served uncached.
+- [x] 27. [S9] Implement `apps/api/src/cache/mod.rs`: `SearchCache` living inside `ActiveGeneration`, `Key = (generation_id, engine_version, fingerprint)`, `fingerprint = SHA-256(effective trimmed q bytes)`, simultaneous byte (64 MiB) / entry (10,000) / TTL (24 h) limits — all configurable parameters — with LRU eviction, and an oversized single result served uncached.
   - RED: `cargo test -p api --test cache_lru` — eviction by bytes, eviction by entries, lazy TTL expiry, oversized result served uncached with nothing inserted, and a new generation starting with an empty cache.
   - GREEN: own LRU (HashMap + lazy-tombstone VecDeque) with byte accounting; no new external cache.
   - TRIANGULATE: `compré un auto` and `compre un coche` produce different fingerprints and are separate misses even though their canonical tokens coincide.
   - Satisfies: OPT-05, search-cache delta, R2.
 
-- [ ] 28. [S9] Shapes and per-request reconstruction: `CachedEntry` holds reusable computational results (ordered candidates, ranked events with explanations, confidence, selection mode, `disambiguation`/`categories` payload data) and never the request's `query.original`, normalized text, or a full HTTP response. `query`, `normalized_query`, and debug tokens are always rebuilt for the current request.
+- [x] 28. [S9] Shapes and per-request reconstruction: `CachedEntry` holds reusable computational results (ordered candidates, ranked events with explanations, confidence, selection mode, `disambiguation`/`categories` payload data) and never the request's `query.original`, normalized text, or a full HTTP response. `query`, `normalized_query`, and debug tokens are always rebuilt for the current request.
   - RED: `cargo test -p api --test cache_equivalence` — cached vs. uncached responses are identical for the same generation and input across `/search` (read-only), `/search/debug` (read-only), accents, synonyms, zero-match inputs, and inputs requiring redaction; `compré un auto` and `compre un coche` never exchange text or tokens; structural errors are not cached; feedback responses are never cached.
   - GREEN: response assembly reads from the current request's query plus the cached computation.
   - TRIANGULATE: cached and uncached debug token lists are identical for the same request, and an engine/taxonomy version change invalidates earlier keys.
