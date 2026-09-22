@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT taxonomy_version FROM catalog_generations WHERE generation_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "taxonomy_version",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "catalog_generations",
+            "name": "taxonomy_version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a0154a402395dec6b7b77cdf9e6f363799345cf65e8769eb50b1b84ac1697368"
+}

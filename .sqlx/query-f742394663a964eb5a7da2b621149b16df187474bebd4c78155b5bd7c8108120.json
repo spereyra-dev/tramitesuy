@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE catalog_generations SET taxonomy_version = $2 WHERE generation_id = $1 AND status = 'published'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f742394663a964eb5a7da2b621149b16df187474bebd4c78155b5bd7c8108120"
+}

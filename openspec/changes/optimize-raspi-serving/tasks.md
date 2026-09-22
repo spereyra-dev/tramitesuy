@@ -197,24 +197,24 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: `/api/v1` route inventory stays closed (no probe/metric route added under it).
   - Satisfies: OPT-03, api delta (cold-start 503), OPT-11.
 
-- [ ] 23. [S8] Implement publication detection: manifest reconciliation every 60 s in the worker (configurable), API write-back of `active_generation_id` + `adopted_at` after each swap, and an operational alert when the active generation is older than 10 minutes than the last confirmed publication; a cross-process notification is optional acceleration only.
+- [x] 23. [S8] Implement publication detection: manifest reconciliation every 60 s in the worker (configurable), API write-back of `active_generation_id` + `adopted_at` after each swap, and an operational alert when the active generation is older than 10 minutes than the last confirmed publication; a cross-process notification is optional acceleration only.
   - RED: `cargo test -p ingest --test reconciliation` with a shortened interval — a publication whose notification is lost is adopted within one reconciliation cycle; the lagging-API alert fires past the bound.
   - GREEN: `sqlx` `LISTEN/NOTIFY` (or an equivalent hint) used only as an accelerator, never as the correctness mechanism.
   - TRIANGULATE: reconciliation never deletes anything by itself.
   - Verify: `.sqlx/` regenerated.
   - Satisfies: OPT-02/OPT-04, catalog-generations deltas, R10.
 
-- [ ] 24. [S8] Implement retention and gated collection: retention of three generations by default (`configurable`), collection off the request path, gated on confirmed adoption **and** either in-flight completion (captured `Arc` released) or the retention window passing; a lagging API's projection is never deleted.
+- [x] 24. [S8] Implement retention and gated collection: retention of three generations by default (`configurable`), collection off the request path, gated on confirmed adoption **and** either in-flight completion (captured `Arc` released) or the retention window passing; a lagging API's projection is never deleted.
   - RED: `cargo test -p db --test generation_retention` — a generation still held by an in-flight `Arc` is deferred; a lagging API's projection is retained; a generation outside the retention window with no holder is collected; collection issues no work on the request path.
   - TRIANGULATE: collection is idempotent and never touches the active or previous generation.
   - Satisfies: OPT-04, catalog-generations deltas, R5/R10.
 
-- [ ] 25. [S8] Add the memory-budget guard before building or loading a candidate generation, sized for active + candidate + previous-in-use + caches + PostgreSQL + system: with no budget the current generation stays active and the failure is reported operationally.
+- [x] 25. [S8] Add the memory-budget guard before building or loading a candidate generation, sized for active + candidate + previous-in-use + caches + PostgreSQL + system: with no budget the current generation stays active and the failure is reported operationally.
   - RED: `cargo test -p api --test generation_memory_budget` with an injected budget — a candidate over budget is rejected, the active generation keeps serving, an operational signal is emitted, and no OOM/swap growth is observed in the test harness.
   - TRIANGULATE: shared immutable data between generations is reused where possible.
   - Satisfies: OPT-10, catalog-generations delta, R4.
 
-- [ ] 26. [S8] Add failure-injection and rollback tests **before** cache activation: `apps/ingest/tests/failure_injection.rs` (failure in download, validation, persistence and promotion, with worker/API restarts between phases) and `apps/api/tests/generation_rollback.rs` (reactivating the retained previous generation restores its taxonomy and its search providers; a defective new generation is never mutated to fix it).
+- [x] 26. [S8] Add failure-injection and rollback tests **before** cache activation: `apps/ingest/tests/failure_injection.rs` (failure in download, validation, persistence and promotion, with worker/API restarts between phases) and `apps/api/tests/generation_rollback.rs` (reactivating the retained previous generation restores its taxonomy and its search providers; a defective new generation is never mutated to fix it).
   - RED: `cargo test -p ingest --test failure_injection` and `cargo test -p api --test generation_rollback` — the previous version stays active throughout every injected failure, run records reflect the state, and searches after rollback run against G1's taxonomy and providers.
   - TRIANGULATE: a bad generation published by mistake is rolled back by promoting the retained previous generation, not by repairing the new one.
   - Satisfies: OPT-03, catalog-generations delta ("Previous generation remains recoverable"), spec §7 tests 3 and 6, R5/R13.
