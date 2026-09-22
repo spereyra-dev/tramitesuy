@@ -303,12 +303,12 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: readiness failing at the proxy prevents routing traffic before the first valid snapshot.
   - Satisfies: OPT-11, api delta (closed inventory), R14.
 
-- [ ] 42. [S13] Backup and restore: `scripts/backup.sh` (scheduled `pg_dump` to an external/SSD target) and `scripts/restore.sh`, with a documented, *executed* restore rehearsal in `docs/deploy-raspi.md` proving the catalog is recovered from the backup and that no recovery path relies on the search cache.
+- [x] 42. [S13] Backup and restore: `scripts/backup.sh` (scheduled `pg_dump` to an external/SSD target) and `scripts/restore.sh`, with a documented, *executed* restore rehearsal in `docs/deploy-raspi.md` proving the catalog is recovered from the backup and that no recovery path relies on the search cache.
   - RED/verify: the restore rehearsal is run against a disposable database and the restored generation serves catalog reads and searches; the document records the evidence and states that the cache is derived and never a backup substitute.
   - TRIANGULATE: restoring while the API runs does not change the active generation until adoption confirms the restored manifest.
   - Satisfies: OPT-11, operations delta (backup restore tested), R12.
 
-- [ ] 43. [S13] Rehearse stage rollback and configuration reset: document and exercise resetting schedule/timezone, retry, exclusion, admission, deadline and pool settings to their prior defaults via configuration, and reverting the `prod` compose profile to the current development stack, with run records and generation artifacts retained as data.
+- [x] 43. [S13] Rehearse stage rollback and configuration reset: document and exercise resetting schedule/timezone, retry, exclusion, admission, deadline and pool settings to their prior defaults via configuration, and reverting the `prod` compose profile to the current development stack, with run records and generation artifacts retained as data.
   - Verify: the rehearsal is executed once and recorded in `docs/deploy-raspi.md`; no persistent data is lost and the previous behavior is restored without a code change.
   - Satisfies: OPT-11, rollback section of the proposal (stage 5 rollback), stage-boundary deployability.
 
