@@ -120,14 +120,6 @@ pub fn next_run(now: DateTime<Utc>, tz: Tz, at: NaiveTime) -> DateTime<Utc> {
     run_on_or_after(local_now.date_naive() + chrono::Duration::days(1), tz, at)
 }
 
-/// The next daily run on the local day AFTER `after`'s local day — a
-/// successful pass covers its local day, so the next scheduled run is the
-/// following day's run time (never a duplicate the same day).
-pub fn next_day_run(after: DateTime<Utc>, tz: Tz, at: NaiveTime) -> DateTime<Utc> {
-    let local_date = after.with_timezone(&tz).date_naive();
-    run_on_or_after(local_date + chrono::Duration::days(1), tz, at)
-}
-
 /// The scheduled instant on `date` or the first following day whose local
 /// run time exists in the zone (a zone with a 06:00 inside a DST gap on
 /// consecutive days cannot exist; the loop is bounded by reality).
@@ -165,4 +157,105 @@ pub fn restart_wake(
 /// Today's scheduled instant in UTC, when the local wall time exists.
 fn today_run_instant(now: DateTime<Utc>, tz: Tz, at: NaiveTime) -> Option<DateTime<Utc>> {
     local_to_utc(&tz, now.with_timezone(&tz).date_naive().and_time(at))
+}
+
+/// The bounded increasing retry schedule (task 36, S11, OPT-03, design
+/// §6.3, ingestion delta): minutes after the INITIAL failure at which each
+/// retry runs. After the retries are exhausted the failure is recorded
+/// operationally and the next attempt waits for the next scheduled daily
+/// run — the previously published generation stays active throughout.
+pub const RETRY_OFFSET_MINUTES: [i64; 3] = [5, 15, 30];
+
+/// The recorded `attempt` column's cap (migration 0014: `attempt BETWEEN 1
+/// AND 3`): an execution beyond the third records the capped value.
+pub const MAX_RECORDED_ATTEMPT: i16 = 3;
+
+/// How one daily-cycle execution ended — the scheduler's stepping input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CycleOutcome {
+    /// The cycle completed (including a no-content re-publication): the
+    /// local day's obligation is met, the next attempt is tomorrow's run.
+    Completed,
+    /// A transient failure (download, validation, persistence): retried on
+    /// the bounded increasing schedule.
+    TransientFailure,
+    /// The cycle never started (the ingestion exclusion was held by
+    /// another run): recorded `skipped`, not queued — the next attempt is
+    /// the next scheduled run.
+    Skipped,
+}
+
+/// The daemon's daily scheduler: the current cycle's execution index, the
+/// first failure instant (the retry offsets are absolute from it), and the
+/// retries already used. Pure state — testable with a controllable clock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SchedulerState {
+    execution: u32,
+    failure_anchor: Option<DateTime<Utc>>,
+    retries_used: usize,
+}
+
+impl SchedulerState {
+    /// A scheduler at the start of a local day: the next execution is the
+    /// day's first attempt.
+    pub fn fresh() -> SchedulerState {
+        SchedulerState {
+            execution: 1,
+            failure_anchor: None,
+            retries_used: 0,
+        }
+    }
+
+    /// The attempt number the CURRENT execution records. Migration 0014
+    /// caps the column at 3: executions beyond the third record the
+    /// capped value.
+    pub fn attempt(&self) -> i16 {
+        i16::try_from(self.execution)
+            .unwrap_or(MAX_RECORDED_ATTEMPT)
+            .min(MAX_RECORDED_ATTEMPT)
+    }
+
+    /// The instant the next retry would run at (an absolute offset from
+    /// the first failure of the current sequence), or `None` when the
+    /// retries are exhausted.
+    fn retry_instant(&self) -> Option<DateTime<Utc>> {
+        let anchor = self.failure_anchor?;
+        let minutes = *RETRY_OFFSET_MINUTES.get(self.retries_used)?;
+        Some(anchor + chrono::Duration::minutes(minutes))
+    }
+
+    /// Steps the scheduler after one cycle execution completed at
+    /// `completed_at`; returns the instant the next cycle may run: a retry
+    /// on the bounded increasing schedule, the next day's run after a
+    /// completed or skipped cycle, and the next day's run once the
+    /// retries are exhausted.
+    pub fn step(
+        &mut self,
+        outcome: CycleOutcome,
+        completed_at: DateTime<Utc>,
+        tz: Tz,
+        at: NaiveTime,
+    ) -> DateTime<Utc> {
+        match outcome {
+            CycleOutcome::Completed | CycleOutcome::Skipped => {
+                *self = SchedulerState::fresh();
+                next_run(completed_at, tz, at)
+            }
+            CycleOutcome::TransientFailure => {
+                if self.failure_anchor.is_none() {
+                    self.failure_anchor = Some(completed_at);
+                }
+                if let Some(retry_at) = self.retry_instant() {
+                    self.retries_used += 1;
+                    self.execution += 1;
+                    return retry_at;
+                }
+                // Exhausted: the failure is recorded operationally (every
+                // attempt's run record already carries its state) and the
+                // next attempt waits for the next scheduled daily run.
+                *self = SchedulerState::fresh();
+                next_run(completed_at, tz, at)
+            }
+        }
+    }
 }

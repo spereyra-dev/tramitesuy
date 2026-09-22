@@ -49,7 +49,6 @@ pub fn run_once_with_base(base: &str) -> Result<(), String> {
 /// rolls back with the guard), while the pipeline's blocking HTTP client
 /// stays off async workers.
 pub fn run_once_with_url(base: &str, database_url: Option<&str>) -> Result<(), String> {
-    let fetcher = build_fetcher_with(base)?;
     let acquired = support::block_on(async {
         let pool = support::connect_pool(&support::database_url(database_url));
         let held = IngestionExclusion::try_acquire(&pool).await;
@@ -87,19 +86,28 @@ pub fn run_once_with_url(base: &str, database_url: Option<&str>) -> Result<(), S
             Ok(())
         }
         Acquired::Held(pool, exclusion) => {
-            let repo = support::open_repository(pool.clone());
-            let ran = pipeline::run_csv(&fetcher, &repo, now_stamp());
+            let ran = run_pass_on_pool(&pool, base);
             // The exclusion is released on EVERY exit path (pipeline error
             // included) and the release runs on the shared runtime, where
             // the transaction-scoped lock rolls back with the guard.
             support::block_on(async {
                 drop(exclusion);
             });
-            let summary = ran.map_err(|error| error.to_string())?;
-            print!("{}", summary.report());
-            Ok(())
+            ran
         }
     }
+}
+
+/// The ingestion pass over a pool the caller connected and an exclusion it
+/// already holds (the daemon's scheduled cycle path): fetch → process →
+/// dual-write, with the deterministic run summary printed.
+pub fn run_pass_on_pool(pool: &sqlx::PgPool, base: &str) -> Result<(), String> {
+    let fetcher = build_fetcher_with(base)?;
+    let repo = support::open_repository(pool.clone());
+    let summary =
+        pipeline::run_csv(&fetcher, &repo, now_stamp()).map_err(|error| error.to_string())?;
+    print!("{}", summary.report());
+    Ok(())
 }
 
 /// The outcome of the exclusion acquisition phase of one pass.
