@@ -1,8 +1,9 @@
 //! Privacy redaction before persistence (API-10, tasks 81–82): the query is
 //! redacted BEFORE it reaches the `search_logs` repository. Patterns matching
-//! Uruguayan cédula numbers (dotted format `N.NNN.NNN-N`), phone numbers
-//! (domestic mobile and international `+598` forms), and email addresses are
-//! replaced with `<REDACTED>`.
+//! Uruguayan cédula numbers (dotted `N.NNN.NNN-N`, hyphen-only `NNNNNNN-N`,
+//! and compact `NNNNNNNN` forms), phone numbers (domestic mobile and
+//! international `+598` forms), and email addresses are replaced with
+//! `<REDACTED>`.
 //!
 //! Redaction is a LOG-COPY transformation: the search itself runs on the raw
 //! query and the response echoes it as sent (API-2), while the persisted
@@ -15,10 +16,16 @@ use std::sync::OnceLock;
 /// The replacement marker written over every sensitive pattern.
 const REDACTED: &str = "<REDACTED>";
 
-/// Uruguayan cédula in the dotted national format: `4.123.456-7`.
+/// Uruguayan cédula in any of its common input forms: dotted national
+/// `4.123.456-7`, hyphen-only `4123456-7`, and compact `41234567`. The
+/// 8-consecutive-digit branch is bounded by `\b` on both sides so it never
+/// matches a digit inside a longer run (a 9+ digit string, a 16-digit card
+/// number, or a dotted/thousands-separated amount).
 fn cedula_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"\b\d{1,2}\.\d{3}\.\d{3}-\d\b").expect("valid pattern"))
+    PATTERN.get_or_init(|| {
+        Regex::new(r"\b(?:\d{1,2}\.\d{3}\.\d{3}-\d|\d{7}-\d|\d{8})\b").expect("valid pattern")
+    })
 }
 
 /// Email addresses (`juan.perez@gmail.com`).

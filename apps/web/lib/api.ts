@@ -107,23 +107,40 @@ export type ApiError =
 export type FetchInit = RequestInit & { revalidate?: number };
 
 /**
+ * The trusted server-side origin for the relative /api/v1/... proxy path.
+ *
+ * Trusted configuration only — the incoming request is NEVER consulted, so
+ * an attacker-controlled `Host` header cannot steer this server-side fetch
+ * (SSRF). Prefer the internal API origin (the same `API_BASE_URL`
+ * `next.config.ts` rewrites to); when it is absent, fall back to this web
+ * app's own loopback origin so the same-origin `/api/v1/...` rewrite still
+ * proxies the request. The fallback is deliberately the loopback web
+ * origin, never a request-derived host.
+ */
+function internalApiOrigin(): string {
+  return (
+    process.env.API_BASE_URL ??
+    `http://127.0.0.1:${process.env.PORT ?? '3000'}`
+  );
+}
+
+/**
  * Node's fetch cannot parse a relative URL, so on the server the wrapper
- * resolves the relative /api/v1/... path against the incoming request's own
- * WEB origin — never the API origin (the Next rewrite still forwards to
- * API_BASE_URL, keeping the same-origin proxy path). Outside a request
- * scope (unit tests with a stubbed fetch) the relative path passes through
- * unchanged, preserving the relative-call-site contract.
+ * resolves the relative /api/v1/... path against the trusted internal
+ * origin above (never the API origin derived from the request). Outside a
+ * request scope (unit tests with a stubbed fetch) the relative path passes
+ * through unchanged, preserving the relative-call-site contract.
  */
 async function resolveSameOriginUrl(path: string): Promise<string> {
   if (typeof window !== 'undefined') return path; // browser: relative same-origin
   try {
-    const { headers } = await import('next/headers');
-    const host = (await headers()).get('host');
-    if (!host) return path;
-    return `http://${host}${path}`;
+    // Detect a Next request scope only; the request itself is untrusted and
+    // its headers are never read to build the outgoing URL (SSRF guard).
+    await (await import('next/headers')).headers();
   } catch {
     return path;
   }
+  return `${internalApiOrigin()}${path}`;
 }
 
 /**

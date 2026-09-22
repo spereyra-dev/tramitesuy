@@ -98,16 +98,22 @@ grep -qE 'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER' Dockerfile \
 make -n image-arm64 >/dev/null \
   || fail "the make image-arm64 target does not resolve"
 
-# [task 41] HTTPS reverse proxy: TLS termination, readiness wiring to the
-# internal /ready (read-only), internal-only probes and metrics outside the
-# closed /api/v1 inventory, query-string logging explicitly disabled.
+# [task 41, audit F10] HTTPS reverse proxy: TLS termination, readiness
+# wiring to the internal /ready (read-only), internal-only probes and metrics
+# outside the closed /api/v1 inventory, and an access-log format stripped of
+# every query-string AND client-identifying field (AGENTS.md privacy policy:
+# query, result, feedback, timestamp only — no client address, no remote
+# user, no user agent).
 PROXY_CONF=docker/proxy/nginx.conf
 [ -f "$PROXY_CONF" ] || fail "the HTTPS reverse proxy config ($PROXY_CONF) is missing"
 log_format=$(sed -n '/log_format[[:space:]][[:space:]]*privacy/,/;/p' "$PROXY_CONF")
 [ -n "$log_format" ] || fail "the proxy does not define the privacy log_format"
-for banned_field in '$args' '$query_string' '$is_args' '$request_uri' '$http_referer'; do
+# Banned from the access-log FORMAT: query-string fields ($args,
+# $query_string, $is_args, $request_uri, $http_referer) and
+# client-identifying fields ($remote_addr, $remote_user, $http_user_agent).
+for banned_field in '$args' '$query_string' '$is_args' '$request_uri' '$http_referer' '$remote_addr' '$remote_user' '$http_user_agent'; do
   case "$log_format" in
-    *"$banned_field"*) fail "the proxy access-log format carries the query-string field $banned_field" ;;
+    *"$banned_field"*) fail "the proxy access-log format carries the forbidden field $banned_field" ;;
   esac
 done
 case "$log_format" in

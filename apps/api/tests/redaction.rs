@@ -87,6 +87,54 @@ async fn email_addresses_are_redacted_in_the_log() {
     common_drop(&db_name).await;
 }
 
+/// The alternative cédula formats the dotted pattern misses: the compact
+/// 8-digit form and the hyphen-only 7+1 form (audit F9).
+#[tokio::test(flavor = "multi_thread")]
+async fn compact_and_hyphen_only_cedulas_are_redacted_in_the_log() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    let app = spawn_app(pool.clone());
+
+    let (_, (compact, _)) = logged_row(&app, &pool, "mi%20cedula%2041234567").await;
+    assert_eq!(compact, "mi cedula <REDACTED>", "compact cédula redacted");
+
+    sqlx::query("DELETE FROM search_logs")
+        .execute(&pool)
+        .await
+        .expect("clean the log between searches");
+
+    let (_, (hyphen_only, _)) = logged_row(&app, &pool, "mi%20cedula%204123456-7").await;
+    assert_eq!(
+        hyphen_only, "mi cedula <REDACTED>",
+        "hyphen-only cédula redacted"
+    );
+
+    common_drop(&db_name).await;
+}
+
+/// False positives: numeric tokens that are not cédulas must survive the
+/// redaction unchanged — a licence-plate-shaped token, a year, a monetary
+/// amount, a decimal, and a plain short number.
+#[tokio::test(flavor = "multi_thread")]
+async fn non_cedula_numeric_tokens_are_not_redacted() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    let app = spawn_app(pool.clone());
+
+    for token in ["SBB 1234", "2024", "$ 1.500", "3,1416", "12345"] {
+        let encoded = token.replace(' ', "%20").replace('$', "%24");
+        let (_, (query, _)) = logged_row(&app, &pool, &encoded).await;
+        assert_eq!(
+            query, token,
+            "non-cédula token {token:?} must survive redaction unchanged"
+        );
+        sqlx::query("DELETE FROM search_logs")
+            .execute(&pool)
+            .await
+            .expect("clean the log between searches");
+    }
+
+    common_drop(&db_name).await;
+}
+
 /// Open-mode fixture (same shape as search_modes.rs).
 async fn seed_search_fixture(pool: &sqlx::PgPool) {
     sqlx::query(
