@@ -59,6 +59,14 @@ async fn main() {
             .observe_generation_state(api::metrics::GenerationState::Active);
     }
 
+    // Publication detection (S8 task 23): the reconciliation loop adopts
+    // the newest published manifest every configured interval (default
+    // 60 s); the worker's pg_notify hint only accelerates detection.
+    api::generation::reconcile::spawn(
+        state.clone(),
+        api::generation::reconcile::PUBLICATION_CHANNEL,
+    );
+
     // `TRAMITESUY_BIND` overrides the dev default (the compose service
     // binds 0.0.0.0 to be reachable from the host).
     let bind = std::env::var("TRAMITESUY_BIND").unwrap_or_else(|_| "127.0.0.1:8080".to_string());

@@ -592,3 +592,25 @@ pub async fn seed_search_fixture(pool: &sqlx::PgPool) {
     .await
     .expect("seed relation order 2");
 }
+
+/// The total projection rows across the five `generation_*` tables
+/// (deletion audits for the S8 reconciliation guarantees).
+pub async fn projection_row_count(pool: &PgPool) -> i64 {
+    let mut total = 0;
+    for table in [
+        "generation_life_events",
+        "generation_fts_text",
+        "generation_trigram_surface",
+        "generation_event_cards",
+        "generation_procedure_details",
+    ] {
+        // Audited: table names are a fixed allowlist, never input.
+        let audited = sqlx::AssertSqlSafe(format!("SELECT count(*) FROM {table}"));
+        let rows: i64 = sqlx::query_scalar(audited)
+            .fetch_one(pool)
+            .await
+            .expect("count rows");
+        total += rows;
+    }
+    total
+}

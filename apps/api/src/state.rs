@@ -20,7 +20,7 @@
 //! taxonomy matches the loaded source of truth.
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Weak};
 
 use arc_swap::ArcSwap;
 use db::providers::orchestrator::ProviderFetch;
@@ -28,6 +28,11 @@ use db::providers::orchestrator::ProviderFetch;
 use crate::config::ApiLimits;
 use crate::generation::{self, ActiveGeneration, TaxonomyBundle};
 use crate::metrics::{GenerationState, Metrics};
+
+/// The retired generations still potentially held by in-flight requests:
+/// the generation id plus a WEAK reference to the request token (an
+/// `upgrade()` succeeds while any request holds its captured `Arc`).
+type RetiredRegistry = Mutex<Vec<(uuid::Uuid, Weak<Arc<ActiveGeneration>>)>>;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -49,6 +54,19 @@ pub struct AppState {
     /// route/status latency, SQL ops, cache events, and generation state
     /// through this seam — never query-derived text (R14).
     pub metrics: Arc<dyn Metrics>,
+    /// The taxonomy bundle every generation load reuses (the YAML source of
+    /// truth pinned at boot): the reconciliation loop loads candidates
+    /// against it without re-reading the YAML, and the shared immutable
+    /// bundle is what the memory budget counts once across generations.
+    pub bundle: Arc<TaxonomyBundle>,
+    /// The retired generations still potentially held by in-flight requests
+    /// (design §2.3 drainage): after each swap the holder keeps a WEAK
+    /// reference to the previous request token, so the strong-count
+    /// contract of task 20 is unchanged, and the reconciliation loop can
+    /// report which generations still have live in-flight holders
+    /// (`upgrade()` succeeds while any request holds its captured Arc).
+    /// Drained entries drop out; the durable manifest stays recoverable.
+    retired: Arc<RetiredRegistry>,
 }
 
 impl AppState {
@@ -113,6 +131,14 @@ impl AppState {
         {
             Ok(Some(loaded)) => {
                 state.install(Arc::new(loaded));
+                // The boot load is an adoption: the manifest records it so
+                // the worker's collector sees the confirmed reference even
+                // before the first reconciliation cycle (S8 task 23).
+                let adopted = state.active.load_full().generation_id();
+                let in_flight = state.retained_inflight_ids();
+                db::generations::adopt::confirm_adoption(&state.pool, adopted, &in_flight)
+                    .await
+                    .map_err(|error| format!("adoption write-back: {error}"))?;
             }
             Ok(None) => {
                 // Cold start: nothing published yet (S7 task 22 semantics).
@@ -133,13 +159,15 @@ impl AppState {
         let provider_fetch = limits.provider_fetch;
         AppState {
             active: Arc::new(ArcSwap::from_pointee(Arc::new(ActiveGeneration::cold(
-                bundle,
+                bundle.clone(),
                 provider_fetch,
             )))),
             pool,
             provider_fetch,
             limits,
             metrics,
+            bundle: Arc::new(bundle),
+            retired: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -153,8 +181,68 @@ impl AppState {
         } else {
             GenerationState::NotLoaded
         };
-        self.active.store(Arc::new(generation));
+        // Swap (not store) so the retired generation can be registered for
+        // in-flight reporting: the WEAK reference never affects the strong
+        // count, so the task-20 contract (the captured Arc keeps the old
+        // generation alive until the last request drops it) is unchanged.
+        let old = self.active.swap(Arc::new(generation));
+        if old.is_loaded() {
+            let mut retired = self
+                .retired
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            retired.retain(|(_, weak)| weak.upgrade().is_some());
+            retired.push((old.generation_id(), Arc::downgrade(&old)));
+        }
+        drop(old);
         self.metrics.observe_generation_state(state);
+    }
+
+    /// The generation ids still held by at least one in-flight request's
+    /// captured Arc (drained entries are dropped).
+    pub fn retained_inflight_ids(&self) -> Vec<uuid::Uuid> {
+        let mut retired = self
+            .retired
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut ids = Vec::new();
+        retired.retain(|(id, weak)| {
+            if weak.upgrade().is_some() {
+                ids.push(*id);
+                true
+            } else {
+                false
+            }
+        });
+        ids
+    }
+
+    /// Estimated owned RAM of the generations still held by in-flight
+    /// requests (the memory budget's "previous-in-use" term).
+    pub fn retained_in_use_bytes(&self) -> u64 {
+        self.retained_inflight_ids()
+            .iter()
+            .filter_map(|id| self.retained_snapshot(id))
+            .map(|generation| crate::generation::memory_budget::estimate(&generation).owned_bytes)
+            .sum()
+    }
+
+    /// How many generation snapshots the state currently retains alive: the
+    /// active one plus any still held by in-flight requests. A rejected
+    /// adoption never materializes a second retained snapshot.
+    pub fn retained_snapshot_count(&self) -> usize {
+        1 + self.retained_inflight_ids().len()
+    }
+
+    fn retained_snapshot(&self, id: &uuid::Uuid) -> Option<Arc<ActiveGeneration>> {
+        let retired = self
+            .retired
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        retired
+            .iter()
+            .filter(|(retained_id, _)| retained_id == id)
+            .find_map(|(_, weak)| weak.upgrade().map(|outer| Arc::clone(&*outer)))
     }
 
     /// The currently served generation's id (nil before the first load).

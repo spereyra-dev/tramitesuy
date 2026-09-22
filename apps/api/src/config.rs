@@ -17,6 +17,10 @@
 //! | `API_Q_MAX_BYTES` | 2048 | `q` UTF-8 byte limit |
 //! | `API_RETRY_AFTER_SECONDS` | 1 | overload `Retry-After` value |
 //! | `API_PROVIDER_FETCH` | `sequential` | FTS/trigram fetch policy |
+//! | `API_RECONCILE_SECS` | 60 | manifest reconciliation interval |
+//! | `API_LAG_ALERT_SECS` | 600 | lagging-adoption alert bound |
+//! | `API_MEMORY_BUDGET_MB` | 0 (off) | process RAM budget for generations |
+//! | `API_MEMORY_RESERVE_MB` | 64 | cache/PostgreSQL/system reserve |
 
 use std::time::Duration;
 
@@ -38,6 +42,17 @@ pub struct ApiLimits {
     /// FTS/trigram fetch policy (S4b task 11): sequential by default;
     /// concurrent fetching must be explicitly configured.
     pub provider_fetch: ProviderFetch,
+    /// Manifest-reconciliation cadence (S8 task 23): publications are
+    /// detected by reconciling the durable manifest; a cross-process
+    /// notification is only an accelerator.
+    pub reconciliation_interval: Duration,
+    /// The lagging-adoption alert bound (S8 task 23): a published
+    /// generation the API has not adopted within this bound raises the
+    /// operational alert (default 10 minutes).
+    pub lag_alert_after: Duration,
+    /// The memory-budget guard (S8 task 25): `None` (or 0 configured)
+    /// disables the guard — small development environments run without one.
+    pub memory_budget: Option<crate::generation::memory_budget::MemoryBudget>,
 }
 
 impl Default for ApiLimits {
@@ -53,6 +68,9 @@ impl Default for ApiLimits {
             q_max_bytes: 2048,
             retry_after_seconds: 1,
             provider_fetch: ProviderFetch::Sequential,
+            reconciliation_interval: Duration::from_secs(60),
+            lag_alert_after: Duration::from_secs(600),
+            memory_budget: None,
         }
     }
 }
@@ -118,8 +136,44 @@ impl ApiLimits {
                 defaults.retry_after_seconds,
             )?,
             provider_fetch: parse_provider_fetch(&lookup)?,
+            reconciliation_interval: Duration::from_secs(parse_positive(
+                &lookup,
+                "API_RECONCILE_SECS",
+                defaults.reconciliation_interval.as_secs(),
+            )?),
+            lag_alert_after: Duration::from_secs(parse_positive(
+                &lookup,
+                "API_LAG_ALERT_SECS",
+                defaults.lag_alert_after.as_secs(),
+            )?),
+            memory_budget: parse_memory_budget(&lookup)?,
         })
     }
+}
+
+/// Parses the memory-budget guard: absent or `0` disables it; a positive
+/// value is the process budget in MiB, with the cache/PostgreSQL/system
+/// reserve in MiB (default 64).
+fn parse_memory_budget(
+    lookup: &impl Fn(&str) -> Option<String>,
+) -> Result<Option<crate::generation::memory_budget::MemoryBudget>, ConfigError> {
+    let Some(raw) = lookup("API_MEMORY_BUDGET_MB") else {
+        return Ok(None);
+    };
+    let mib = raw.parse::<u64>().ok().ok_or(ConfigError {
+        field: "API_MEMORY_BUDGET_MB",
+        value: raw,
+    })?;
+    if mib == 0 {
+        return Ok(None);
+    }
+    let reserve_mib = lookup("API_MEMORY_RESERVE_MB")
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(64);
+    Ok(Some(crate::generation::memory_budget::MemoryBudget {
+        total_bytes: mib * 1024 * 1024,
+        reserve_bytes: reserve_mib * 1024 * 1024,
+    }))
 }
 
 /// Parses the explicit FTS/trigram fetch policy. Only the documented,

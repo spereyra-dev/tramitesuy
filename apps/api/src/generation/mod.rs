@@ -25,6 +25,7 @@
 //! zero SQL, and the taxonomy remains the ranker's source of truth (TX-1).
 
 pub mod memory_budget;
+pub mod reconcile;
 
 use std::collections::HashMap;
 use std::path::Path;
