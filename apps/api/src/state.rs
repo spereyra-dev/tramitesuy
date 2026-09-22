@@ -126,8 +126,13 @@ impl AppState {
     ) -> Result<Self, String> {
         let bundle = load_bundle(data_dir)?;
         let state = Self::from_bundle(bundle.clone(), pool, limits, metrics);
-        match generation::load_published_with_bundle(&state.pool, &bundle, limits.provider_fetch)
-            .await
+        match generation::load_published_with_bundle_and_limits(
+            &state.pool,
+            &bundle,
+            limits.provider_fetch,
+            limits.cache,
+        )
+        .await
         {
             Ok(Some(loaded)) => {
                 state.install(Arc::new(loaded));
@@ -161,6 +166,7 @@ impl AppState {
             active: Arc::new(ArcSwap::from_pointee(Arc::new(ActiveGeneration::cold(
                 bundle.clone(),
                 provider_fetch,
+                limits.cache,
             )))),
             pool,
             provider_fetch,

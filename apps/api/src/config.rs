@@ -21,11 +21,16 @@
 //! | `API_LAG_ALERT_SECS` | 600 | lagging-adoption alert bound |
 //! | `API_MEMORY_BUDGET_MB` | 0 (off) | process RAM budget for generations |
 //! | `API_MEMORY_RESERVE_MB` | 64 | cache/PostgreSQL/system reserve |
+//! | `API_CACHE_MAX_BYTES` | 67108864 (64 MiB) | search-cache byte limit |
+//! | `API_CACHE_MAX_ENTRIES` | 10000 | search-cache entry limit |
+//! | `API_CACHE_TTL_SECS` | 86400 (24 h) | search-cache entry TTL |
 
 use std::time::Duration;
 
 use db::pool::{DEFAULT_ACQUIRE_TIMEOUT, DEFAULT_MAX_CONNECTIONS};
 use db::providers::orchestrator::ProviderFetch;
+
+use crate::cache::CacheLimits;
 
 /// Every operational limit of the API serving path (design §7.1). The
 /// deadline/admission/q-limit fields are consumed by their own later
@@ -53,6 +58,9 @@ pub struct ApiLimits {
     /// The memory-budget guard (S8 task 25): `None` (or 0 configured)
     /// disables the guard — small development environments run without one.
     pub memory_budget: Option<crate::generation::memory_budget::MemoryBudget>,
+    /// The search-cache limits (S9 task 27, design §3.4): 64 MiB / 10,000
+    /// entries / 24 h TTL by default, all overridable via configuration.
+    pub cache: CacheLimits,
 }
 
 impl Default for ApiLimits {
@@ -73,6 +81,7 @@ impl Default for ApiLimits {
             reconciliation_interval: Duration::from_secs(60),
             lag_alert_after: Duration::from_secs(600),
             memory_budget: None,
+            cache: CacheLimits::default(),
         }
     }
 }
@@ -149,6 +158,23 @@ impl ApiLimits {
                 defaults.lag_alert_after.as_secs(),
             )?),
             memory_budget: parse_memory_budget(&lookup)?,
+            cache: CacheLimits {
+                max_bytes: parse_positive(
+                    &lookup,
+                    "API_CACHE_MAX_BYTES",
+                    defaults.cache.max_bytes,
+                )?,
+                max_entries: parse_positive(
+                    &lookup,
+                    "API_CACHE_MAX_ENTRIES",
+                    defaults.cache.max_entries,
+                )?,
+                ttl: Duration::from_secs(parse_positive(
+                    &lookup,
+                    "API_CACHE_TTL_SECS",
+                    defaults.cache.ttl.as_secs(),
+                )?),
+            },
         })
     }
 }

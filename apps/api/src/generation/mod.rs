@@ -143,6 +143,11 @@ pub struct ActiveGeneration {
     organizations: HashMap<String, Arc<OrganizationView>>,
     /// The provider scope every search of this generation must use.
     pub providers: GenerationProviders,
+    /// This generation's bounded search cache (S9 task 27, design §3.4):
+    /// it lives INSIDE the snapshot, so a swap installs a new empty cache
+    /// and an in-flight request finishing late writes only into its own
+    /// captured generation's cache (generation isolation, R3).
+    pub cache: crate::cache::SearchCache,
 }
 
 impl ActiveGeneration {
@@ -150,14 +155,19 @@ impl ActiveGeneration {
     /// an empty catalog. Catalog reads report 503 in this state (task 22);
     /// search still serves through the legacy (dual-written) tables until
     /// the first valid snapshot is adopted.
-    pub fn cold(bundle: TaxonomyBundle, fetch: db::providers::orchestrator::ProviderFetch) -> Self {
-        ActiveGeneration::from_parts(bundle, SnapshotParts::empty(), fetch)
+    pub fn cold(
+        bundle: TaxonomyBundle,
+        fetch: db::providers::orchestrator::ProviderFetch,
+        cache_limits: crate::cache::CacheLimits,
+    ) -> Self {
+        ActiveGeneration::from_parts(bundle, SnapshotParts::empty(), fetch, cache_limits)
     }
 
     fn from_parts(
         bundle: TaxonomyBundle,
         parts: SnapshotParts,
         fetch: db::providers::orchestrator::ProviderFetch,
+        cache_limits: crate::cache::CacheLimits,
     ) -> Self {
         let SnapshotParts {
             manifest,
@@ -199,6 +209,7 @@ impl ActiveGeneration {
                 generation_id,
                 fetch,
             },
+            cache: crate::cache::SearchCache::new(cache_limits),
         }
     }
 
@@ -215,6 +226,17 @@ impl ActiveGeneration {
     /// The generation scope providers (and payload consumers) must use.
     pub fn generation_id(&self) -> Uuid {
         self.providers.generation_id
+    }
+
+    /// The engine version of this generation's manifest, as the cache key
+    /// carries it (S9 task 27, design §3.2): the loaded manifest's
+    /// `engine_version`, or the build-time engine constant for the cold
+    /// baseline (whose engine is exactly that version's code).
+    pub fn engine_version(&self) -> &str {
+        self.manifest
+            .as_ref()
+            .map(|manifest| manifest.engine_version.as_str())
+            .unwrap_or(db::generations::ENGINE_VERSION)
     }
 
     /// The YAML display name of an event slug (replaces the `AppState`
@@ -447,11 +469,24 @@ pub async fn load_published(
 
 /// [`load_published`] over an already-loaded taxonomy bundle (the boot path
 /// reuses the state's own YAML load) with the configured provider fetch
-/// policy.
+/// policy and the default cache limits.
 pub async fn load_published_with_bundle(
     pool: &sqlx::PgPool,
     bundle: &TaxonomyBundle,
     fetch: db::providers::orchestrator::ProviderFetch,
+) -> Result<Option<ActiveGeneration>, GenerationError> {
+    load_published_with_bundle_and_limits(pool, bundle, fetch, crate::cache::CacheLimits::default())
+        .await
+}
+
+/// [`load_published_with_bundle`] with explicit cache limits: the serving
+/// state threads its configured `CacheLimits` into the snapshot so the
+/// cache bounds are configuration parameters, not constants (S9 task 27).
+pub async fn load_published_with_bundle_and_limits(
+    pool: &sqlx::PgPool,
+    bundle: &TaxonomyBundle,
+    fetch: db::providers::orchestrator::ProviderFetch,
+    cache_limits: crate::cache::CacheLimits,
 ) -> Result<Option<ActiveGeneration>, GenerationError> {
     let candidates = sqlx::query!(
         r#"SELECT generation_id, content_hash, taxonomy_version, engine_version,
@@ -481,7 +516,7 @@ pub async fn load_published_with_bundle(
             procedure_count: candidate.procedure_count,
             projection_status: candidate.projection_status,
         };
-        match load_candidate(pool, candidate, bundle, fetch).await {
+        match load_candidate(pool, candidate, bundle, fetch, cache_limits).await {
             Ok(generation) => return Ok(Some(generation)),
             Err(error) => {
                 eprintln!("api generation: candidate rejected: {error}");
@@ -513,6 +548,7 @@ async fn load_candidate(
     candidate: CandidateManifest,
     bundle: &TaxonomyBundle,
     fetch: db::providers::orchestrator::ProviderFetch,
+    cache_limits: crate::cache::CacheLimits,
 ) -> Result<ActiveGeneration, GenerationError> {
     let CandidateManifest {
         generation_id,
@@ -667,6 +703,7 @@ async fn load_candidate(
             organizations,
         },
         fetch,
+        cache_limits,
     ))
 }
 

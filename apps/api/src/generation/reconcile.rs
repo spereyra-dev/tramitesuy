@@ -116,7 +116,14 @@ pub async fn tick(state: &AppState) -> Result<TickReport, sqlx::Error> {
 
     // Adopt through the durable loader (newest-first with the previous
     // generation as fallback): an invalid or failed load never installs.
-    match super::load_published_with_bundle(&state.pool, &state.bundle, state.provider_fetch).await
+    // The configured cache limits travel with the snapshot (S9 task 27).
+    match super::load_published_with_bundle_and_limits(
+        &state.pool,
+        &state.bundle,
+        state.provider_fetch,
+        state.limits.cache,
+    )
+    .await
     {
         Ok(Some(generation)) => {
             let adopted_id = generation.generation_id();

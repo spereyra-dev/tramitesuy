@@ -1,6 +1,7 @@
 //! TrámitesUY API library: router, handlers, DTOs, and error mapping.
 //! Slice (c), unit C1 — the read surface (tasks 70-77).
 
+pub mod cache;
 pub mod config;
 pub mod dto;
 pub mod error;
