@@ -3,7 +3,7 @@
 
 SHELL := /bin/bash
 
-.PHONY: dev test lint fmt migrate ingest seed-taxonomy search validate-data db-down baseline load load-plan check-deploy image-arm64 search-gate
+.PHONY: dev test lint fmt migrate ingest seed-taxonomy search validate-data db-down baseline load load-plan check-deploy image-arm64 search-gate search-integration
 
 ## dev: start the dev database, apply migrations, and seed the taxonomy.
 ## The full compose stack (api + ingest daemon) is `docker compose up --build`.
@@ -88,6 +88,14 @@ search-gate:
 	cargo test -p db --test providers
 	cargo test -p db --test explain_trigram
 	bash scripts/check-baselines.sh origin/master
+
+## search-integration: the F18 high-importance search integration (WU-1b): the
+## real FTS/trigram providers and the committed taxonomy over the ingested
+## catalog, asserting TOP1 ranking plus exact/pertinent procedure relations.
+## Needs a running, seeded dev database (`make dev`, then `make seed-taxonomy`);
+## read-only — it never seeds or mutates. Measurement infrastructure, non-gating.
+search-integration:
+	cargo test -p db --test search_integration -- --ignored --nocapture
 
 ## image-arm64: build the release ARM64 (aarch64-unknown-linux-gnu) API/ingest
 ## image off-device (design §8, task 40): built outside the service window and
