@@ -202,6 +202,25 @@ impl ProcedureRepository for InMemoryProcedureRepository {
         Ok(deactivated)
     }
 
+    fn reactivate_present(&self, ids: &[String], at: RunStamp) -> Result<usize, RepoError> {
+        let mut state = self.state.borrow_mut();
+        let mut reactivated = 0;
+        for external_id in ids {
+            if let Some(procedure) = state.procedures.get_mut(external_id) {
+                // Activity state is independent of the content hash (F12): a
+                // present row is active again even when its version is
+                // unchanged, so no version row is touched here.
+                if procedure.status != ProcedureStatus::Active {
+                    procedure.status = ProcedureStatus::Active;
+                    procedure.deactivated_at = None;
+                    procedure.updated_at = at.clone();
+                    reactivated += 1;
+                }
+            }
+        }
+        Ok(reactivated)
+    }
+
     fn touch_last_seen(&self, ids: &[String], at: RunStamp) -> Result<(), RepoError> {
         let mut state = self.state.borrow_mut();
         for external_id in ids {

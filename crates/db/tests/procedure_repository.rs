@@ -295,6 +295,51 @@ async fn upsert_reactivates_an_inactive_row_without_opening_a_version() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn reactivate_present_reactivates_inactive_rows_without_a_version() {
+    // F12: reactivation is driven by presence, not by content change. The
+    // repository method flips the status and clears the stamp without opening
+    // a version, and is idempotent on an already-active row.
+    let (pool, name) = fresh_migrated_db().await;
+    let repo = PostgresProcedureRepository::new(pool.clone());
+    repo.upsert_procedures(
+        &[row("1001", "100", "O-1", "Ministerio", "hash-1001")],
+        RUN_1.to_string(),
+    )
+    .expect("initial upsert");
+    repo.deactivate_missing(&Default::default(), RUN_2.to_string())
+        .expect("deactivate all");
+    let before_versions = counts(&pool).await.2;
+
+    let reactivated = repo
+        .reactivate_present(&["1001".to_string()], RUN_2.to_string())
+        .expect("reactivate call");
+    assert_eq!(reactivated, 1, "the inactive row is reactivated once");
+
+    let state: (String, Option<String>) = sqlx::query_as(
+        "SELECT status, to_char(deactivated_at, 'YYYY-MM-DD\"T\"HH24:MI:SSZ') \
+         FROM procedures WHERE external_id = '1001'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("row exists");
+    assert_eq!(state.0, "active", "present row is active again");
+    assert_eq!(state.1, None, "stale deactivation stamp cleared");
+    assert_eq!(
+        counts(&pool).await.2,
+        before_versions,
+        "reactivation opens no version"
+    );
+
+    // Idempotent: an already-active row is not counted again.
+    let again = repo
+        .reactivate_present(&["1001".to_string()], RUN_2.to_string())
+        .expect("second reactivate call");
+    assert_eq!(again, 0, "only inactive rows are reactivated");
+    assert_eq!(counts(&pool).await.1, 1, "the row stays active");
+    drop_test_db(&name).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn touch_last_seen_advances_only_last_seen() {
     let (pool, name) = fresh_migrated_db().await;
     let repo = PostgresProcedureRepository::new(pool.clone());

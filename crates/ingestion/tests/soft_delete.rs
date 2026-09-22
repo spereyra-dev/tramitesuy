@@ -84,6 +84,59 @@ fn missing_row_is_deactivated_and_never_deleted() {
 }
 
 #[test]
+fn a_reappearing_identical_row_is_reactivated_without_a_new_version() {
+    // F12: the diff classifies by content hash only, so a procedure that
+    // leaves the source and later reappears byte-identical lands on the
+    // `unchanged` path. Activity state must be independent of content
+    // change: the present row becomes active again, and because its hash
+    // still matches the open version, no new version row is created.
+    let full = fetcher(fixture("tramites_pipeline.csv"));
+    let reduced = fetcher(fixture("tramites_pipeline_reduced.csv"));
+    let repo = InMemoryRepo::default();
+
+    run(&full, &CsvStrategy, &repo, NOW1.to_string()).expect("run 1");
+    run(&reduced, &CsvStrategy, &repo, NOW2.to_string()).expect("run 2");
+    let versions_before = repo.versions("3001").len();
+
+    let summary = run(
+        &full,
+        &CsvStrategy,
+        &repo,
+        "2026-09-20T03:00:00Z".to_string(),
+    )
+    .expect("run 3");
+
+    assert_eq!(summary.created, 0, "the reappearing row is not new");
+    assert_eq!(summary.updated, 0, "identical content is unchanged");
+    assert_eq!(summary.unchanged, 2, "both rows match their open hashes");
+
+    let reappeared = repo
+        .procedures()
+        .into_iter()
+        .find(|p| p.external_id == "3001")
+        .expect("3001 exists");
+    assert_eq!(
+        reappeared.status,
+        ProcedureStatus::Active,
+        "a present row is active again regardless of content change"
+    );
+    assert_eq!(
+        reappeared.deactivated_at, None,
+        "stale deactivation stamp is cleared"
+    );
+    assert_eq!(reappeared.first_seen_at, NOW1, "first_seen_at preserved");
+    assert_eq!(
+        reappeared.last_seen_at, "2026-09-20T03:00:00Z",
+        "present rows advance last_seen_at"
+    );
+    assert_eq!(
+        repo.versions("3001").len(),
+        versions_before,
+        "no new version row for unchanged content"
+    );
+}
+
+#[test]
 fn an_already_inactive_row_is_not_deactivated_twice() {
     // TRIANGULATE: a third identical run must not re-deactivate anything —
     // only rows that leave the source while still active count.

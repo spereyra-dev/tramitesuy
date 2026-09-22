@@ -47,7 +47,9 @@ pub trait ProcedureRepository {
         at: crate::summary::RunStamp,
     ) -> Result<crate::summary::UpsertCounts, crate::error::RepoError>;
     /// Closes the currently open version of each (external_id, hash) pair at
-    /// the given timestamp.
+    /// the given timestamp. Idempotent: it closes only rows still open, so it
+    /// is a safe no-op after `upsert_procedures` already closed the prior
+    /// open version of every changed row inside its transaction (F13).
     fn close_versions(
         &self,
         ids: &[(String, String)],
@@ -57,6 +59,17 @@ pub trait ProcedureRepository {
     fn deactivate_missing(
         &self,
         present_ids: &std::collections::BTreeSet<String>,
+        at: crate::summary::RunStamp,
+    ) -> Result<usize, crate::error::RepoError>;
+    /// Reactivates every procedure present in the current source: a row that
+    /// appears in the source is active again, regardless of content change.
+    /// Flips `status` back to `active` and clears `deactivated_at` for each
+    /// matching external id that is not already active; opens no version, so
+    /// activity state stays independent of the content-hash diff (F12).
+    /// Returns the number of rows actually reactivated.
+    fn reactivate_present(
+        &self,
+        ids: &[String],
         at: crate::summary::RunStamp,
     ) -> Result<usize, crate::error::RepoError>;
     /// Advances `last_seen_at` for the given ids.

@@ -84,6 +84,13 @@ pub fn run(
     // touch last_seen for every surviving row (IN-7, IN-9); BTreeSet order
     // keeps the call row-order invariant (SE-1).
     let seen: Vec<String> = present.into_iter().collect();
+    // A row present in the current source is active again, independent of the
+    // diff classification (F12): the `unchanged` path advances `last_seen_at`
+    // only, so a procedure re-published byte-identical after a deactivation
+    // would otherwise stay inactive forever. Runs over the same present set as
+    // `touch_last_seen` (disjoint from `deactivate_missing`'s absent set) and
+    // opens no version.
+    repo.reactivate_present(&seen, now.clone())?;
     repo.touch_last_seen(&seen, now)?;
     // canonical warning order keeps the summary permutation-invariant (SE-1).
     summary.canonicalize_warnings();

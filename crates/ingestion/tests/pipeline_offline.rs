@@ -46,6 +46,7 @@ struct CallLog {
     upserts: usize,
     closes: usize,
     deactivates: usize,
+    reactivates: usize,
     touches: usize,
 }
 
@@ -68,10 +69,16 @@ impl Default for RecordingRepo {
 }
 
 impl RecordingRepo {
-    /// `(upserts, closes, deactivates, touches)` call counts.
-    fn calls(&self) -> (usize, usize, usize, usize) {
+    /// `(upserts, closes, deactivates, reactivates, touches)` call counts.
+    fn calls(&self) -> (usize, usize, usize, usize, usize) {
         let log = self.log.borrow();
-        (log.upserts, log.closes, log.deactivates, log.touches)
+        (
+            log.upserts,
+            log.closes,
+            log.deactivates,
+            log.reactivates,
+            log.touches,
+        )
     }
 
     fn reset_log(&self) {
@@ -109,6 +116,15 @@ impl ProcedureRepository for RecordingRepo {
     ) -> Result<usize, ingestion::error::RepoError> {
         self.log.borrow_mut().deactivates += 1;
         self.inner.deactivate_missing(present_ids, at)
+    }
+
+    fn reactivate_present(
+        &self,
+        ids: &[String],
+        at: RunStamp,
+    ) -> Result<usize, ingestion::error::RepoError> {
+        self.log.borrow_mut().reactivates += 1;
+        self.inner.reactivate_present(ids, at)
     }
 
     fn touch_last_seen(
@@ -300,8 +316,8 @@ fn empty_source_batch_returns_empty_batch_error_and_changes_no_state() {
 
     assert_eq!(
         repo.calls(),
-        (0, 0, 0, 0),
-        "no upsert/close/deactivate/touch call may happen for an empty batch"
+        (0, 0, 0, 0, 0),
+        "no upsert/close/deactivate/reactivate/touch call may happen for an empty batch"
     );
     assert_eq!(repo.inner.state_report(), before, "state is untouched");
     assert_eq!(repo.inner.upserts().len(), seeded_upserts);
@@ -341,8 +357,8 @@ fn fully_invalid_batch_returns_empty_batch_error_and_changes_no_state() {
 
     assert_eq!(
         repo.calls(),
-        (0, 0, 0, 0),
-        "no upsert/close/deactivate/touch call may happen for an invalid batch"
+        (0, 0, 0, 0, 0),
+        "no upsert/close/deactivate/reactivate/touch call may happen for an invalid batch"
     );
     assert_eq!(repo.inner.state_report(), before, "state is untouched");
 }

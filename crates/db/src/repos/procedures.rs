@@ -179,6 +179,23 @@ impl ProcedureRepository for PostgresProcedureRepository {
                 .map(|r| r.content_hash);
 
                 if open_hash.as_deref() != Some(row.content_hash.as_str()) {
+                    // Close every currently-open version of this procedure
+                    // inside the SAME transaction, before opening the new one
+                    // (F13): a single commit therefore produces exactly one
+                    // open version per procedure, so an interruption can never
+                    // leave two open versions behind. This also makes the
+                    // pipeline's later `close_versions` call an idempotent
+                    // no-op (the prior version is already closed here).
+                    sqlx::query!(
+                        "UPDATE procedure_versions SET valid_until = $1 \
+                         WHERE procedure_id = $2 AND valid_until IS NULL",
+                        at,
+                        procedure_id,
+                    )
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(repo_err)?;
+
                     sqlx::query!(
                         "INSERT INTO procedure_versions (procedure_id, content_hash, payload, \
                          valid_from) VALUES ($1, $2, $3, $4)",
@@ -203,6 +220,10 @@ impl ProcedureRepository for PostgresProcedureRepository {
         self.block_on(async move {
             let mut tx = self.pool.begin().await.map_err(repo_err)?;
             for (external_id, content_hash) in ids {
+                // Idempotent by construction: only a still-open row matches
+                // (`valid_until IS NULL`), so after `upsert_procedures` already
+                // closed the prior version inside its own transaction this is
+                // a safe no-op (F13).
                 sqlx::query!(
                     "UPDATE procedure_versions v SET valid_until = $1 \
                      FROM procedures p \
@@ -234,6 +255,27 @@ impl ProcedureRepository for PostgresProcedureRepository {
                  WHERE status = 'active' AND NOT (external_id = ANY($2))",
                 at,
                 present as Vec<String>,
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(repo_err)?;
+            Ok(result.rows_affected() as usize)
+        })
+    }
+
+    fn reactivate_present(&self, ids: &[String], at: RunStamp) -> Result<usize, RepoError> {
+        let at = Self::stamp(&at)?;
+        let ids = ids.to_vec();
+        self.block_on(async move {
+            // Activity state is independent of the content-hash diff (F12):
+            // every row present in the source becomes active again, with the
+            // stale deactivation stamp cleared. No version row is written.
+            let result = sqlx::query!(
+                "UPDATE procedures SET status = 'active', deactivated_at = NULL, \
+                 updated_at = $1 \
+                 WHERE external_id = ANY($2) AND status <> 'active'",
+                at,
+                ids as Vec<String>,
             )
             .execute(&self.pool)
             .await

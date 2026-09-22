@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE procedure_versions SET valid_until = $1 WHERE procedure_id = $2 AND valid_until IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "64f82cb70ca0ed26afdd08c4d58be1b0b175ebafd5f758e5c8ca319375d922f0"
+}
