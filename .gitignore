@@ -10,3 +10,4 @@ Cargo.lock.bak
 # Local environment
 .env
 *.local.yml
+openspec/changes/*/.gentle-ai-instance
