@@ -163,3 +163,60 @@ DATABASE=backup_rehearsal_a scripts/backup.sh`
    over a NON-empty database fails loudly (`psql ON_ERROR_STOP`: duplicate
    function) — a restore targets a fresh/disposable database and the
    operator decides about the live one.
+
+## 3. Stage rollback and configuration reset rehearsal (task 43)
+
+Executed once; every step restores prior behavior via **configuration
+only** (no code change) with run records and generation artifacts retained
+as data:
+
+1. **Baseline (data retained)**: `backup_rehearsal_b` holds
+   1 generation + 1 run record.
+2. **Non-default configuration applied**: rehearsal API booted with
+   `API_Q_MAX_CHARS=64 API_MAX_CONCURRENT_SEARCHES=1
+   API_SEARCH_DEADLINE_MS=5000` → a 100-character `q` returns **HTTP 400**
+   (the prior default 512 would accept it) — the configured limits govern.
+3. **Reset to prior defaults via configuration** (env overrides removed,
+   fresh boot, no code change): the same 100-character `q` returns
+   **HTTP 200** and a search answers `mode:"open"` — prior behavior
+   restored.
+4. **Schedule/timezone/retry/exclusion/pool surfaces**: `INGEST_AT`,
+   `INGEST_TZ` (schedule/timezone), `INGEST_POOL_MAX`,
+   `INGEST_ACQUIRE_TIMEOUT_MS` (ingest pool), `API_POOL_MAX`,
+   `API_ACQUIRE_TIMEOUT_MS` (API pool), `API_SEARCH_DEADLINE_MS`
+   (deadline), `API_MAX_CONCURRENT_SEARCHES` (admission) are environment
+   overrides whose defaults are the pre-change values; resetting the
+   operator `.env` removes them with no code change. Their config-driven
+   behavior is pinned by the suites that own the contracts (all green at
+   the rehearsal):
+
+   ```text
+   cargo test -p ingest --test daily_loop   → 8 passed   (schedule/timezone)
+   cargo test -p ingest --test retries      → 3 passed   (bounded retries)
+   cargo test -p ingest --test pool_config  → 2 passed   (ingest pool)
+   cargo test -p api    --test admission    → 4 passed   (admission)
+   cargo test -p api    --test deadline     → 6 passed   (deadline)
+   cargo test -p api    --test config       → 4 passed   (defaults parse)
+   ```
+
+   Retry offsets (`RETRY_OFFSET_MINUTES` 5/15/30) and the ingestion
+   exclusion (shared advisory lock) are code-level constants without an
+   environment override — their defaults cannot be drifted by
+   configuration at all.
+
+5. **Compose profile revert**: `docker compose --profile prod config
+   --services` renders the prod stack (`db-prod api-prod ingest-prod
+   proxy`, config-only, nothing started, no persistent data touched);
+   reverting to the development stack: `docker compose --profile dev
+   config --services` shows `db api ingest web` unchanged and the plain
+   `docker compose up -d db` is a no-op against the running dev db
+   (`Up 3 days (healthy)`).
+6. **No persistent data lost**: after the whole rehearsal the disposable
+   database still holds exactly 1 generation + 1 run record, and the dev
+   stack was never restarted.
+
+## 4. Check surface
+
+`make check-deploy` (scripts/check-deploy.sh) is config-only: it renders
+compose models and greps committed files; it never builds, starts, stops
+or touches running containers.
