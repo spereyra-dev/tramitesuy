@@ -366,7 +366,7 @@ async fn publish_locked(
     )
     .await?;
 
-    notify_publication(pool, built.generation_id).await?;
+    notify_publication(pool, built.generation_id).await;
 
     Ok(PublishReport {
         run_id,
@@ -382,19 +382,25 @@ async fn publish_locked(
 /// The cross-process notification hint (S8 task 23, `LISTEN`/`NOTIFY`):
 /// published after a successful promotion so a listening API detects the
 /// publication faster than the next reconciliation tick. Only an
-/// accelerator — a lost hint changes nothing: the durable manifest is the
-/// correctness source and the reconciliation interval the fallback.
-async fn notify_publication(pool: &PgPool, generation_id: Uuid) -> Result<(), PublishError> {
+/// accelerator — a lost or failed hint changes nothing: the durable
+/// manifest is the correctness source and the reconciliation interval the
+/// fallback. The hint is therefore best-effort: a failure is logged and the
+/// run's recorded outcome (already terminal) is untouched.
+async fn notify_publication(pool: &PgPool, generation_id: Uuid) {
     let payload = generation_id.to_string();
-    sqlx::query!(
+    let result = sqlx::query!(
         "SELECT pg_notify($1, $2) AS \"notified!\"",
         crate::reconciliation::PUBLICATION_CHANNEL,
         payload,
     )
     .fetch_optional(pool)
-    .await
-    .map_err(|e| PublishError::Promotion(e.to_string()))?;
-    Ok(())
+    .await;
+    if let Err(error) = result {
+        eprintln!(
+            "publish: notification hint failed (accelerator only, the reconciliation \
+             interval covers it): {error}"
+        );
+    }
 }
 
 /// Finishes one run record with a terminal status, timestamps, counts, and
