@@ -298,7 +298,7 @@ being merged; no slice weakens a guarantee published by an earlier slice
   - TRIANGULATE: the dev profile is unchanged (`docker compose up -d db` still works for local development).
   - Satisfies: OPT-11, operations delta (Raspberry Pi production profile), R12.
 
-- [ ] 41. [S13] Raspi production profile, part 2: HTTPS reverse proxy config under `docker/` (TLS termination, restart/readiness wiring to the internal `/ready` (read-only), internal-only probes and metrics outside the closed `/api/v1` (read-only) inventory, query-string logging explicitly disabled).
+- [x] 41. [S13] Raspi production profile, part 2: HTTPS reverse proxy config under `docker/` (TLS termination, restart/readiness wiring to the internal `/ready` (read-only), internal-only probes and metrics outside the closed `/api/v1` (read-only) inventory, query-string logging explicitly disabled).
   - RED/verify: `make check-deploy` asserts the proxy access-log format has no query-string field and that probe/metric paths are not under `/api/v1` (read-only); an integration run proves a search over the proxy logs no `q=` value while the response is served normally.
   - TRIANGULATE: readiness failing at the proxy prevents routing traffic before the first valid snapshot.
   - Satisfies: OPT-11, api delta (closed inventory), R14.

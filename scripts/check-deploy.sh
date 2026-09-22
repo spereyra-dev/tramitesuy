@@ -98,6 +98,48 @@ grep -qE 'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER' Dockerfile \
 make -n image-arm64 >/dev/null \
   || fail "the make image-arm64 target does not resolve"
 
+# [task 41] HTTPS reverse proxy: TLS termination, readiness wiring to the
+# internal /ready (read-only), internal-only probes and metrics outside the
+# closed /api/v1 inventory, query-string logging explicitly disabled.
+PROXY_CONF=docker/proxy/nginx.conf
+[ -f "$PROXY_CONF" ] || fail "the HTTPS reverse proxy config ($PROXY_CONF) is missing"
+log_format=$(sed -n '/log_format[[:space:]][[:space:]]*privacy/,/;/p' "$PROXY_CONF")
+[ -n "$log_format" ] || fail "the proxy does not define the privacy log_format"
+for banned_field in '$args' '$query_string' '$is_args' '$request_uri' '$http_referer'; do
+  case "$log_format" in
+    *"$banned_field"*) fail "the proxy access-log format carries the query-string field $banned_field" ;;
+  esac
+done
+case "$log_format" in
+  *'$uri'*) : ;;
+  *) fail "the proxy access-log format must log the path via \$uri (no query string)" ;;
+esac
+access_log=$(grep -n '^[[:space:]]*access_log' "$PROXY_CONF")
+echo "$access_log" | grep -q 'privacy' \
+  || fail "the proxy access_log does not use the privacy format:
+$access_log"
+grep -Eq 'listen[[:space:]]+443 ssl' "$PROXY_CONF" \
+  || fail "the proxy does not terminate TLS (no 443 ssl listener)"
+grep -qE '^[[:space:]]*ssl_certificate[[:space:]]+/etc/nginx/tls/' "$PROXY_CONF" \
+  || fail "the proxy does not terminate TLS with the operator-mounted material"
+grep -qE 'server[[:space:]]+api-prod:8080[[:space:]]+max_fails=' "$PROXY_CONF" \
+  || fail "the proxy does not wire readiness to api-prod (passive health checks against the 503 cold start)"
+grep -q 'proxy_next_upstream.*http_503' "$PROXY_CONF" \
+  || fail "the proxy does not treat the cold-start 503 as a failed upstream"
+grep -Eq '^[[:space:]]*location[[:space:]]+=[[:space:]]+/ready[[:space:]]*\{[[:space:]]*return[[:space:]]+404' "$PROXY_CONF" \
+  || fail "the public proxy must deny /ready (probes stay internal-only, outside the closed /api/v1 inventory)"
+grep -Eq '^[[:space:]]*location[^;]*metrics' "$PROXY_CONF" \
+  && fail "the proxy exposes a metrics location (metrics are internal only)"
+[ "$(grep -c 'proxy_pass' "$PROXY_CONF")" -eq 1 ] \
+  || fail "the proxy routes through an unexpected number of upstreams"
+
+# [task 41] The proxy's own healthcheck probes a query-less catalog route:
+# the health traffic itself never carries a query string.
+echo "$cfg" | jq -e '
+  .services["proxy"].healthcheck.test | join(" ")
+  | (test("/api/v1/categories") and (test("\\?q=") | not))' >/dev/null \
+  || fail "the proxy healthcheck does not use a query-less internal probe"
+
 # [task 40, TRIANGULATE] The dev profile is unchanged: the named db service
 # (what `docker compose up -d db` resolves) still publishes 5432 locally.
 devcfg=$(docker compose --env-file "$ENV_FILE" config db --format json) \
