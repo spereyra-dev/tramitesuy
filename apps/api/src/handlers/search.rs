@@ -14,15 +14,18 @@ use axum::Json;
 use axum::extract::{Query, State};
 use db::providers::fts::FtsProvider;
 use db::providers::generation_trigram::GenerationTrigramProvider;
-use db::providers::orchestrator;
+use db::providers::orchestrator::ProviderFetch;
 use db::providers::trigram::TrigramProvider;
 use db::repos::search_log::{self, NewSearchLog};
+use search::engine::CandidateProvider;
 use search::normalizer::normalize;
-use search::types::{ScoredEvent, SearchOutcome, SelectionMode};
+use search::types::{Candidate, NormalizedQuery, ScoredEvent, SearchOutcome, SelectionMode};
 
+use crate::cache::{self, CacheKey, CachedEntry};
 use crate::dto;
 use crate::error::ApiError;
 use crate::generation::ActiveGeneration;
+use crate::metrics::CacheEvent;
 use crate::redaction::redact;
 use crate::state::AppState;
 
@@ -34,15 +37,20 @@ pub async fn search(
     // payload, log, and providers all use this one `Arc` (task 20).
     let generation = state.active.load_full();
     let query = query_parameter(&params)?;
-    let outcome = run_pipeline(&state, &generation, &query).await?;
-    // Task 1: the provider statements are consumed by the pipeline (the
-    // count depends on the captured generation's provider path).
-    state
-        .metrics
-        .observe_sql_ops(ROUTE, provider_sql_ops(&generation));
+    let (outcome, cache_write, provider_ops) =
+        lookup_or_compute(&state, &generation, &query).await?;
+    // Task 1: the provider statements are consumed by the pipeline — ZERO
+    // on a cache hit (no providers ran), the generation's provider cost on
+    // a compute.
+    state.metrics.observe_sql_ops(ROUTE, provider_ops);
 
     let log_ops = persist_log(&state, &query, &outcome).await?;
     state.metrics.observe_sql_ops(ROUTE, log_ops);
+
+    // S9 task 28: the computation enters the cache only after the whole
+    // request succeeds (the log persistence is part of it), so a search
+    // that ends in a structural error caches nothing (search-cache delta).
+    cache_write_commit(cache_write, &generation);
 
     let payload = match outcome.selection.mode {
         SelectionMode::Open => open_payload(&state, &generation, &outcome).await?,
@@ -62,13 +70,14 @@ pub async fn debug(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let generation = state.active.load_full();
     let query = query_parameter(&params)?;
-    let outcome = run_pipeline(&state, &generation, &query).await?;
-    state
-        .metrics
-        .observe_sql_ops(ROUTE, provider_sql_ops(&generation));
+    let (outcome, cache_write, provider_ops) =
+        lookup_or_compute(&state, &generation, &query).await?;
+    state.metrics.observe_sql_ops(ROUTE, provider_ops);
 
     let log_ops = persist_log(&state, &query, &outcome).await?;
     state.metrics.observe_sql_ops(ROUTE, log_ops);
+
+    cache_write_commit(cache_write, &generation);
 
     Ok(Json(debug_payload(&generation, &outcome)))
 }
@@ -82,46 +91,143 @@ fn query_parameter(params: &HashMap<String, String>) -> Result<String, ApiError>
         .ok_or_else(|| ApiError::BadRequest("missing or empty q parameter".to_string()))
 }
 
-/// Runs the deterministic pipeline through the db-side async orchestration
-/// boundary (S4b task 11) over the CAPTURED generation: its engine ranks,
-/// and the request's captured `generation_id` goes to BOTH providers (S7
-/// task 21): a loaded snapshot serves the generation-scoped trigram provider
-/// over the precomputed surface (design §2.2), while the no-snapshot path
-/// keeps the legacy provider for rollback. The legacy FTS provider carries
-/// the same captured id (dual-write keeps the legacy projection aligned
-/// during stages 2–3). Provider errors stay structural and map to the
-/// existing public 500 path; no partial candidate ranking is produced.
-async fn run_pipeline(
+/// The pending cache write of one compute-path request (S9 tasks 27/28):
+/// the computation is inserted into the CAPTURED generation's cache only
+/// after the request's log persists, so a structural error never leaves a
+/// cached entry behind. A cache hit carries nothing to write.
+enum CacheWrite {
+    None,
+    Pending {
+        key: CacheKey,
+        // Boxed: the cached computation is heap-sized and the write is
+        // optional, so the none variant must not pay its size.
+        entry: Box<CachedEntry>,
+    },
+}
+
+/// Commits a pending cache write into the captured generation's cache
+/// (no-op on a cache hit). Oversized single results are dropped inside
+/// `SearchCache::insert` and served uncached by construction.
+fn cache_write_commit(write: CacheWrite, generation: &ActiveGeneration) {
+    match write {
+        CacheWrite::None => {}
+        CacheWrite::Pending { key, entry } => generation.cache.insert(key, *entry),
+    }
+}
+
+/// The search pipeline with the S9 cache in front (task 27/28): a cache
+/// hit rebuilds the outcome from the CURRENT request's text (its own
+/// `query`, `normalized_query`, and tokens — never another request's);
+/// a miss computes normalize → providers → score and hands back the
+/// pending write. Provider/log errors stay structural (public 500) and
+/// cache nothing.
+async fn lookup_or_compute(
     state: &AppState,
     generation: &ActiveGeneration,
     query: &str,
-) -> Result<SearchOutcome, ApiError> {
+) -> Result<(SearchOutcome, CacheWrite, u64), ApiError> {
+    // Design §3.2: the key hashes the EFFECTIVE trimmed q the engine
+    // receives — the same string `SearchEngine::normalize` gets. The
+    // fingerprint lives only inside this in-memory key (R2/R14).
+    let key = CacheKey::new(
+        generation.generation_id(),
+        generation.engine_version().to_string(),
+        query,
+    );
+    if let Some(entry) = generation.cache.get(&key) {
+        state.metrics.observe_cache(CacheEvent::Hit);
+        return Ok((
+            cache::rebuild(&generation.engine, query, &entry),
+            CacheWrite::None,
+            0,
+        ));
+    }
+
+    state.metrics.observe_cache(CacheEvent::Miss);
+    let normalized = generation.engine.normalize(query);
+    let candidates = fetch_candidates(state, generation, &normalized).await?;
+    let outcome = generation.engine.score(&normalized, candidates.clone());
+    let entry = CachedEntry::from_outcome(&outcome, candidates);
+    Ok((
+        outcome,
+        CacheWrite::Pending {
+            key,
+            entry: Box::new(entry),
+        },
+        provider_sql_ops(generation),
+    ))
+}
+
+/// Fetches the FTS + trigram candidates for an already-normalized query
+/// over the CAPTURED generation (S7 task 21), mirroring the db-side
+/// orchestrator's fetch policy (S4b task 11) WITHOUT the scoring step:
+/// the cache needs the raw candidates to store them alongside the ranked
+/// result (task 28), so the decomposition lives at this boundary instead
+/// of `orchestrator::run_search`. Provider errors stay structural.
+async fn fetch_candidates(
+    state: &AppState,
+    generation: &ActiveGeneration,
+    normalized: &NormalizedQuery,
+) -> Result<Vec<Candidate>, ApiError> {
     let fts = FtsProvider::new(state.pool.clone());
-    match generation.is_loaded() {
+    let candidates = match generation.is_loaded() {
         true => {
-            orchestrator::run_search(
-                &generation.engine,
-                generation.generation_id(),
-                query,
-                &fts,
-                &GenerationTrigramProvider::new(state.pool.clone()),
-                state.provider_fetch,
-            )
-            .await
+            let trigram = GenerationTrigramProvider::new(state.pool.clone());
+            fetch_candidates_with(&fts, &trigram, generation, normalized, state.provider_fetch)
+                .await?
         }
         false => {
-            orchestrator::run_search(
-                &generation.engine,
-                generation.generation_id(),
-                query,
-                &fts,
-                &TrigramProvider::new(state.pool.clone()),
-                state.provider_fetch,
-            )
-            .await
+            let trigram = TrigramProvider::new(state.pool.clone());
+            fetch_candidates_with(&fts, &trigram, generation, normalized, state.provider_fetch)
+                .await?
         }
-    }
-    .map_err(|error| ApiError::InternalServerError(format!("search pipeline failed: {error}")))
+    };
+    Ok(candidates)
+}
+
+/// The provider fetch composition for one concrete provider pair
+/// (sequential default, config-gated concurrent join). The canonical
+/// candidate ordering happens inside `SearchEngine::score`, so fetch
+/// order never reaches the ranking.
+async fn fetch_candidates_with<F: CandidateProvider, T: CandidateProvider>(
+    fts: &F,
+    trigram: &T,
+    generation: &ActiveGeneration,
+    normalized: &NormalizedQuery,
+    fetch: ProviderFetch,
+) -> Result<Vec<Candidate>, ApiError> {
+    let generation_id = generation.generation_id();
+    let candidates = match fetch {
+        ProviderFetch::Sequential => {
+            let mut candidates = fts
+                .candidates(generation_id, normalized)
+                .await
+                .map_err(provider_failure)?;
+            let trigram_candidates = trigram
+                .candidates(generation_id, normalized)
+                .await
+                .map_err(provider_failure)?;
+            candidates.extend(trigram_candidates);
+            candidates
+        }
+        ProviderFetch::Concurrent => {
+            let (fts_candidates, trigram_candidates) = tokio::join!(
+                fts.candidates(generation_id, normalized),
+                trigram.candidates(generation_id, normalized),
+            );
+            let mut candidates = fts_candidates.map_err(provider_failure)?;
+            candidates.extend(trigram_candidates.map_err(provider_failure)?);
+            candidates
+        }
+    };
+    Ok(candidates)
+}
+
+/// Maps a provider failure to the SAME structural error the pre-cache
+/// pipeline produced (search-engine delta: provider failure is structural,
+/// never a partial ranking).
+fn provider_failure(error: search::engine::EngineError) -> ApiError {
+    ApiError::InternalServerError(format!("search pipeline failed: {error}"))
 }
 
 /// The provider statements the pipeline issues per captured generation

@@ -139,6 +139,24 @@ pub fn spawn_app_with_metrics(
     api::build_router(state)
 }
 
+/// [`spawn_app_with_metrics`] that ALSO returns the `AppState`: tests that
+/// need to inspect the active generation's cache (S9) capture its holder
+/// directly instead of reconstructing boot state.
+pub fn spawn_app_with_state_and_metrics(
+    pool: PgPool,
+    metrics: std::sync::Arc<dyn api::metrics::Metrics>,
+) -> (Router, api::state::AppState) {
+    let state = api::state::AppState::build_with_metrics(
+        pool,
+        &repo_root().join("data"),
+        api::config::ApiLimits::default(),
+        metrics,
+    )
+    .expect("boot AppState from the real data seed");
+    let router = api::build_router(state.clone());
+    (router, state)
+}
+
 /// Builds the API router over a published generation (S7 task 20): the
 /// test publishes one catalog generation from the seeded legacy tables
 /// (the worker-side promotion stand-in) and boots the state through the
