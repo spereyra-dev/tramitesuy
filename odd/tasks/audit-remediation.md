@@ -75,6 +75,43 @@ independent read-only pass re-checked the claim against the current tree.
 - 2026-09-23: **R3-001 (CRITICAL) found by the reliability lens and resolved.** The lens proved the data fix alone does not remove wrong recommendations on an already seeded database: `seed_relations` only upserted and returned early on an empty list. The bounded correction (173 diff lines, within the 200 budget) makes `seed_relations` delete every projected relation the YAML no longer declares, plus `crates/db/tests/relation_reconciliation.rs`. RED before the fix (`left: ["4551","6978"]`, `right: ["6978"]`), GREEN after; on the corrected candidate R3-001 is downgraded to an informational WARNING. The delivered branch already carries the same reconciliation as a superset in WU-4 (`5a7ef6c`); the correction exists so the reviewed slice is self-sufficient.
 - 2026-09-23: the first lineage `review-5ab7abea0ef5f339` remains in `correction_required` with NO mutation: committing the correction changed the candidate path set (`scope_changed`), and the provider's recovery route failed with `recovery base-ref does not match predecessor base`. The clean continuation was a fresh transaction on the corrected candidate, which is what was reviewed and approved.
 - **Native review still pending for the rest of the tranche**: `426dac4` (F18 coverage), `d108777` (SSRF/privacy), `7111dc8` (publication safety), `0ae4c2a` (versions), `5a7ef6c` (seed + daemon, needs splitting), `1885b5d` (generation scope, needs splitting), `41a5180` (loader strictness). Docker, web, metrics, and perf remain explicitly unreviewed by the user's tranche choice.
+## Native review chain (RDD, 2026-09-23)
+
+Every tranche slice was reviewed as its own candidate and closed with burned authority
+(`gentle-ai.review-acknowledged/v1`). The reviewed candidate of each slice lives on a
+`review-slice-*` branch (the review worktrees were removed; the branches are kept for
+inspection and can be deleted with `git branch -D review-slice-*`).
+
+| Slice | Reviewed candidate | Lines | Lineage | Result |
+| --- | --- | --- | --- | --- |
+| 1 data/pertinence | `review-slice-01` @ `40725dc` | 627 | `review-c73a30c703ab60f2` | approved after the R3-001 CRITICAL correction |
+| 2 F18 coverage | `review-slice-02` @ `426dac4` | 364 | `review-67c25d65bcc56788` | approved, no findings |
+| 3 SSRF/privacy | `review-slice-03` @ `d108777` | 201 | `review-d873491f7de26110` | approved, 4 lenses, 4 informational WARNING |
+| 4 publication safety | `review-slice-04` @ `7111dc8` | 327 | `review-42033d539c2c2125` | approved, no findings |
+| 5 versions/activity | `review-slice-05` @ `0ae4c2a` | 444 | `review-f377e8b9e4394f3b` | approved |
+| 6a seed reconciliation | `review-slice-06a` @ `0c3d0f7` | 501 | `review-36c34f5b942dbd7b` | approved, 1 informational |
+| 6b daemon seeding | `review-slice-06b` @ `84a0aa7` | 386 | `review-e56cb2002bb4d89e` | approved, 1 informational |
+| 6c telemetry FK | `review-slice-06c` @ `9bd2e7f` | 138 | `review-e370ec18c94385f8` | approved |
+| 7a migration 0019 | `review-slice-07a` @ `b29aea1` | 124 | `review-c4623e88170dd482` | approved, 1 informational |
+| 7b generation-scoped providers | `review-slice-07b` @ `1d21b78` | 314 | `review-82bdb3667b24d99f` | approved, 1 informational |
+| 7c provider/generation tests | `review-slice-07c` @ `c32052f` | 341 | `review-a34b5d51bc8caad5` | approved |
+| 7d api tests | `review-slice-07d` @ `4008725` | 59 | `review-555f9af4f381374b` | approved |
+| 8 loader strictness | `review-slice-08` @ `41a5180` | 479 | `review-c8056ae3837a6bae` | approved, 1 informational |
+| 9 empty FTS validation | `review-slice-09` @ `4ccfee0` | 166 | `review-bfba996c8b7cd497` | approved |
+| 10 ordering determinism | `review-slice-10` @ `424ea39` | 684 | `review-37781542ec9a6564` | approved |
+
+Slices 6 and 7 were split into coherent chains inside their review worktrees; each chain's
+combined tree is byte-identical to the delivered commit (`git diff <commit> --stat` empty).
+
+Lineages left open with NO mutation (documented; not abandoned through the audited route):
+
+- `review-5ab7abea0ef5f339` (slice 1, `correction_required`): committing the R3-001 correction
+  changed the candidate path set (`scope_changed`), and the provider's recovery route failed
+  with `recovery base-ref does not match predecessor base`. The clean continuation was a fresh
+  transaction on the corrected candidate (`review-c73a30c703ab60f2`).
+- `review-d5e3da1bca1aacc8` (slice 6b, `reviewing`): created against a split whose parent was
+  wrong (it dragged slice 5's files in); superseded by the corrected chain.
+
 - **Follow-ups from the F26 measurement (T26)**: (a) move the cache lookup before the pool acquire — measured at ~247 us, ~41% of a 599 us cache hit — in a separately tested change that preserves the 503 overload contract; (b) replace the per-card validation query (one SQL statement per card, +13 ms from 1 to 64 cards) with a set-based query and its `.sqlx` update. Explanation rebuilding measured ~2.45 us (~0.4% of a hit) and is not worth changing.
 - **Follow-up from the T1/T2 data work**: the identity-loss phrasing with a replacement verb ("perdi mi cedula y quiero sacarla de nuevo") still lands on `sacar-cedula`, and a bare "perdi la libreta" still ranks `perder-libreta` above `licencia-duplicado`.
 - **Accepted trade-offs**: redaction over-redacts any standalone 8-digit non-cédula token (privacy-safe) and a cédula glued to a word character escapes the word-boundary pattern; F19's first-viewport claim is asserted structurally, not measured in a browser.
