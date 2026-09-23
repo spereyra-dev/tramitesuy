@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO generation_trigram_surface (generation_id, slug, surface_text)\n           SELECT $1, e.slug, e.name || ' ' || COALESCE(kw.terms, '')\n           FROM life_events e\n           LEFT JOIN (\n               SELECT life_event_id,\n                      string_agg(term || ' ' || COALESCE(canonical_term, ''), ' ' ORDER BY term, type, canonical_term) AS terms\n               FROM life_event_keywords\n               WHERE NOT negative\n               GROUP BY life_event_id\n           ) kw ON kw.life_event_id = e.id\n           ON CONFLICT (generation_id, slug) DO UPDATE\n               SET surface_text = EXCLUDED.surface_text",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "53098a859771b68f309e73e2bf891496be590d7edfc590bd8d94d09f143f05a2"
+}

@@ -243,7 +243,8 @@ async fn read_payload(pool: &PgPool) -> Result<CatalogPayload, sqlx::Error> {
            LEFT JOIN life_event_procedures r ON r.life_event_id = e.id
            LEFT JOIN procedures p ON p.id = r.procedure_id
            LEFT JOIN organizations o ON o.id = p.organization_id
-           ORDER BY e.slug, r.order_index, p.external_id"#,
+           ORDER BY e.slug, r.order_index, p.external_id,
+                    (p.status = 'active') DESC, p.created_at DESC, p.id"#,
     )
     .fetch_all(pool)
     .await?;
@@ -344,6 +345,8 @@ pub async fn write_projections(pool: &PgPool, generation_id: Uuid) -> Result<(),
     // some projections written (status stays 'building') and a retry
     // rewrites each table idempotently.
     let mut tx = pool.begin().await?;
+    // Keyword arrays also store canonical term and weight: tie-break both
+    // after (term, type), so equal keys emit identical JSON objects.
     sqlx::query!(
         r#"INSERT INTO generation_life_events
                (generation_id, slug, name, status, category_slug, order_index,
@@ -354,7 +357,7 @@ pub async fn write_projections(pool: &PgPool, generation_id: Uuid) -> Result<(),
                                  'canonical', COALESCE(k.canonical_term, ''),
                                  'type', k.type,
                                  'weight', k.weight)
-                             ORDER BY k.term, k.type)
+                             ORDER BY k.term, k.type, k.canonical_term, k.weight)
                             FROM life_event_keywords k
                             WHERE k.life_event_id = e.id AND NOT k.negative),
                            '[]'::jsonb),
@@ -363,7 +366,7 @@ pub async fn write_projections(pool: &PgPool, generation_id: Uuid) -> Result<(),
                                  'canonical', COALESCE(k.canonical_term, ''),
                                  'type', k.type,
                                  'weight', k.weight)
-                             ORDER BY k.term, k.type)
+                             ORDER BY k.term, k.type, k.canonical_term, k.weight)
                             FROM life_event_keywords k
                             WHERE k.life_event_id = e.id AND k.negative),
                            '[]'::jsonb)
@@ -404,17 +407,17 @@ pub async fn write_projections(pool: &PgPool, generation_id: Uuid) -> Result<(),
 
     let mut tx = pool.begin().await?;
     // Same content as the legacy trigram surface (design §2.2): name plus
-    // positive terms and canonical terms, negatives excluded. Both aggregates
-    // now sort by (term, type), so byte ordering is pinned for new builds;
-    // older captured surfaces remain immutable. Preserve the trailing space
-    // for events without keywords.
+    // positive terms and canonical terms, negatives excluded. Sort by
+    // (term, type, canonical_term): ties emit identical fragments, so bytes
+    // are plan-independent. Older captured surfaces remain immutable.
+    // Preserve the trailing space for events without keywords.
     sqlx::query!(
         r#"INSERT INTO generation_trigram_surface (generation_id, slug, surface_text)
            SELECT $1, e.slug, e.name || ' ' || COALESCE(kw.terms, '')
            FROM life_events e
            LEFT JOIN (
                SELECT life_event_id,
-                      string_agg(term || ' ' || COALESCE(canonical_term, ''), ' ' ORDER BY term, type) AS terms
+                      string_agg(term || ' ' || COALESCE(canonical_term, ''), ' ' ORDER BY term, type, canonical_term) AS terms
                FROM life_event_keywords
                WHERE NOT negative
                GROUP BY life_event_id
@@ -428,6 +431,8 @@ pub async fn write_projections(pool: &PgPool, generation_id: Uuid) -> Result<(),
     tx.commit().await?;
 
     let mut tx = pool.begin().await?;
+    // Match the payload card ordering: active rows first, then newest rows.
+    // UUID is only the last resort when the stable catalog keys all tie.
     sqlx::query!(
         r#"INSERT INTO generation_event_cards (generation_id, slug, cards)
            SELECT $1, e.slug,
@@ -448,7 +453,8 @@ pub async fn write_projections(pool: &PgPool, generation_id: Uuid) -> Result<(),
                           'status', p.status,
                           'official_url', p.official_url,
                           'last_seen_at', p.last_seen_at)
-                      ORDER BY r.order_index, p.external_id)
+                      ORDER BY r.order_index, p.external_id,
+                               (p.status = 'active') DESC, p.created_at DESC, p.id)
                       FILTER (WHERE p.id IS NOT NULL),
                       '[]'::jsonb)
            FROM life_events e

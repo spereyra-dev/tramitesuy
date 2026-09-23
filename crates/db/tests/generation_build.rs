@@ -187,6 +187,80 @@ async fn building_the_same_input_twice_yields_same_id_and_hash_without_duplicate
     drop_db(&db_name).await;
 }
 
+/// Active and inactive rows can share an external id. Their relative card
+/// order must follow stable catalog attributes, not generated procedure UUIDs.
+#[tokio::test(flavor = "multi_thread")]
+async fn tied_external_id_cards_rebuild_in_stable_order_with_same_hash() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_small_catalog(&pool).await;
+
+    // The inactive row sorts before the active one by UUID, but after it by
+    // status. Both relations deliberately share the same event and order.
+    sqlx::query(
+        "INSERT INTO procedures (id, external_id, name, status, created_at, last_seen_at) \
+         VALUES ('00000000-0000-0000-0000-000000000001', '1001', \
+                 'Historical procedure', 'inactive', now() - interval '1 day', \
+                 (SELECT last_seen_at FROM procedures WHERE external_id = '1001'))",
+    )
+    .execute(&pool)
+    .await
+    .expect("seed inactive procedure with shared external id");
+    sqlx::query(
+        "INSERT INTO life_event_procedures (life_event_id, procedure_id, order_index, required) \
+         SELECT e.id, p.id, 1, true FROM life_events e, procedures p \
+         WHERE e.slug = 'alta-vehiculo' AND p.external_id = '1001' AND p.status = 'inactive'",
+    )
+    .execute(&pool)
+    .await
+    .expect("relate inactive procedure at tied order index");
+
+    let first = db::generations::build::build_generation(&pool, "taxonomy-tied-cards")
+        .await
+        .expect("first build succeeds");
+    let first_cards: serde_json::Value = sqlx::query_scalar(
+        "SELECT cards FROM generation_event_cards \
+         WHERE generation_id = $1 AND slug = 'alta-vehiculo'",
+    )
+    .bind(first.generation_id)
+    .fetch_one(&pool)
+    .await
+    .expect("read first cards");
+    sqlx::query(
+        "UPDATE catalog_generations SET projection_status = 'building' WHERE generation_id = $1",
+    )
+    .bind(first.generation_id)
+    .execute(&pool)
+    .await
+    .expect("mark projection incomplete for rebuild");
+    let second = db::generations::build::build_generation(&pool, "taxonomy-tied-cards")
+        .await
+        .expect("second build succeeds");
+    let second_cards: serde_json::Value = sqlx::query_scalar(
+        "SELECT cards FROM generation_event_cards \
+         WHERE generation_id = $1 AND slug = 'alta-vehiculo'",
+    )
+    .bind(second.generation_id)
+    .fetch_one(&pool)
+    .await
+    .expect("read rebuilt cards");
+
+    assert_eq!(first.content_hash, second.content_hash);
+    assert_eq!(first.generation_id, second.generation_id);
+    assert_eq!(first_cards, second_cards, "card order must survive rebuild");
+    let names: Vec<_> = first_cards
+        .as_array()
+        .expect("cards array")
+        .iter()
+        .map(|card| card["name"].as_str().expect("card name"))
+        .collect();
+    assert_eq!(
+        names,
+        ["Solicitud de empadronamientos", "Historical procedure"],
+        "active card must precede inactive card for a tied external id"
+    );
+    drop_db(&db_name).await;
+}
+
 /// Changing only an observable sync date (`last_seen_at`) changes the
 /// content hash — dates are part of the hashed observable payload.
 #[tokio::test(flavor = "multi_thread")]
@@ -302,7 +376,7 @@ async fn interrupted_build_leaves_building_status_and_incomplete_projections() {
 }
 
 /// Keyword insertion order cannot decide the bytes of a generation's
-/// captured trigram surface: the positive terms are sorted by term and type.
+/// captured trigram surface: positive terms sort by term, type and canonical term.
 #[tokio::test(flavor = "multi_thread")]
 async fn trigram_surface_orders_positive_keywords_independent_of_insert_order() {
     let (pool, db_name) = fresh_migrated_db().await;
@@ -327,12 +401,12 @@ async fn trigram_surface_orders_positive_keywords_independent_of_insert_order() 
     .expect("read deterministic trigram surface");
     assert_eq!(
         actual, "Alta de vehículos abrir  registro  vehiculo auto",
-        "positive keywords must be aggregated by term and type, not insertion order"
+        "positive keywords must be aggregated by term, type and canonical term"
     );
     let legacy_surface: String = sqlx::query_scalar(
         "SELECT e.name || ' ' || COALESCE(\
              (SELECT string_agg(k.term || ' ' || COALESCE(k.canonical_term, ''), ' ' \
-                     ORDER BY k.term, k.type) \
+                     ORDER BY k.term, k.type, k.canonical_term) \
               FROM life_event_keywords k \
               WHERE k.life_event_id = e.id AND NOT k.negative), '') \
          FROM life_events e WHERE e.slug = 'alta-vehiculo'",
@@ -344,6 +418,112 @@ async fn trigram_surface_orders_positive_keywords_independent_of_insert_order() 
         actual, legacy_surface,
         "byte parity requires both aggregates to pin the same ordering"
     );
+    drop_db(&db_name).await;
+}
+
+/// Equal (term, type) keys with distinct canonical terms must aggregate in
+/// canonical-term order, not in insertion or query-plan order. Rebuild the
+/// same incomplete generation to exercise the projection write twice.
+#[tokio::test(flavor = "multi_thread")]
+async fn trigram_surface_orders_tied_positive_keywords() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_small_catalog(&pool).await;
+    for canonical in ["omega", "alpha"] {
+        sqlx::query(
+            "INSERT INTO life_event_keywords (life_event_id, term, canonical_term, type, weight) \
+             SELECT id, 'duplicate', $1, 'ACTION', 1 \
+             FROM life_events WHERE slug = 'alta-vehiculo'",
+        )
+        .bind(canonical)
+        .execute(&pool)
+        .await
+        .expect("insert tied positive keyword");
+    }
+
+    for canonical in ["omega", "alpha"] {
+        sqlx::query(
+            "INSERT INTO life_event_keywords (life_event_id, term, canonical_term, type, weight, negative) \
+             SELECT id, 'excluded', $1, 'ACTION', 1, true \
+             FROM life_events WHERE slug = 'alta-vehiculo'",
+        )
+        .bind(canonical)
+        .execute(&pool)
+        .await
+        .expect("insert tied negative keyword");
+    }
+
+    let first = db::generations::build::build_generation(&pool, "taxonomy-tied-keywords")
+        .await
+        .expect("first build succeeds");
+    let read_surface = || {
+        sqlx::query_scalar::<_, String>(
+            "SELECT surface_text FROM generation_trigram_surface \
+             WHERE generation_id = $1 AND slug = 'alta-vehiculo'",
+        )
+        .bind(first.generation_id)
+        .fetch_one(&pool)
+    };
+    let first_surface = read_surface().await.expect("read first surface");
+    let legacy_surface: String = sqlx::query_scalar(
+        "SELECT e.name || ' ' || COALESCE(\
+             (SELECT string_agg(k.term || ' ' || COALESCE(k.canonical_term, ''), ' ' \
+                     ORDER BY k.term, k.type, k.canonical_term) \
+              FROM life_event_keywords k \
+              WHERE k.life_event_id = e.id AND NOT k.negative), '') \
+         FROM life_events e WHERE e.slug = 'alta-vehiculo'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("read total-order legacy surface");
+
+    sqlx::query(
+        "UPDATE catalog_generations SET projection_status = 'building' WHERE generation_id = $1",
+    )
+    .bind(first.generation_id)
+    .execute(&pool)
+    .await
+    .expect("mark projection incomplete for rebuild");
+    let second = db::generations::build::build_generation(&pool, "taxonomy-tied-keywords")
+        .await
+        .expect("second build succeeds");
+    assert_eq!(first.generation_id, second.generation_id);
+    let second_surface = read_surface().await.expect("read rebuilt surface");
+    let expected = "Alta de vehículos duplicate alpha duplicate omega registro  vehiculo auto";
+    assert_eq!(
+        first_surface, expected,
+        "canonical terms must break (term, type) ties"
+    );
+    assert_eq!(
+        second_surface, expected,
+        "rebuild must preserve ordered bytes"
+    );
+    assert_eq!(
+        first_surface, second_surface,
+        "both builds must have identical bytes"
+    );
+    assert_eq!(
+        second_surface, legacy_surface,
+        "projection must match legacy bytes"
+    );
+
+    let (positive, negative): (serde_json::Value, serde_json::Value) = sqlx::query_as(
+        "SELECT positive_keywords, negative_keywords FROM generation_life_events \
+         WHERE generation_id = $1 AND slug = 'alta-vehiculo'",
+    )
+    .bind(first.generation_id)
+    .fetch_one(&pool)
+    .await
+    .expect("read keyword arrays");
+    for (array, term) in [(positive, "duplicate"), (negative, "excluded")] {
+        let canonicals: Vec<_> = array
+            .as_array()
+            .expect("keywords array")
+            .iter()
+            .filter(|keyword| keyword["term"] == term)
+            .map(|keyword| keyword["canonical"].as_str().expect("canonical string"))
+            .collect();
+        assert_eq!(canonicals, ["alpha", "omega"], "{term} array tie order");
+    }
     drop_db(&db_name).await;
 }
 
@@ -368,8 +548,8 @@ async fn trigram_surface_replicates_the_legacy_canonical_rules() {
     .fetch_one(&pool)
     .await
     .expect("trigram surface row exists");
-    // New builds pin the aggregate by (term, type); content excludes negative
-    // keywords, and a NULL canonical term retains its internal space.
+    // New builds pin the aggregate by (term, type, canonical_term); content
+    // excludes negative keywords, and NULL canonical terms retain their space.
     assert_eq!(
         surface, "Alta de vehículos registro  vehiculo auto",
         "surface = name + ordered positive keywords and canonical terms"

@@ -9,8 +9,9 @@
 //! `generation_trigram_surface` filtered by `generation_id`, never the
 //! mutable `life_events` + `life_event_keywords`. The projection replicates
 //! the legacy surface content (name plus positive canonical keyword terms,
-//! negatives excluded). Both aggregates pin keyword order by (term, type)
-//! for new builds; older immutable generations retain their captured bytes.
+//! negatives excluded). Both aggregates pin keyword order by (term, type,
+//! canonical_term) for new builds; older immutable generations retain their
+//! captured bytes.
 //! The legacy sentinel (`LEGACY_GENERATION_ID`, the cold-start baseline)
 //! keeps the documented legacy path; there is no generation to isolate there.
 //! Durable IDs are minted with `Uuid::now_v7()` in build.rs, never nil, so
@@ -69,11 +70,13 @@ impl CandidateProvider for TrigramProvider {
             let rows: Vec<(String, f32)> = if generation_id == super::LEGACY_GENERATION_ID {
                 // Cold-start baseline: no durable generation exists yet, so
                 // the dual-written legacy tables are the only surface.
+                // Sort by (term, type, canonical_term) like the projection:
+                // remaining ties emit identical fragments regardless of plan.
                 sqlx::query!(
                     r#"WITH kw AS (
                      SELECT life_event_id,
                             string_agg(term || ' ' || COALESCE(canonical_term, ''), ' '
-                                       ORDER BY term, type) AS terms
+                                       ORDER BY term, type, canonical_term) AS terms
                      FROM life_event_keywords
                      WHERE NOT negative
                      GROUP BY life_event_id
