@@ -1,0 +1,35 @@
+# [audit F25] Build-context exclusions for the Rust multi-stage image.
+# The image only builds the workspace members apps/api, apps/ingest and
+# crates/*, and ships migrations/, .sqlx/, and data/. Everything below is not
+# a build input and only bloats the context — in a developer checkout the
+# frontend alone adds ~530 MB (apps/web/node_modules + apps/web/.next).
+
+# Frontend (Next.js) artifacts: the Rust image never copies apps/web.
+apps/web/node_modules
+apps/web/.next
+
+# Rust build output and VCS history.
+target
+.git
+.gitignore
+.gitattributes
+
+# Local runtime state and environment files (never shipped).
+.atl
+.pi
+.gga
+.env
+*.local.yml
+
+# Documentation, specs, and tooling not needed by the build.
+.agents
+.github
+docs
+odd
+openspec
+tests
+scripts
+spec.txt
+README.md
+AGENTS.md
+skills-lock.json

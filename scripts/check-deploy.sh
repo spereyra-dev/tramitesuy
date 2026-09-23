@@ -98,6 +98,63 @@ grep -qE 'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER' Dockerfile \
 make -n image-arm64 >/dev/null \
   || fail "the make image-arm64 target does not resolve"
 
+# [task 40, audit F6] Docker ARG scoping: a pre-FROM global `ARG TARGETARCH`
+# is NOT in scope inside a stage (Docker's documented scoping), so the build
+# stage must re-declare it or the cross-compilation branch is unreachable and
+# the native branch ships builder-architecture binaries under
+# `--platform linux/arm64`. The stage must also assert the produced binaries'
+# machine type against the requested target.
+build_stage=$(awk '/^FROM .* AS build/{f=1;next} f && /^FROM /{f=0} f' Dockerfile)
+[ -n "$build_stage" ] \
+  || fail "the Dockerfile no longer declares a build stage (FROM ... AS build)"
+echo "$build_stage" | grep -qE '^ARG[[:space:]]+TARGETARCH([[:space:]]|$)' \
+  || fail "the build stage does not re-declare ARG TARGETARCH — a pre-FROM global ARG is out of scope inside a stage, so \$TARGETARCH expands empty and the ARM64 build ships builder-architecture binaries"
+awk '/^FROM /{exit} {print}' Dockerfile | grep -qE '^ARG[[:space:]]+TARGETARCH' \
+  && fail "a global pre-FROM ARG TARGETARCH remains (redundant: the FROM line does not use it)"
+# The architecture assertion must be a real RUN command, not just prose in a
+# comment: check the non-comment build-stage commands.
+build_cmds=$(echo "$build_stage" | grep -vE '^[[:space:]]*#')
+echo "$build_cmds" | grep -q 'readelf -h' \
+  || fail "the Dockerfile carries no readelf architecture assertion for the built binaries"
+echo "$build_cmds" | grep -qE 'Machine' \
+  || fail "the architecture assertion does not compare the readelf Machine field against the expected target"
+for binary in api ingest; do
+  echo "$build_cmds" | grep -q "/build/bin/$binary" \
+    || fail "the architecture assertion does not cover /build/bin/$binary"
+done
+
+# [audit F25] Build context: the Rust image must not copy the Next.js
+# frontend (apps/web carries hundreds of MB of node_modules/.next in a
+# developer checkout), and .dockerignore must keep that context out.
+grep -qE '^COPY[[:space:]]+apps[[:space:]]+\./apps[[:space:]]*$' Dockerfile \
+  && fail "the broad 'COPY apps ./apps' is back — it copies apps/web/node_modules and apps/web/.next into the Rust image"
+grep -qE '^COPY([[:space:]]+--[^ ]+)*[[:space:]]+apps/web' Dockerfile \
+  && fail "the Dockerfile copies apps/web into the Rust image"
+grep -qE '^COPY[[:space:]]+apps/api[[:space:]]+\./apps/api[[:space:]]*$' Dockerfile \
+  || fail "the Dockerfile no longer narrow-copies 'apps/api ./apps/api'"
+grep -qE '^COPY[[:space:]]+apps/ingest[[:space:]]+\./apps/ingest[[:space:]]*$' Dockerfile \
+  || fail "the Dockerfile no longer narrow-copies 'apps/ingest ./apps/ingest'"
+DOCKERIGNORE=.dockerignore
+[ -f "$DOCKERIGNORE" ] \
+  || fail "$DOCKERIGNORE is missing — the Rust build context would include apps/web/node_modules and apps/web/.next"
+grep -qE '^/?apps/web/node_modules/?$' "$DOCKERIGNORE" \
+  || fail "$DOCKERIGNORE does not exclude apps/web/node_modules"
+grep -qE '^/?apps/web/\.next/?$' "$DOCKERIGNORE" \
+  || fail "$DOCKERIGNORE does not exclude apps/web/.next"
+# Every workspace member (Cargo.toml) and every manifest the build copies
+# must stay inside the build context: no .dockerignore pattern may match a
+# required input or one of its parent directories.
+members=$(awk '/^members = \[/{f=1} f{print} f&&/\]/{exit}' Cargo.toml | grep -oE '"[^"]+"' | tr -d '"')
+for required in Cargo.toml Cargo.lock rust-toolchain.toml migrations .sqlx data $members; do
+  while IFS= read -r pattern; do
+    case "$pattern" in ''|'#'*|'!'*) continue ;; esac
+    pattern=${pattern#/}; pattern=${pattern%/}
+    case "$required" in
+      "$pattern"|"$pattern"/*) fail "$DOCKERIGNORE pattern '$pattern' excludes the required build input '$required'" ;;
+    esac
+  done < "$DOCKERIGNORE"
+done
+
 # [task 41, audit F10] HTTPS reverse proxy: TLS termination, readiness
 # wiring to the internal /ready (read-only), internal-only probes and metrics
 # outside the closed /api/v1 inventory, and an access-log format stripped of
