@@ -544,6 +544,119 @@ async fn missing_search_projection_rows_for_a_declared_event_are_rejected() {
     drop_db(&db_name).await;
 }
 
+/// An older builder can write the FTS text but leave the new vector at its
+/// migration default. Non-zero manifest counters and present projection rows
+/// must not let that candidate through the publication gate.
+#[tokio::test(flavor = "multi_thread")]
+async fn nonempty_fts_text_with_empty_vector_is_rejected() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_small_catalog(&pool).await;
+    let built = db::generations::build::build_generation(&pool, "taxonomy-fixture-fts")
+        .await
+        .expect("build succeeds");
+    let id = built.generation_id;
+
+    let (event_count, procedure_count): (i32, i32) = sqlx::query_as(
+        "SELECT event_count, procedure_count FROM catalog_generations WHERE generation_id = $1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .expect("manifest exists");
+    assert!(event_count > 0 && procedure_count > 0);
+    let text: String = sqlx::query_scalar(
+        "SELECT fts_text FROM generation_fts_text WHERE generation_id = $1 AND slug = 'alta-vehiculo'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .expect("FTS projection exists");
+    assert!(!text.is_empty());
+
+    sqlx::query(
+        "UPDATE generation_fts_text SET fts_tsvector = ''::tsvector \
+         WHERE generation_id = $1 AND slug = 'alta-vehiculo'",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .expect("simulate an older builder using the empty vector default");
+
+    let gate = db::generations::validate::validate_generation(&pool, id, None)
+        .await
+        .expect("validation returns a report");
+    assert_eq!(
+        gate.failures
+            .iter()
+            .filter(|failure| failure.kind == "empty_fts_projection")
+            .map(|failure| failure.detail.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "generation_fts_text row for event \"alta-vehiculo\" has non-empty fts_text but an empty fts_tsvector"
+        ],
+        "an empty vector with text must be rejected: {gate:?}"
+    );
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM catalog_generations WHERE generation_id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .expect("manifest exists");
+    assert_eq!(status, "building", "rejected candidates never validate");
+
+    // The new failure must accumulate with other gates, not hide schema drift.
+    sqlx::query(
+        "UPDATE generation_event_cards SET cards = '{}'::jsonb \
+         WHERE generation_id = $1 AND slug = 'alta-vehiculo'",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .expect("corrupt card schema");
+    let combined = db::generations::validate::validate_generation(&pool, id, None)
+        .await
+        .expect("validation returns all failures");
+    assert!(
+        combined
+            .failures
+            .iter()
+            .any(|f| f.kind == "empty_fts_projection")
+            && combined.failures.iter().any(|f| f.kind == "schema"),
+        "both FTS and schema failures must be reported: {combined:?}"
+    );
+
+    drop(pool);
+    drop_db(&db_name).await;
+}
+
+/// The current builder writes a weighted vector; the stricter gate must
+/// still accept its generation without requiring mutable source data.
+#[tokio::test(flavor = "multi_thread")]
+async fn populated_fts_vector_passes_validation() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_small_catalog(&pool).await;
+    let built = db::generations::build::build_generation(&pool, "taxonomy-fixture-fts")
+        .await
+        .expect("build succeeds");
+    let vector_populated: bool = sqlx::query_scalar(
+        "SELECT fts_tsvector <> ''::tsvector FROM generation_fts_text \
+         WHERE generation_id = $1 AND slug = 'alta-vehiculo'",
+    )
+    .bind(built.generation_id)
+    .fetch_one(&pool)
+    .await
+    .expect("FTS projection exists");
+    assert!(vector_populated, "the current builder must write a vector");
+
+    let gate = db::generations::validate::validate_generation(&pool, built.generation_id, None)
+        .await
+        .expect("validation runs");
+    assert!(gate.passed(), "the weighted vector must validate: {gate:?}");
+
+    drop(pool);
+    drop_db(&db_name).await;
+}
+
 /// `status` never advances past `validated` without complete projections: an
 /// interrupted candidate (manifest reports incomplete) fails the gate.
 #[tokio::test(flavor = "multi_thread")]

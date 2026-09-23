@@ -12,8 +12,8 @@
 //! - **schema**: every projected JSON artifact carries the keys the API
 //!   surface reads;
 //! - **search-projection availability**: every declared event has its FTS
-//!   and trigram rows (OPT-07: providers never rank against a partial
-//!   surface);
+//!   and trigram rows, and non-empty FTS text has a populated vector
+//!   (OPT-07: providers never rank against a partial surface);
 //! - **taxonomy**: when the caller passes the YAML taxonomy actually used in
 //!   the build, the projected events/keywords must align with it.
 //!
@@ -32,7 +32,7 @@ use uuid::Uuid;
 pub struct ValidationFailure {
     /// The gate that failed: `manifest` | `incomplete_projections` |
     /// `empty_catalog` | `empty_active_catalog` | `relation_integrity` |
-    /// `schema` | `search_projection` | `taxonomy`.
+    /// `schema` | `search_projection` | `empty_fts_projection` | `taxonomy`.
     pub kind: &'static str,
     pub detail: String,
 }
@@ -185,6 +185,25 @@ async fn validate_search_projections(
         failures.push(ValidationFailure {
             kind: "search_projection",
             detail: format!("declared event {slug:?} has no generation_fts_text row"),
+        });
+    }
+    // A pre-0019 builder can still insert projection rows after the migration,
+    // leaving the new vector at its empty default. Check the immutable
+    // generation projection, not the mutable source table, before publishing.
+    let empty_vectors: Vec<String> = sqlx::query_scalar!(
+        "SELECT slug FROM generation_fts_text \
+         WHERE generation_id = $1 AND fts_text <> '' AND fts_tsvector = ''::tsvector \
+         ORDER BY slug",
+        generation_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    for slug in empty_vectors {
+        failures.push(ValidationFailure {
+            kind: "empty_fts_projection",
+            detail: format!(
+                "generation_fts_text row for event {slug:?} has non-empty fts_text but an empty fts_tsvector"
+            ),
         });
     }
     let missing_trigram: Vec<String> = sqlx::query_scalar!(
