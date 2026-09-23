@@ -72,15 +72,20 @@ fn eviction_by_bytes_evicts_the_least_recently_used_entry() {
     let e1 = entry(1_000);
     let e2 = entry(1_000);
     let e3 = entry(1_000);
-    // The two first entries exactly fill the byte limit.
-    let max_bytes = e1.byte_size() + e2.byte_size();
+    let generation = Uuid::now_v7();
+    // The reported size of ONE entry INCLUDING its recency-index metadata,
+    // probed through the public surface (entry bytes + index node + key
+    // clone). The two first entries exactly fill the byte limit.
+    let probe = api::cache::SearchCache::new(CacheLimits::default());
+    probe.insert(key(generation, ENGINE_VERSION, "sonda"), e1.clone());
+    let per_entry = probe.bytes();
+    let max_bytes = per_entry * 2;
     let cache = api::cache::SearchCache::new(CacheLimits {
         max_bytes,
         max_entries: 10_000,
         ttl: Duration::from_secs(3_600),
     });
 
-    let generation = Uuid::now_v7();
     cache.insert(key(generation, ENGINE_VERSION, "primera"), e1);
     cache.insert(key(generation, ENGINE_VERSION, "segunda"), e2);
     assert_eq!(cache.entry_count(), 2);
@@ -181,6 +186,53 @@ fn an_oversized_single_result_is_never_inserted() {
             .get(&key(generation, ENGINE_VERSION, "grande"))
             .is_none(),
         "the oversized result is served uncached (nothing to serve from cache)"
+    );
+}
+
+#[test]
+fn reported_bytes_include_the_recency_metadata() {
+    // RED (F5/T14): the recency index is retained memory too. A one-entry
+    // cache must report MORE than the bare entry bytes, because the index
+    // node and its key clone are accounted on top of the entry.
+    let cache = api::cache::SearchCache::new(CacheLimits::default());
+    let generation = Uuid::now_v7();
+    let e = entry(100);
+    let entry_bytes = e.byte_size();
+    cache.insert(key(generation, ENGINE_VERSION, "consulta"), e);
+
+    assert_eq!(cache.entry_count(), 1);
+    assert!(
+        cache.bytes() > entry_bytes,
+        "the reported bytes cover the entry AND its recency-index metadata \
+         (entry bytes {entry_bytes}, reported {})",
+        cache.bytes()
+    );
+}
+
+#[test]
+fn many_hits_on_one_key_do_not_grow_the_reported_size() {
+    // The popular-key case from F5/T14: repeating the SAME query must not
+    // grow the accounted memory. The recency index holds one node per live
+    // entry, so its metadata size is constant across hits.
+    let cache = api::cache::SearchCache::new(CacheLimits::default());
+    let generation = Uuid::now_v7();
+    let popular = key(generation, ENGINE_VERSION, "consulta popular");
+    cache.insert(popular.clone(), entry(100));
+    let after_insert = cache.bytes();
+
+    for _ in 0..10_000 {
+        assert!(
+            cache.get(&popular).is_some(),
+            "the popular key keeps hitting"
+        );
+    }
+
+    assert_eq!(cache.entry_count(), 1, "one live entry throughout");
+    assert_eq!(
+        cache.bytes(),
+        after_insert,
+        "repeated hits never grow the accounted size: the recency index is \
+         bounded by the number of live entries"
     );
 }
 

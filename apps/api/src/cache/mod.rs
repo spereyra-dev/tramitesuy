@@ -22,7 +22,7 @@
 
 pub mod warming;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
@@ -37,6 +37,22 @@ use uuid::Uuid;
 /// counts something real even for tiny results. String byte lengths are
 /// accounted exactly on top of it.
 const PER_ITEM_OVERHEAD: u64 = 24;
+
+/// Fixed per-record recency-index bookkeeping overhead: the ordered-map
+/// node (key/value slots, child pointers, colour) plus the cloned key's
+/// fixed-size fields (generation UUID and fingerprint) and its `String`
+/// header. The variable `engine_version` bytes are counted exactly on top
+/// in [`recency_metadata_size`], so the reported size covers the key clone
+/// as well as the node.
+const RECENCY_ITEM_OVERHEAD: u64 = 128;
+
+/// The retained byte cost of one live record's recency-index metadata: the
+/// fixed node overhead plus the cloned key's variable `engine_version`
+/// bytes. Exactly one such record exists per live entry, so the metadata is
+/// strictly bounded by the entry count (and therefore by `max_entries`).
+fn recency_metadata_size(key: &CacheKey) -> u64 {
+    RECENCY_ITEM_OVERHEAD + key.engine_version.len() as u64
+}
 
 /// The configurable cache limits (design §3.4): simultaneous byte, entry,
 /// and age bounds. Initial values follow the search-cache delta: 64 MiB,
@@ -329,7 +345,7 @@ fn lock_inflight(
 
 /// One retained record: the shared computational entry plus its cache
 /// metadata (insertion instant for the lazy TTL, byte size, and the LRU
-/// stamp matching the newest `order` tuple for this key).
+/// stamp that keys this record's single node in the recency order map).
 struct EntryRecord {
     entry: Arc<CachedEntry>,
     inserted_at: Instant,
@@ -337,52 +353,62 @@ struct EntryRecord {
     stamp: u64,
 }
 
-/// The LRU index (design §3.3 GREEN): a `HashMap` of live records plus a
-/// lazy-tombstone `VecDeque` holding the use order. Touching an entry
-/// pushes a fresh `(key, stamp)` tuple to the back; eviction pops from the
-/// front and skips tuples whose stamp no longer matches the live record
-/// (tombstones). Byte accounting is kept exact on insert, evict, and
-/// expire.
+/// The LRU index (design §3.3 GREEN, F5/T14): a `HashMap` of live records
+/// plus an ordered map of the use order. The order map is keyed by the
+/// monotonically increasing stamp and holds EXACTLY ONE node per live
+/// record — a hit removes the record's previous stamp and inserts the new
+/// one, so the metadata is strictly bounded by the entry count instead of
+/// accumulating one tombstone per hit. Eviction takes the smallest stamp
+/// (least recently used) first. Byte accounting is kept exact on insert,
+/// touch, evict, and expire, and now includes the recency metadata (the
+/// cloned key plus the ordered-map node) so the reported size cannot hide
+/// the index.
 struct LruIndex {
     entries: HashMap<CacheKey, EntryRecord>,
-    order: VecDeque<(CacheKey, u64)>,
+    order: BTreeMap<u64, CacheKey>,
     next_stamp: u64,
     bytes: u64,
 }
 
 impl LruIndex {
     fn touch(&mut self, key: &CacheKey) {
+        let Some(old_stamp) = self.entries.get(key).map(|record| record.stamp) else {
+            return;
+        };
         let stamp = self.next_stamp;
         self.next_stamp += 1;
+        // A hit repositions the ONE existing node: no tombstone is left
+        // behind, so repeated hits never grow the index.
+        self.order.remove(&old_stamp);
+        self.order.insert(stamp, key.clone());
         if let Some(record) = self.entries.get_mut(key) {
             record.stamp = stamp;
         }
-        self.order.push_back((key.clone(), stamp));
     }
 
-    /// Removes one record outright (replacement or lazy expiry); its order
-    /// tuples become tombstones that eviction will skip for free.
+    /// Removes one record outright (replacement or lazy expiry); its
+    /// recency-index node goes with it, so the index never holds a stale
+    /// node for a dead entry.
     fn remove(&mut self, key: &CacheKey) -> Option<EntryRecord> {
         let record = self.entries.remove(key)?;
-        self.bytes -= record.byte_size;
+        self.order.remove(&record.stamp);
+        self.bytes -= record.byte_size + recency_metadata_size(key);
         Some(record)
     }
 
-    /// Evicts the least-recently-used LIVE entry, skipping tombstones.
-    /// Returns `false` when the order queue holds no live entry (nothing
-    /// left to evict).
+    /// Evicts the least-recently-used live entry: the smallest stamp in the
+    /// order map. Returns `false` when the index holds no live entry
+    /// (nothing left to evict).
     fn evict_one(&mut self) -> bool {
-        while let Some((key, stamp)) = self.order.pop_front() {
-            let live = self
-                .entries
-                .get(&key)
-                .is_some_and(|record| record.stamp == stamp);
-            if live {
-                self.remove(&key);
-                return true;
+        match self.order.pop_first() {
+            Some((_stamp, key)) => {
+                if let Some(record) = self.entries.remove(&key) {
+                    self.bytes -= record.byte_size + recency_metadata_size(&key);
+                }
+                true
             }
+            None => false,
         }
-        false
     }
 }
 
@@ -405,7 +431,7 @@ impl SearchCache {
             limits,
             inner: Mutex::new(LruIndex {
                 entries: HashMap::new(),
-                order: VecDeque::new(),
+                order: BTreeMap::new(),
                 next_stamp: 0,
                 bytes: 0,
             }),
@@ -481,7 +507,8 @@ impl SearchCache {
     /// leader publishes its `Arc` and then commits the same shared entry).
     pub fn insert_shared(&self, key: CacheKey, entry: Arc<CachedEntry>) -> usize {
         let byte_size = entry.byte_size();
-        if byte_size > self.limits.max_bytes {
+        let metadata = recency_metadata_size(&key);
+        if byte_size + metadata > self.limits.max_bytes {
             // Oversized single result: served uncached, nothing inserted.
             return 0;
         }
@@ -490,7 +517,7 @@ impl SearchCache {
         // not count against itself.
         index.remove(&key);
         let mut evicted = 0usize;
-        while index.bytes + byte_size > self.limits.max_bytes
+        while index.bytes + byte_size + metadata > self.limits.max_bytes
             || index.entries.len() + 1 > self.limits.max_entries
         {
             if !index.evict_one() {
@@ -500,7 +527,7 @@ impl SearchCache {
         }
         let stamp = index.next_stamp;
         index.next_stamp += 1;
-        index.order.push_back((key.clone(), stamp));
+        index.order.insert(stamp, key.clone());
         index.entries.insert(
             key,
             EntryRecord {
@@ -510,7 +537,7 @@ impl SearchCache {
                 stamp,
             },
         );
-        index.bytes += byte_size;
+        index.bytes += byte_size + metadata;
         evicted
     }
 
@@ -519,7 +546,8 @@ impl SearchCache {
         self.lock().entries.len()
     }
 
-    /// The accounted retained bytes (test/observability surface).
+    /// The accounted retained bytes (test/observability surface): entry
+    /// bytes plus the recency-index metadata for every live entry.
     pub fn bytes(&self) -> u64 {
         self.lock().bytes
     }
@@ -528,5 +556,49 @@ impl SearchCache {
         self.inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn placeholder_entry() -> CachedEntry {
+        CachedEntry {
+            candidates: Vec::new(),
+            results: Vec::new(),
+            confidence: 0.0,
+            selection: Selection {
+                mode: search::types::SelectionMode::Categories,
+                event_slug: None,
+                options: Vec::new(),
+                categories: Vec::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn repeated_hits_keep_the_recency_index_bounded_by_live_entries() {
+        let cache = SearchCache::new(CacheLimits::default());
+        let key = CacheKey::new(
+            Uuid::now_v7(),
+            "search-rules-v1".to_string(),
+            "compre un auto",
+        );
+        cache.insert(key.clone(), placeholder_entry());
+        for _ in 0..10_000 {
+            assert!(cache.get(&key).is_some(), "the popular key keeps hitting");
+        }
+        let index = cache.lock();
+        assert_eq!(index.entries.len(), 1);
+        assert_eq!(
+            index.order.len(),
+            1,
+            "the recency index holds one node per live entry, not one per hit"
+        );
+        assert!(
+            index.order.len() <= index.entries.len(),
+            "the recency metadata is bounded by the number of live entries"
+        );
     }
 }
