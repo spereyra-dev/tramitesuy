@@ -9,6 +9,8 @@
 mod c2support;
 
 use c2support::*;
+use std::hint::black_box;
+use std::time::Instant;
 use taxonomy::model::Taxonomy;
 
 /// Small representative catalog: two events (one with a negative keyword),
@@ -83,6 +85,77 @@ async fn seed_small_catalog(pool: &sqlx::PgPool) {
     .execute(pool)
     .await
     .expect("seed relation");
+}
+
+/// F26: non-gating local measurement of complete validation, not just a
+/// stand-alone SELECT. A fixed fixture is rebuilt with 1/16/64 distinct
+/// projected card/detail pairs. The SQL counter includes the gate's queries
+/// (including the card lookup and per-card detail lookups) but not setup.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "opt-in F26 local latency measurement; run with --ignored --nocapture"]
+async fn measure_validation_by_card_count() {
+    const RUNS: u32 = 20;
+    let (pool, name, _counter, section) = fresh_migrated_counting_db().await;
+    seed_small_catalog(&pool).await;
+    let built = db::generations::build::build_generation(&pool, "taxonomy-fixture-f26")
+        .await
+        .expect("build valid baseline");
+    let generation_id = built.generation_id;
+
+    // Clone a real projected detail, altering only its identifier. This
+    // keeps schema validation meaningful and gives each card its own detail.
+    sqlx::query(
+        "INSERT INTO generation_procedure_details (generation_id, slug, details) \
+         SELECT $1, 'f26-' || n::text, \
+                jsonb_set(details, '{external_id}', to_jsonb(('f26-' || n::text)::text)) \
+         FROM generation_procedure_details, generate_series(1, 64) n \
+         WHERE generation_id = $1 AND slug = '1001'",
+    )
+    .bind(generation_id)
+    .execute(&pool)
+    .await
+    .expect("clone details");
+
+    for cards in [1_i32, 16, 64] {
+        sqlx::query(
+            "UPDATE generation_event_cards SET cards = ( \
+               SELECT jsonb_agg(jsonb_set(jsonb_set(c.cards -> 0, '{slug}', \
+                 to_jsonb(('f26-' || n::text)::text)), '{order_index}', to_jsonb(n))) \
+               FROM generate_series(1, $2) n \
+             ) FROM generation_event_cards c \
+             WHERE generation_event_cards.generation_id = $1 \
+               AND generation_event_cards.slug = 'alta-vehiculo' \
+               AND c.generation_id = $1 AND c.slug = 'alta-vehiculo'",
+        )
+        .bind(generation_id)
+        .bind(cards)
+        .execute(&pool)
+        .await
+        .expect("size projected cards");
+        let gate = db::generations::validate::validate_generation(&pool, generation_id, None)
+            .await
+            .expect("warm validation");
+        assert!(gate.passed(), "{gate:?}");
+
+        section.reset();
+        let start = Instant::now();
+        for _ in 0..RUNS {
+            let gate = db::generations::validate::validate_generation(&pool, generation_id, None)
+                .await
+                .expect("validation completes");
+            assert!(gate.passed(), "{gate:?}");
+            black_box(gate);
+        }
+        let us = start.elapsed().as_micros() as f64 / f64::from(RUNS);
+        let sql_total = section.count();
+        eprintln!(
+            "F26 validation: cards={cards} projected_details=66 runs={RUNS} \
+             validation_us={us:.2} sql_per_run={:.1}",
+            sql_total as f64 / f64::from(RUNS)
+        );
+    }
+    drop(pool);
+    drop_db(&name).await;
 }
 
 fn drifting_taxonomy() -> Taxonomy {

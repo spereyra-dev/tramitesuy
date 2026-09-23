@@ -20,6 +20,12 @@
 
 mod support;
 
+use std::hint::black_box;
+use std::sync::Arc;
+use std::time::Instant;
+
+use api::cache::{self, CacheKey};
+use api::metrics::{CacheEvent, MemoryMetrics};
 use axum::http::StatusCode;
 use support::*;
 
@@ -135,6 +141,100 @@ async fn open_search_with_snapshot_cards_costs_five_traced_statements() {
         count, 5,
         "recorded budget with snapshot cards: FTS + trigram provider \
          (BEGIN + GUC + surface) + consolidated log (observed {count})"
+    );
+}
+
+/// F26 measurement only: opt-in to avoid gating the ordinary suite on
+/// timing. Warm a loaded-generation search, then time sequential cache-hit
+/// requests (including the required log INSERT), pool acquire/release alone,
+/// and outcome reconstruction from the same cached entry. The SQL counter
+/// confirms the hit does not execute provider SQL; it cannot count acquires.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "opt-in F26 local latency measurement; run with --ignored --nocapture"]
+async fn measure_cached_search_overheads() {
+    const REQUESTS: u32 = 200;
+    const ACQUIRES: u32 = 1000;
+    const REBUILDS: u32 = 2000;
+    const QUERY: &str = "compre un auto usado";
+    const URI: &str = "/api/v1/search?q=compre%20un%20auto%20usado";
+
+    let (pool, section) = fresh_counting_db_section().await;
+    seed_search_fixture(&pool).await;
+    publish_sample_generation(&pool).await;
+    let metrics = Arc::new(MemoryMetrics::new());
+    let state = api::state::AppState::boot_with_metrics(
+        pool.clone(),
+        &repo_root().join("data"),
+        limits_without_warming(),
+        metrics.clone(),
+    )
+    .await
+    .expect("boot generation without background warming");
+    let app = api::build_router(state.clone());
+    let (status, _) = request(&app, "GET", URI).await;
+    assert_eq!(status, StatusCode::OK);
+    let generation = state.active.load_full();
+    let key = CacheKey::new(
+        generation.generation_id(),
+        generation.engine_version().to_string(),
+        QUERY,
+    );
+    let entry = generation.cache.get(&key).expect("warm request cached");
+    for _ in 0..20 {
+        assert_eq!(request(&app, "GET", URI).await.0, StatusCode::OK);
+    }
+
+    section.reset();
+    let start = Instant::now();
+    for _ in 0..REQUESTS {
+        let (status, body) = request(&app, "GET", URI).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        black_box(body);
+    }
+    let hit_us = start.elapsed().as_micros() as f64 / f64::from(REQUESTS);
+    let hit_statements = section.count();
+    assert_eq!(
+        hit_statements,
+        u64::from(REQUESTS),
+        "one log INSERT per hit"
+    );
+    assert_eq!(
+        metrics.cache_total(CacheEvent::Hit),
+        u64::from(REQUESTS + 20)
+    );
+
+    section.reset();
+    let start = Instant::now();
+    for _ in 0..ACQUIRES {
+        black_box(pool.acquire().await.expect("warm pool acquire"));
+    }
+    let acquire_us = start.elapsed().as_micros() as f64 / f64::from(ACQUIRES);
+    assert_eq!(section.count(), 0, "acquisition is not a SQL statement");
+
+    let start = Instant::now();
+    for _ in 0..REBUILDS {
+        black_box(cache::rebuild(&generation.engine, QUERY, &entry));
+    }
+    let rebuild_us = start.elapsed().as_micros() as f64 / f64::from(REBUILDS);
+    // Same normalization and result/selection clones; omit only the token
+    // copies into explanations. This is a cost comparator, not a response.
+    let start = Instant::now();
+    for _ in 0..REBUILDS {
+        black_box(generation.engine.normalize(QUERY));
+        black_box(entry.results.clone());
+        black_box(entry.selection.clone());
+    }
+    let no_explanation_us = start.elapsed().as_micros() as f64 / f64::from(REBUILDS);
+    eprintln!(
+        "F26 api: hits={REQUESTS} hit_us={hit_us:.2} hit_sql={hit_statements} \
+         acquires={ACQUIRES} acquire_us={acquire_us:.2} acquire_sql=0 \
+         rebuilds={REBUILDS} rebuild_us={rebuild_us:.2} \
+         no_explanation_us={no_explanation_us:.2} results={} options={} \
+         acquire_pct_hit={:.1} rebuild_pct_hit={:.1}",
+        entry.results.len(),
+        entry.selection.options.len(),
+        acquire_us / hit_us * 100.0,
+        rebuild_us / hit_us * 100.0,
     );
 }
 
