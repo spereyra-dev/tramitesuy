@@ -19,13 +19,16 @@ use taxonomy::model::{Category, Event, Keyword, KeywordType, Taxonomy};
 pub struct SeedReport {
     pub categories_inserted: usize,
     pub categories_updated: usize,
+    pub categories_removed: usize,
     pub events_inserted: usize,
     pub events_updated: usize,
+    pub events_removed: usize,
     pub keywords_inserted: usize,
     pub keywords_removed: usize,
     pub synonyms_inserted: usize,
     pub synonyms_removed: usize,
     pub relations_written: usize,
+    pub relations_removed: usize,
     pub relations_pending: usize,
     pub warnings: Vec<String>,
 }
@@ -35,12 +38,12 @@ impl SeedReport {
     pub fn report(&self) -> String {
         let mut out = String::new();
         out.push_str(&format!(
-            "categories inserted={} updated={}\n",
-            self.categories_inserted, self.categories_updated
+            "categories inserted={} updated={} removed={}\n",
+            self.categories_inserted, self.categories_updated, self.categories_removed
         ));
         out.push_str(&format!(
-            "events inserted={} updated={}\n",
-            self.events_inserted, self.events_updated
+            "events inserted={} updated={} removed={}\n",
+            self.events_inserted, self.events_updated, self.events_removed
         ));
         out.push_str(&format!(
             "keywords inserted={} removed={}\n",
@@ -51,8 +54,8 @@ impl SeedReport {
             self.synonyms_inserted, self.synonyms_removed
         ));
         out.push_str(&format!(
-            "relations written={} pending={}\n",
-            self.relations_written, self.relations_pending
+            "relations written={} removed={} pending={}\n",
+            self.relations_written, self.relations_removed, self.relations_pending
         ));
         for warning in &self.warnings {
             out.push_str(&format!("pending {warning}\n"));
@@ -88,8 +91,88 @@ pub async fn seed_taxonomy(pool: &PgPool, taxonomy: &Taxonomy) -> Result<SeedRep
     }
     seed_synonyms(&mut tx, taxonomy, &mut report).await?;
 
+    // Reconcile the projection with the YAML (F11, TX-1): the database is a
+    // projection of the YAML, so a slug the YAML no longer declares must not
+    // survive. Events go first: `life_events.category_id` has no ON DELETE
+    // rule, so a category can only be removed once its events are gone.
+    reconcile_events(&mut tx, taxonomy, &mut report).await?;
+    reconcile_categories(&mut tx, taxonomy, &mut report).await?;
+
     tx.commit().await?;
     Ok(report)
+}
+
+/// Deletes every projected event whose slug the YAML no longer declares.
+/// `life_event_procedures` and `life_event_keywords` cascade with the event
+/// (their FKs are ON DELETE CASCADE). The cascaded relation rows are counted
+/// in `relations_removed`; cascaded keyword rows are NOT reflected in any
+/// counter, so the report accounts for the relation rows, not for every row
+/// the reconciliation removed. The telemetry FKs
+/// (`search_logs.selected_event_id`/`top_event_id` and
+/// `search_feedback.event_id`) are ON DELETE SET NULL (0018), so an obsolete
+/// event referenced by telemetry is still deletable and its telemetry rows
+/// survive with a NULL event reference — no telemetry row is deleted or
+/// rewritten by a seed.
+async fn reconcile_events(
+    tx: &mut PgConnection,
+    taxonomy: &Taxonomy,
+    report: &mut SeedReport,
+) -> Result<(), sqlx::Error> {
+    let desired: std::collections::HashSet<&str> = taxonomy
+        .events
+        .iter()
+        .map(|source| source.event.slug.as_str())
+        .collect();
+    let existing: Vec<(Uuid, String)> = sqlx::query_as("SELECT id, slug FROM life_events")
+        .fetch_all(&mut *tx)
+        .await?;
+    for (id, slug) in &existing {
+        if desired.contains(slug.as_str()) {
+            continue;
+        }
+        let cascaded: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM life_event_procedures WHERE life_event_id = $1",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+        sqlx::query("DELETE FROM life_events WHERE id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        report.events_removed += 1;
+        report.relations_removed += cascaded as usize;
+    }
+    Ok(())
+}
+
+/// Deletes every projected category whose slug the YAML no longer declares.
+/// Runs after `reconcile_events` so no `life_events.category_id` FK blocks
+/// the delete (the only reference to `categories`).
+async fn reconcile_categories(
+    tx: &mut PgConnection,
+    taxonomy: &Taxonomy,
+    report: &mut SeedReport,
+) -> Result<(), sqlx::Error> {
+    let desired: std::collections::HashSet<&str> = taxonomy
+        .categories
+        .iter()
+        .map(|source| source.category.slug.as_str())
+        .collect();
+    let existing: Vec<(Uuid, String)> = sqlx::query_as("SELECT id, slug FROM categories")
+        .fetch_all(&mut *tx)
+        .await?;
+    for (id, slug) in &existing {
+        if desired.contains(slug.as_str()) {
+            continue;
+        }
+        sqlx::query("DELETE FROM categories WHERE id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        report.categories_removed += 1;
+    }
+    Ok(())
 }
 
 async fn upsert_category(
@@ -306,19 +389,46 @@ async fn seed_keywords(
 
 /// Projects the event→procedure relations (TX-6): resolves the procedure by
 /// its external id; a procedure that ingestion has not created yet leaves
-/// the relation pending with a deterministic warning.
+/// the relation pending with a deterministic warning. The projection is
+/// reconciled first (F11): any projected relation whose procedure's external
+/// id is no longer declared by the event's YAML list is deleted — including
+/// every row when the list is empty.
 async fn seed_relations(
     tx: &mut PgConnection,
     event: &Event,
     report: &mut SeedReport,
 ) -> Result<(), sqlx::Error> {
-    if event.relations.is_empty() {
-        return Ok(());
-    }
     let event_id: Uuid = sqlx::query_scalar("SELECT id FROM life_events WHERE slug = $1")
         .bind(&event.slug)
         .fetch_one(&mut *tx)
         .await?;
+
+    let desired: std::collections::HashSet<&str> = event
+        .relations
+        .iter()
+        .map(|relation| relation.external_id.as_str())
+        .collect();
+    let existing: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT r.procedure_id, p.external_id \
+         FROM life_event_procedures r JOIN procedures p ON p.id = r.procedure_id \
+         WHERE r.life_event_id = $1",
+    )
+    .bind(event_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    for (procedure_id, external_id) in &existing {
+        if desired.contains(external_id.as_str()) {
+            continue;
+        }
+        sqlx::query(
+            "DELETE FROM life_event_procedures WHERE life_event_id = $1 AND procedure_id = $2",
+        )
+        .bind(event_id)
+        .bind(procedure_id)
+        .execute(&mut *tx)
+        .await?;
+        report.relations_removed += 1;
+    }
 
     for relation in &event.relations {
         let procedure_id: Option<Uuid> = sqlx::query_scalar(
