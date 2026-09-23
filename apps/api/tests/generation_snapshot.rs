@@ -17,7 +17,111 @@
 
 mod support;
 
+use std::sync::Arc;
 use support::*;
+
+/// A corrupt projection in the newest published generation must not produce
+/// a partial snapshot. The existing loader fallback keeps G1 intact both
+/// on direct load and through the reconciliation tick.
+#[tokio::test(flavor = "multi_thread")]
+async fn malformed_card_or_detail_rejects_the_whole_candidate_and_keeps_g1_serving() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_read_fixture(&pool).await;
+    let g1 = publish_sample_generation(&pool).await.generation_id;
+    let metrics = Arc::new(api::metrics::MemoryMetrics::new());
+    let limits = api::config::ApiLimits {
+        lag_alert_after: std::time::Duration::ZERO,
+        ..Default::default()
+    };
+    let state = api::state::AppState::boot_with_metrics(
+        pool.clone(),
+        &repo_root().join("data"),
+        limits,
+        metrics.clone(),
+    )
+    .await
+    .expect("boot G1");
+    let app = api::build_router(state.clone());
+
+    sqlx::query("UPDATE procedures SET name = name || ' (G2)' WHERE external_id = '4551'")
+        .execute(&pool)
+        .await
+        .expect("change content for G2");
+    let g2 = publish_sample_generation(&pool).await.generation_id;
+    assert_ne!(g1, g2);
+    let original_cards: serde_json::Value = sqlx::query_scalar(
+        "SELECT cards FROM generation_event_cards WHERE generation_id = $1 AND slug = 'comprar-vehiculo'",
+    )
+    .bind(g2)
+    .fetch_one(&pool)
+    .await
+    .expect("G2 cards");
+
+    for (table, statement) in [
+        (
+            "card",
+            "UPDATE generation_event_cards SET cards = jsonb_set(cards, '{0,last_seen_at}', 'null'::jsonb) WHERE generation_id = $1 AND slug = 'comprar-vehiculo'",
+        ),
+        (
+            "detail",
+            "UPDATE generation_procedure_details SET details = jsonb_set(details, '{last_seen_at}', 'null'::jsonb) WHERE generation_id = $1 AND slug = '4551'",
+        ),
+    ] {
+        sqlx::query(statement)
+            .bind(g2)
+            .execute(&pool)
+            .await
+            .expect("corrupt G2");
+        let fallback = api::generation::load_published(&pool, &repo_root().join("data"))
+            .await
+            .expect("previous generation remains loadable")
+            .expect("G1 available");
+        assert_eq!(
+            fallback.generation_id(),
+            g1,
+            "{table} corruption must reject G2 as a whole"
+        );
+        let tick = api::generation::reconcile::tick(&state)
+            .await
+            .expect("reconcile");
+        assert!(
+            tick.adopted.is_none() && tick.already_current && tick.lagging,
+            "{table}: {tick:?}"
+        );
+        assert_eq!(
+            state.generation_id(),
+            g1,
+            "{table}: no partial snapshot installed"
+        );
+        let (status, body) = request(&app, "GET", "/api/v1/procedures/4551").await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+        assert_eq!(
+            body["name"], "Solicitud de empadronamientos",
+            "{table}: G1 still serves"
+        );
+        assert_eq!(
+            fallback.cards("comprar-vehiculo").expect("G1 cards").len(),
+            2
+        );
+        assert!(
+            metrics.alert_total(api::metrics::OperationalAlert::PublicationLag) >= 1,
+            "{table}: lagging publication is observable"
+        );
+        if table == "card" {
+            // Test the detail decoder independently; a still-broken card
+            // must not hide a detail that would otherwise be dropped.
+            sqlx::query(
+                "UPDATE generation_event_cards SET cards = $2 WHERE generation_id = $1 AND slug = 'comprar-vehiculo'",
+            )
+            .bind(g2)
+            .bind(&original_cards)
+            .execute(&pool)
+            .await
+            .expect("restore G2 cards");
+        }
+    }
+    common_drop(&db_name).await;
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn snapshot_serves_known_catalog_lookups_without_sql() {

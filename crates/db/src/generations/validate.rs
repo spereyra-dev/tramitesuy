@@ -137,8 +137,13 @@ pub async fn validate_generation(
     }
 
     validate_search_projections(pool, generation_id, &mut failures).await?;
-    validate_relation_integrity(pool, generation_id, &mut failures).await?;
     validate_projection_schema(pool, generation_id, &mut failures).await?;
+    // Relation SQL expands card arrays and requires a string slug. Schema
+    // errors already reject publication; never let malformed JSON abort the
+    // gate before it can return that report.
+    if !failures.iter().any(|failure| failure.kind == "schema") {
+        validate_relation_integrity(pool, generation_id, &mut failures).await?;
+    }
     if let Some(taxonomy) = taxonomy {
         validate_taxonomy(pool, generation_id, taxonomy, &mut failures).await?;
     }
@@ -246,59 +251,94 @@ async fn validate_relation_integrity(
     Ok(())
 }
 
-/// Schema: every projected JSON artifact carries the keys the API reads.
+/// Match the API's `decode_card`/`decode_detail` contract exactly for
+/// mandatory values, and reject malformed non-null optional strings rather
+/// than silently erasing their content. Absent/null optional values are fine.
 async fn validate_projection_schema(
     pool: &PgPool,
     generation_id: Uuid,
     failures: &mut Vec<ValidationFailure>,
 ) -> Result<(), sqlx::Error> {
-    let malformed_cards: Vec<String> = sqlx::query_scalar!(
-        r#"SELECT e.slug FROM generation_event_cards c
-           JOIN generation_life_events e
-             ON e.generation_id = c.generation_id AND e.slug = c.slug
-           WHERE c.generation_id = $1
-             AND EXISTS (
-                 SELECT 1 FROM jsonb_array_elements(c.cards) AS card
-                 WHERE card ->> 'slug' IS NULL
-                    OR card ->> 'name' IS NULL
-                    OR card ->> 'order_index' IS NULL
-                    OR card ->> 'required' IS NULL
-                    OR card ->> 'status' IS NULL
-             )"#,
+    let cards = sqlx::query!(
+        "SELECT slug, cards FROM generation_event_cards WHERE generation_id = $1",
         generation_id,
     )
     .fetch_all(pool)
     .await?;
-    if !malformed_cards.is_empty() {
-        failures.push(ValidationFailure {
-            kind: "schema",
-            detail: format!(
-                "card projections missing required keys for events: {}",
-                malformed_cards.join(", ")
-            ),
+    for row in cards {
+        let valid = row.cards.as_array().is_some_and(|cards| {
+            cards.iter().all(|card| {
+                required_strings(card, &["slug", "name", "status"])
+                    && optional_strings(
+                        card,
+                        &[
+                            "importance",
+                            "organization_short_name",
+                            "cost",
+                            "official_url",
+                        ],
+                    )
+                    && card
+                        .get("order_index")
+                        .and_then(|v| v.as_i64())
+                        .is_some_and(|v| i32::try_from(v).is_ok())
+                    && card.get("required").and_then(|v| v.as_bool()).is_some()
+                    && valid_timestamp(card)
+            })
         });
+        if !valid {
+            failures.push(ValidationFailure {
+                kind: "schema",
+                detail: format!("card projection for event {:?} cannot be decoded", row.slug),
+            });
+        }
     }
 
-    let malformed_details: Vec<String> = sqlx::query_scalar!(
-        r#"SELECT d.slug FROM generation_procedure_details d
-           WHERE d.generation_id = $1
-             AND (d.details ->> 'external_id' IS NULL
-                  OR d.details ->> 'name' IS NULL
-                  OR d.details ->> 'status' IS NULL)"#,
+    let details = sqlx::query!(
+        "SELECT slug, details FROM generation_procedure_details WHERE generation_id = $1",
         generation_id,
     )
     .fetch_all(pool)
     .await?;
-    if !malformed_details.is_empty() {
-        failures.push(ValidationFailure {
-            kind: "schema",
-            detail: format!(
-                "procedure-detail projections missing required keys: {}",
-                malformed_details.join(", ")
-            ),
-        });
+    for row in details {
+        if !(required_strings(&row.details, &["external_id", "name", "status"])
+            && optional_strings(
+                &row.details,
+                &["description", "organization_name", "official_url"],
+            )
+            && valid_timestamp(&row.details))
+        {
+            failures.push(ValidationFailure {
+                kind: "schema",
+                detail: format!(
+                    "procedure-detail projection {:?} cannot be decoded",
+                    row.slug
+                ),
+            });
+        }
     }
     Ok(())
+}
+
+fn required_strings(value: &serde_json::Value, fields: &[&str]) -> bool {
+    fields
+        .iter()
+        .all(|field| value.get(*field).and_then(|v| v.as_str()).is_some())
+}
+
+fn optional_strings(value: &serde_json::Value, fields: &[&str]) -> bool {
+    fields.iter().all(|field| {
+        value
+            .get(*field)
+            .is_none_or(|v| v.is_null() || v.is_string())
+    })
+}
+
+fn valid_timestamp(value: &serde_json::Value) -> bool {
+    value
+        .get("last_seen_at")
+        .and_then(|v| v.as_str())
+        .is_some_and(|raw| chrono::DateTime::parse_from_rfc3339(raw).is_ok())
 }
 
 /// Taxonomy: the YAML taxonomy actually used in the build must align with the

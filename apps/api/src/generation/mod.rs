@@ -622,11 +622,23 @@ async fn load_candidate(
     .await?;
     let mut cards: HashMap<String, Arc<Vec<db::repos::procedures::EventCard>>> = HashMap::new();
     for row in card_rows {
-        let decoded: Vec<db::repos::procedures::EventCard> = row
+        let projected = row
             .cards
             .as_array()
-            .map(|cards| cards.iter().filter_map(decode_card).collect())
-            .unwrap_or_default();
+            .ok_or_else(|| GenerationError::Rejected {
+                generation_id,
+                reason: format!("cards for event {:?} are not an array", row.slug),
+            })?;
+        let decoded = projected
+            .iter()
+            .enumerate()
+            .map(|(index, card)| {
+                decode_card(card).ok_or_else(|| GenerationError::Rejected {
+                    generation_id,
+                    reason: format!("card {index} for event {:?} cannot be decoded", row.slug),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         cards.insert(row.slug, Arc::new(decoded));
     }
 
@@ -640,9 +652,11 @@ async fn load_candidate(
     let mut procedures: HashMap<String, Arc<db::repos::procedures::ProcedureDetail>> =
         HashMap::new();
     for row in detail_rows {
-        if let Some(detail) = decode_detail(&row.details) {
-            procedures.insert(row.slug, Arc::new(detail));
-        }
+        let detail = decode_detail(&row.details).ok_or_else(|| GenerationError::Rejected {
+            generation_id,
+            reason: format!("procedure detail {:?} cannot be decoded", row.slug),
+        })?;
+        procedures.insert(row.slug, Arc::new(detail));
     }
 
     // Ordered categories (stage-3 interim: legacy projection read once at

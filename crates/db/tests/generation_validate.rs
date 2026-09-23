@@ -158,6 +158,187 @@ async fn measure_validation_by_card_count() {
     drop_db(&name).await;
 }
 
+/// Each mandatory field of the API's card/detail decoder must be present and
+/// correctly typed, including the RFC 3339 sync stamp. A malformed optional
+/// string must not silently lose its value when decoded.
+#[tokio::test(flavor = "multi_thread")]
+async fn projections_rejected_when_decoder_fields_are_missing_or_malformed() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_small_catalog(&pool).await;
+    let built = db::generations::build::build_generation(&pool, "taxonomy-fixture-f16")
+        .await
+        .expect("build succeeds");
+    let id = built.generation_id;
+
+    let card: serde_json::Value = sqlx::query_scalar(
+        "SELECT cards FROM generation_event_cards WHERE generation_id = $1 AND slug = 'alta-vehiculo'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .expect("card projection");
+    let detail: serde_json::Value = sqlx::query_scalar(
+        "SELECT details FROM generation_procedure_details WHERE generation_id = $1 AND slug = '1001'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .expect("detail projection");
+
+    for (table, fields, baseline) in [
+        (
+            "generation_event_cards",
+            &[
+                "slug",
+                "name",
+                "order_index",
+                "required",
+                "status",
+                "last_seen_at",
+            ][..],
+            &card,
+        ),
+        (
+            "generation_procedure_details",
+            &["external_id", "name", "status", "last_seen_at"][..],
+            &detail,
+        ),
+    ] {
+        for field in fields {
+            let mut malformed = baseline.clone();
+            if table == "generation_event_cards" {
+                malformed[0]
+                    .as_object_mut()
+                    .expect("card object")
+                    .remove(*field);
+            } else {
+                malformed
+                    .as_object_mut()
+                    .expect("detail object")
+                    .remove(*field);
+            }
+            assert_projection_schema_fails(&pool, id, table, &malformed, baseline, field).await;
+        }
+    }
+    for (table, baseline, field, invalid) in [
+        (
+            "generation_event_cards",
+            &card,
+            "order_index",
+            serde_json::json!("1"),
+        ),
+        (
+            "generation_event_cards",
+            &card,
+            "required",
+            serde_json::json!("true"),
+        ),
+        (
+            "generation_event_cards",
+            &card,
+            "last_seen_at",
+            serde_json::json!("not-a-date"),
+        ),
+        (
+            "generation_procedure_details",
+            &detail,
+            "external_id",
+            serde_json::json!(42),
+        ),
+        (
+            "generation_procedure_details",
+            &detail,
+            "last_seen_at",
+            serde_json::json!("not-a-date"),
+        ),
+    ] {
+        let mut malformed = baseline.clone();
+        if table == "generation_event_cards" {
+            malformed[0][field] = invalid;
+        } else {
+            malformed[field] = invalid;
+        }
+        assert_projection_schema_fails(&pool, id, table, &malformed, baseline, field).await;
+    }
+    for (table, baseline, fields) in [
+        (
+            "generation_event_cards",
+            &card,
+            &[
+                "importance",
+                "organization_short_name",
+                "cost",
+                "official_url",
+            ][..],
+        ),
+        (
+            "generation_procedure_details",
+            &detail,
+            &["description", "organization_name", "official_url"][..],
+        ),
+    ] {
+        for field in fields {
+            let mut malformed = baseline.clone();
+            if table == "generation_event_cards" {
+                malformed[0][field] = serde_json::json!(42);
+            } else {
+                malformed[field] = serde_json::json!(42);
+            }
+            assert_projection_schema_fails(&pool, id, table, &malformed, baseline, field).await;
+        }
+    }
+    assert_projection_schema_fails(
+        &pool,
+        id,
+        "generation_event_cards",
+        &serde_json::json!({}),
+        &card,
+        "cards array",
+    )
+    .await;
+    drop(pool);
+    drop_db(&db_name).await;
+}
+
+async fn assert_projection_schema_fails(
+    pool: &sqlx::PgPool,
+    id: sqlx::types::Uuid,
+    table: &str,
+    malformed: &serde_json::Value,
+    baseline: &serde_json::Value,
+    field: &str,
+) {
+    let statement = match table {
+        "generation_event_cards" => {
+            "UPDATE generation_event_cards SET cards = $2 WHERE generation_id = $1 AND slug = 'alta-vehiculo'"
+        }
+        "generation_procedure_details" => {
+            "UPDATE generation_procedure_details SET details = $2 WHERE generation_id = $1 AND slug = '1001'"
+        }
+        _ => panic!("unexpected projection table"),
+    };
+    sqlx::query(statement)
+        .bind(id)
+        .bind(malformed)
+        .execute(pool)
+        .await
+        .expect("inject malformed projection");
+    let gate = db::generations::validate::validate_generation(pool, id, None).await;
+    sqlx::query(statement)
+        .bind(id)
+        .bind(baseline)
+        .execute(pool)
+        .await
+        .expect("restore projection");
+    let gate = gate
+        .unwrap_or_else(|error| panic!("{table}.{field} must yield a validation report: {error}"));
+    assert!(
+        gate.failures.iter().any(|failure| failure.kind == "schema"),
+        "{table}.{field} must fail schema validation: {:?}",
+        gate.failures
+    );
+}
+
 fn drifting_taxonomy() -> Taxonomy {
     // A taxonomy that does NOT match the projected catalog: its event set
     // differs from the built generation's events.
