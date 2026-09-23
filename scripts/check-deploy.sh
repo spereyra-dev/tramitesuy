@@ -189,10 +189,16 @@ grep -qE 'server[[:space:]]+api-prod:8080[[:space:]]+max_fails=' "$PROXY_CONF" \
   || fail "the proxy does not wire readiness to api-prod (passive health checks against the 503 cold start)"
 grep -q 'proxy_next_upstream.*http_503' "$PROXY_CONF" \
   || fail "the proxy does not treat the cold-start 503 as a failed upstream"
-grep -Eq '^[[:space:]]*location[[:space:]]+=[[:space:]]+/ready[[:space:]]*\{[[:space:]]*return[[:space:]]+404' "$PROXY_CONF" \
-  || fail "the public proxy must deny /ready (probes stay internal-only, outside the closed /api/v1 inventory)"
-grep -Eq '^[[:space:]]*location[^;]*metrics' "$PROXY_CONF" \
-  && fail "the proxy exposes a metrics location (metrics are internal only)"
+for internal_path in ready metrics; do
+  grep -Eq "^[[:space:]]*location[[:space:]]+=[[:space:]]+/${internal_path}[[:space:]]*\\{[[:space:]]*return[[:space:]]+404[[:space:]]*;[[:space:]]*\\}" "$PROXY_CONF" \
+    || fail "the public proxy must explicitly deny /$internal_path (outside the closed /api/v1 inventory)"
+  [ "$(grep -Ec "^[[:space:]]*location[^;]*[[:space:]]/${internal_path}[[:space:]]*\\{" "$PROXY_CONF")" -eq 1 ] \
+    || fail "the proxy has an additional /$internal_path location"
+done
+# The API port must not be host-published; only peers on the internal
+# compose network can scrape /metrics directly from api-prod:8080.
+echo "$cfg" | jq -e '(.services["api-prod"].ports // []) | length == 0' >/dev/null \
+  || fail "api-prod publishes its internal-only metrics port to the host"
 [ "$(grep -c 'proxy_pass' "$PROXY_CONF")" -eq 1 ] \
   || fail "the proxy routes through an unexpected number of upstreams"
 

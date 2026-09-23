@@ -5,7 +5,7 @@
 //! until C3.
 
 use axum::Router;
-use axum::extract::{MatchedPath, Request};
+use axum::extract::{MatchedPath, Request, State};
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::{get, post};
@@ -19,6 +19,9 @@ pub fn build_router(state: AppState) -> Router {
         // closed `/api/v1` inventory — the proxy uses it to hold traffic
         // back until the first valid snapshot load.
         .route("/ready", get(handlers::readiness::ready))
+        // Internal scrape only: the public HTTPS proxy explicitly denies
+        // /metrics, and api-prod has no published host port.
+        .route("/metrics", get(metrics))
         .route("/api/v1/search", get(handlers::search::search))
         .route("/api/v1/search/debug", get(handlers::search::debug))
         .route("/api/v1/search/feedback", post(handlers::feedback::create))
@@ -35,6 +38,18 @@ pub fn build_router(state: AppState) -> Router {
             observe_request,
         ))
         .with_state(state)
+}
+
+async fn metrics(
+    State(state): State<AppState>,
+) -> ([(axum::http::header::HeaderName, &'static str); 1], String) {
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        state.metrics.render_prometheus(),
+    )
 }
 
 /// Task 1 wiring: times every served request and reports route pattern +

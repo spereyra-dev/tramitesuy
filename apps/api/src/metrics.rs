@@ -9,9 +9,15 @@
 //! signatures make such labels unrepresentable, and `all_labels` lets tests
 //! audit everything the sink has been handed.
 //!
-//! The counters live behind this small trait seam so tests (and later an
-//! exporter) can read them without an exporter being part of the serving
-//! path. `MemoryMetrics` is the boot default.
+//! The counters live behind this small trait seam. `MemoryMetrics` is the
+//! boot default and exports a single locked snapshot at the internal `/metrics`
+//! endpoint. Stable Prometheus 0.0.4 names (all prefixed `tramitesuy_`):
+//! `requests_total` and `request_latency_microseconds_total` (route/status),
+//! `sql_ops_total` (route), `cache_events_total` (event), `cache_bytes`,
+//! `cache_entries`, `generation_state` (one-hot state), and
+//! `operational_alerts_total` (alert). A scrape does not count itself until
+//! after its response is rendered. Only the proxy's internal network exposes
+//! this endpoint; the public HTTPS listener denies it explicitly.
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -78,6 +84,8 @@ pub trait Metrics: Send + Sync + 'static {
     fn observe_generation_state(&self, state: GenerationState);
     /// One operational alert (publication lag, memory-budget rejection).
     fn observe_operational_alert(&self, alert: OperationalAlert);
+    /// A consistent, escaped Prometheus text snapshot (no query-derived labels).
+    fn render_prometheus(&self) -> String;
 }
 
 /// In-memory metric sink: the boot default and the test-readable seam.
@@ -205,4 +213,88 @@ impl Metrics for MemoryMetrics {
     fn observe_operational_alert(&self, alert: OperationalAlert) {
         *self.lock().alerts.entry(alert).or_insert(0) += 1;
     }
+
+    fn render_prometheus(&self) -> String {
+        use std::fmt::Write;
+        let memory = self.lock();
+        let mut out = String::new();
+        out.push_str("# TYPE tramitesuy_requests_total counter\n");
+        for ((route, status), (count, _)) in &memory.requests {
+            let _ = writeln!(
+                out,
+                "tramitesuy_requests_total{{route=\"{}\",status=\"{status}\"}} {count}",
+                escape_label(route)
+            );
+        }
+        out.push_str("# TYPE tramitesuy_request_latency_microseconds_total counter\n");
+        for ((route, status), (_, micros)) in &memory.requests {
+            let _ = writeln!(
+                out,
+                "tramitesuy_request_latency_microseconds_total{{route=\"{}\",status=\"{status}\"}} {micros}",
+                escape_label(route)
+            );
+        }
+        out.push_str("# TYPE tramitesuy_sql_ops_total counter\n");
+        for (route, ops) in &memory.sql_ops {
+            let _ = writeln!(
+                out,
+                "tramitesuy_sql_ops_total{{route=\"{}\"}} {ops}",
+                escape_label(route)
+            );
+        }
+        out.push_str("# TYPE tramitesuy_cache_events_total counter\n");
+        for (event, name) in [
+            (CacheEvent::Hit, "hit"),
+            (CacheEvent::Miss, "miss"),
+            (CacheEvent::Eviction, "eviction"),
+            (CacheEvent::Compute, "compute"),
+            (CacheEvent::Grouped, "grouped"),
+        ] {
+            let _ = writeln!(
+                out,
+                "tramitesuy_cache_events_total{{event=\"{name}\"}} {}",
+                memory.cache.get(&event).copied().unwrap_or(0)
+            );
+        }
+        out.push_str("# TYPE tramitesuy_cache_bytes gauge\n");
+        let _ = writeln!(out, "tramitesuy_cache_bytes {}", memory.cache_bytes);
+        out.push_str("# TYPE tramitesuy_cache_entries gauge\n");
+        let _ = writeln!(out, "tramitesuy_cache_entries {}", memory.cache_entries);
+        out.push_str("# TYPE tramitesuy_generation_state gauge\n");
+        for (state, active) in [
+            (
+                "not_loaded",
+                memory.generation == GenerationState::NotLoaded,
+            ),
+            ("active", memory.generation == GenerationState::Active),
+        ] {
+            let _ = writeln!(
+                out,
+                "tramitesuy_generation_state{{state=\"{state}\"}} {}",
+                u8::from(active)
+            );
+        }
+        out.push_str("# TYPE tramitesuy_operational_alerts_total counter\n");
+        for (alert, name) in [
+            (OperationalAlert::PublicationLag, "publication_lag"),
+            (OperationalAlert::MemoryBudget, "memory_budget"),
+            (OperationalAlert::WarmingFailed, "warming_failed"),
+        ] {
+            let _ = writeln!(
+                out,
+                "tramitesuy_operational_alerts_total{{alert=\"{name}\"}} {}",
+                memory.alerts.get(&alert).copied().unwrap_or(0)
+            );
+        }
+        out
+    }
+}
+
+/// Prometheus text label quoting (route patterns are low-cardinality, but
+/// escape even injected test labels so no malformed samples can be emitted).
+fn escape_label(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
 }
