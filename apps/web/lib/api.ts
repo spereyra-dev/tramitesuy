@@ -203,13 +203,19 @@ export async function apiFetch<T>(
   return { ok: true, data: (await response.json()) as T };
 }
 
+export class SearchApiError extends Error {
+  constructor(public readonly kind: ApiError['kind']) {
+    super(`search failed: ${kind}`);
+  }
+}
+
 /** GET /api/v1/search?q= (API-2). Empty queries are never submitted by the UI. */
 export async function search(q: string): Promise<SearchResponse> {
   const result = await apiFetch<SearchResponse>(
     `/api/v1/search?q=${encodeURIComponent(q)}`,
   );
   if (!result.ok) {
-    throw new Error(`search failed: ${result.error.kind}`);
+    throw new SearchApiError(result.error.kind);
   }
   return result.data;
 }

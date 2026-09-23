@@ -32,7 +32,7 @@ describe('semantic accessibility regression coverage', () => {
 
     expect(html).toMatch(/<label[^>]*for="situacion"[^>]*>Describí tu situación<\/label>/);
     expect(html).toMatch(/<input[^>]*id="situacion"[^>]*name="q"/);
-    expect(html).toMatch(/<input[^>]*aria-describedby="search-guidance"/);
+    expect(html).toMatch(/<input[^>]*aria-describedby="search-guidance search-limit"/);
     expect(html).toMatch(/<p[^>]*id="search-guidance"/);
   });
 

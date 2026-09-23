@@ -7,6 +7,23 @@
  * "Procedure card attribution display").
  */
 
+/**
+ * Mirrors the configurable API defaults in apps/api/src/config.rs (API_Q_MAX_CHARS
+ * and API_Q_MAX_BYTES). Rust configuration cannot be imported into the web app;
+ * deployments with overrides may differ and the API remains authoritative.
+ * apps/api/src/handlers/search.rs validates the trimmed q by Unicode scalars
+ * AND UTF-8 bytes before searching.
+ */
+export const SEARCH_QUERY_MAX_CHARS = 512;
+export const SEARCH_QUERY_MAX_BYTES = 2048;
+
+export function searchQueryTooLong(
+  query: string,
+  limits = { maxChars: SEARCH_QUERY_MAX_CHARS, maxBytes: SEARCH_QUERY_MAX_BYTES },
+): boolean {
+  return [...query].length > limits.maxChars || new TextEncoder().encode(query).length > limits.maxBytes;
+}
+
 export const SOURCE_LINK_UNAVAILABLE_COPY = 'Enlace a la fuente no disponible';
 export const LAST_SYNCED_UNAVAILABLE_COPY = 'Fecha de actualización no disponible';
 export const EMPTY_PROCEDURES_COPY = 'Aún no hay trámites vinculados a este evento';

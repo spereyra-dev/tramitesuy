@@ -6,6 +6,7 @@
  * fixture payloads recorded from the shipped handlers (design §5). No
  * browser, no DOM, no network.
  */
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToReadableStream } from 'react-dom/server';
 import { createElement, type ReactNode } from 'react';
@@ -63,6 +64,23 @@ async function renderSearchMode(body: SearchResponse): Promise<string> {
 }
 
 describe('home search result rendering', () => {
+  it('compacts only the searched hero and identifies results as an announced region', async () => {
+    const searched = await renderSearchMode(open);
+    expect(searched).toContain('class="home-hero home-hero--searched"');
+    expect(searched).toMatch(/<section[^>]*aria-labelledby="search-results-heading"[^>]*aria-live="polite"/);
+    expect(searched.indexOf('search-results--direct')).toBeGreaterThan(searched.indexOf('home-hero--searched'));
+    expect(searched).toContain('tabindex="-1"');
+    const css = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.home-hero--searched\s*\{[^}]*padding:\s*1rem/s);
+    expect(css).toMatch(/\.home-hero--searched \.home-intro,[^}]*display:\s*none/s);
+    vi.stubGlobal('fetch', vi.fn(async () => fixtureResponse({ categories: [] })));
+    const home = await HomePage({ searchParams: Promise.resolve({}) });
+    const stream = await renderToReadableStream(home);
+    await stream.allReady;
+    const homeHtml = await new Response(stream).text();
+    expect(homeHtml).toContain('class="home-hero"');
+    expect(homeHtml).not.toContain('home-hero--searched');
+  });
   it('gives each returned search mode a named, visually targetable result region while retaining official attribution', async () => {
     const openHtml = await renderSearchMode(open);
     const disambiguationHtml = await renderSearchMode(disambiguation);

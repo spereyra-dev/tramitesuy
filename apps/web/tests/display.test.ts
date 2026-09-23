@@ -13,7 +13,22 @@ import {
   requiredFlagCopy,
   sourceLinkState,
   formatLastSyncedAt,
+  searchQueryTooLong,
 } from '@/lib/display';
+
+describe('search query API default limits', () => {
+  it('counts Unicode scalars rather than UTF-16 code units at 512', () => {
+    expect(searchQueryTooLong('😀'.repeat(512))).toBe(false); // 512 scalars, 2048 UTF-8 bytes.
+    expect(searchQueryTooLong('😀'.repeat(513))).toBe(true);
+    expect(searchQueryTooLong('á'.repeat(512))).toBe(false); // 1024 UTF-8 bytes.
+    expect(searchQueryTooLong('á'.repeat(513))).toBe(true);
+  });
+
+  it('enforces an independently configured UTF-8 byte limit', () => {
+    expect(searchQueryTooLong('á'.repeat(4), { maxChars: 10, maxBytes: 8 })).toBe(false);
+    expect(searchQueryTooLong('á'.repeat(5), { maxChars: 10, maxBytes: 8 })).toBe(true);
+  });
+});
 
 describe('display helpers: required flag', () => {
   it('labels required procedures as Obligatorio', () => {

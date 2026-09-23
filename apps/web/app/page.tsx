@@ -6,9 +6,9 @@
 import Link from 'next/link';
 
 import { ProcedureCard } from '@/components/ProcedureCard';
-import { SearchForm } from '@/components/SearchForm';
-import { getCategories, search } from '@/lib/api';
-import { EMPTY_PROCEDURES_COPY } from '@/lib/display';
+import { SearchForm, SearchResultsHeading } from '@/components/SearchForm';
+import { getCategories, search, SearchApiError } from '@/lib/api';
+import { EMPTY_PROCEDURES_COPY, SEARCH_QUERY_MAX_CHARS, searchQueryTooLong } from '@/lib/display';
 import { searchView } from '@/lib/search-view';
 import type { SearchView } from '@/lib/search-view';
 
@@ -23,7 +23,7 @@ export default async function HomePage({
 
   return (
     <div className="home-page">
-      <header className="home-hero">
+      <header className={query ? 'home-hero home-hero--searched' : 'home-hero'}>
         <p className="home-eyebrow">Orientación para trámites del Estado</p>
         <h1>¿Qué trámite necesitás hacer?</h1>
         <p className="home-intro">
@@ -100,13 +100,40 @@ function BrowseCategoriesPrompt() {
 }
 
 async function SearchResults({ query }: { query: string }) {
-  const view = searchView(await search(query));
+  if (searchQueryTooLong(query)) return <SearchFailure query={query} invalid />;
+  let response: Awaited<ReturnType<typeof search>>;
+  try {
+    response = await search(query);
+  } catch (error) {
+    if (error instanceof SearchApiError) {
+      return <SearchFailure query={query} invalid={error.kind === 'bad-request'} />;
+    }
+    throw error;
+  }
+  const view = searchView(response);
 
   if (view.kind === 'open') return <OpenResult query={query} view={view} />;
   if (view.kind === 'disambiguation') {
     return <Disambiguation query={query} view={view} />;
   }
   return <Categories query={query} view={view} />;
+}
+
+function SearchFailure({ query, invalid }: { query: string; invalid: boolean }) {
+  return (
+    <section className="search-results search-results--error" aria-labelledby="search-results-heading" role="region" aria-live="polite">
+      <SearchResultsHeading key={query} query={query}>
+        {invalid ? 'La búsqueda no es válida' : 'No pudimos consultar los trámites'}
+      </SearchResultsHeading>
+      <p>{invalid ? `Probá con una consulta de hasta ${SEARCH_QUERY_MAX_CHARS} caracteres.` : 'El servicio no está disponible por ahora. Tu búsqueda se conserva.'}</p>
+      {!invalid && (
+        <form method="get" action="/">
+          <input type="hidden" name="q" value={query} />
+          <button className="retry-button" type="submit">Reintentar búsqueda</button>
+        </form>
+      )}
+    </section>
+  );
 }
 
 function OpenResult({
@@ -119,11 +146,11 @@ function OpenResult({
   return (
     <section
       className="search-results search-results--direct"
-      aria-labelledby="search-results-heading"
+      aria-labelledby="search-results-heading" role="region" aria-live="polite"
     >
       <div className="result-heading">
         <p className="section-kicker">Resultado para “{query}”</p>
-        <h2 id="search-results-heading">Encontramos una situación relacionada</h2>
+        <SearchResultsHeading key={query} query={query}>Encontramos una situación relacionada</SearchResultsHeading>
         <p>
           <Link href={view.eventHref}>{view.eventName}</Link>
         </p>
@@ -154,10 +181,10 @@ function Disambiguation({
   return (
     <section
       className="search-results search-results--disambiguation"
-      aria-labelledby="search-results-heading"
+      aria-labelledby="search-results-heading" role="region" aria-live="polite"
     >
       <p className="section-kicker">Resultados para “{query}”</p>
-      <h2 id="search-results-heading">{view.heading}</h2>
+      <SearchResultsHeading key={query} query={query}>{view.heading}</SearchResultsHeading>
       <p className="result-description">
         Elegí la situación que mejor describa lo que necesitás resolver.
       </p>
@@ -182,10 +209,10 @@ function Categories({
   return (
     <section
       className="search-results search-results--categories"
-      aria-labelledby="search-results-heading"
+      aria-labelledby="search-results-heading" role="region" aria-live="polite"
     >
       <p className="section-kicker">No encontramos una coincidencia directa para “{query}”</p>
-      <h2 id="search-results-heading">Explorá por categoría</h2>
+      <SearchResultsHeading key={query} query={query}>Explorá por categoría</SearchResultsHeading>
       <p className="result-description">
         Elegí un tema para seguir descubriendo trámites oficiales.
       </p>

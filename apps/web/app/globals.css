@@ -205,6 +205,18 @@ a:hover {
   text-align: center;
 }
 
+/* A searched page keeps the search editable but brings results into view. */
+.home-hero--searched {
+  margin-bottom: 0.75rem;
+  padding: 1rem clamp(1.25rem, 4vw, 3rem);
+}
+
+.home-hero--searched .home-eyebrow,
+.home-hero--searched .home-intro,
+.home-hero--searched .home-reassurance { display: none; }
+
+.home-hero--searched h1 { font-size: 1.35rem; }
+.home-hero--searched .search-form { margin-top: 0.5rem; }
 .home-eyebrow {
   margin: 0 0 0.6rem;
   color: #c9d3ee;
@@ -260,6 +272,13 @@ a:hover {
   font-size: 0.95rem;
 }
 
+.search-limit {
+  margin: 0.3rem 0 0;
+  color: #e3e8f6;
+  font-size: 0.85rem;
+  text-align: left;
+}
+
 .search-controls {
   display: grid;
   gap: 0.25rem;
@@ -305,6 +324,8 @@ a:hover {
 .search-controls button:hover {
   background: var(--blue-dark);
 }
+
+.search-controls button:disabled { opacity: 0.65; cursor: wait; }
 
 .search-controls button:active {
   transform: translateY(1px);
@@ -398,6 +419,25 @@ a:hover {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+.search-results--error {
+  border-top: 0.4rem solid var(--amber);
+  background: var(--amber-soft);
+}
+
+.retry-button {
+  min-height: 48px;
+  margin-top: 0.75rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--blue-dark);
+  border-radius: 0.25rem;
+  background: var(--blue);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.retry-button:hover { background: var(--blue-dark); }
 
 .search-results--direct {
   border-top: 0.4rem solid var(--blue);
