@@ -381,13 +381,21 @@ pub async fn write_projections(pool: &PgPool, generation_id: Uuid) -> Result<(),
     tx.commit().await?;
 
     let mut tx = pool.begin().await?;
+    // The projection stores both the combined de-accented `fts_text` and the
+    // exact weighted `fts_tsvector` the legacy `life_events.generated_tsvector`
+    // carries (name='A' + description='B', `simple` config, unaccented through
+    // `public.unaccent_immutable`). The provider ranks `fts_tsvector`, so the
+    // generation-scoped ranking is identical to the legacy one.
     sqlx::query!(
-        r#"INSERT INTO generation_fts_text (generation_id, slug, fts_text)
+        r#"INSERT INTO generation_fts_text (generation_id, slug, fts_text, fts_tsvector)
            SELECT $1, e.slug,
-                  public.unaccent_immutable(e.name || ' ' || COALESCE(e.description, ''))
+                  public.unaccent_immutable(e.name || ' ' || COALESCE(e.description, '')),
+                  setweight(to_tsvector('simple', public.unaccent_immutable(coalesce(e.name, ''))), 'A') ||
+                  setweight(to_tsvector('simple', public.unaccent_immutable(coalesce(e.description, ''))), 'B')
            FROM life_events e
            ON CONFLICT (generation_id, slug) DO UPDATE
-               SET fts_text = EXCLUDED.fts_text"#,
+               SET fts_text = EXCLUDED.fts_text,
+                   fts_tsvector = EXCLUDED.fts_tsvector"#,
         generation_id,
     )
     .execute(&mut *tx)
@@ -395,19 +403,18 @@ pub async fn write_projections(pool: &PgPool, generation_id: Uuid) -> Result<(),
     tx.commit().await?;
 
     let mut tx = pool.begin().await?;
-    // Exact legacy trigram-surface replication (design §2.2): name plus the
-    // positive keywords with their canonical terms — negatives excluded —
-    // including the trailing space the legacy
-    // `e.name || ' ' || COALESCE(kw.terms, '')` composition produced for
-    // keyword-less events, so the precomputed `similarity()` values are
-    // identical to the per-request computation.
+    // Same content as the legacy trigram surface (design §2.2): name plus
+    // positive terms and canonical terms, negatives excluded. Both aggregates
+    // now sort by (term, type), so byte ordering is pinned for new builds;
+    // older captured surfaces remain immutable. Preserve the trailing space
+    // for events without keywords.
     sqlx::query!(
         r#"INSERT INTO generation_trigram_surface (generation_id, slug, surface_text)
            SELECT $1, e.slug, e.name || ' ' || COALESCE(kw.terms, '')
            FROM life_events e
            LEFT JOIN (
                SELECT life_event_id,
-                      string_agg(term || ' ' || COALESCE(canonical_term, ''), ' ') AS terms
+                      string_agg(term || ' ' || COALESCE(canonical_term, ''), ' ' ORDER BY term, type) AS terms
                FROM life_event_keywords
                WHERE NOT negative
                GROUP BY life_event_id

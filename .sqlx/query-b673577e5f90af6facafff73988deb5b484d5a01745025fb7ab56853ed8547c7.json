@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT g.slug AS \"slug!\",\n                              similarity(g.surface_text, $2) AS \"sim!\"\n                       FROM generation_trigram_surface g\n                       JOIN generation_life_events e\n                         ON e.generation_id = g.generation_id AND e.slug = g.slug\n                       WHERE g.generation_id = $1\n                         AND e.status = 'active'\n                         AND similarity(g.surface_text, $2) > $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "generation_trigram_surface",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "sim!",
+        "type_info": "Float4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Float4"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "b673577e5f90af6facafff73988deb5b484d5a01745025fb7ab56853ed8547c7"
+}

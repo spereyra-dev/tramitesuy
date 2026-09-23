@@ -775,3 +775,111 @@ async fn retired_event_telemetry_survives_the_event_delete() {
 
     common::drop_test_db(&name).await;
 }
+
+// A pre-0019 generation has only the immutable combined text. After 0019,
+// that same generation must remain searchable without consulting life_events.
+#[tokio::test]
+async fn generation_fts_backfills_existing_projection_text() {
+    let (pool, name) = common::fresh_provisioned_db().await;
+    let embedded = sqlx::migrate!("../../migrations");
+    let through_0018 = sqlx::migrate::Migrator {
+        migrations: std::borrow::Cow::Owned(
+            embedded
+                .migrations
+                .iter()
+                .filter(|m| m.version <= 18)
+                .cloned()
+                .collect(),
+        ),
+        ..sqlx::migrate::Migrator::DEFAULT
+    };
+    through_0018.run(&pool).await.expect("apply through 0018");
+
+    let generation_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO catalog_generations \
+         (generation_id, content_hash, taxonomy_version, engine_version, source_synced_at, event_count, procedure_count, projection_status) \
+         VALUES (gen_random_uuid(), 'pre-0019', 'taxonomy', 'engine', now(), 1, 0, 'complete') \
+         RETURNING generation_id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("seed pre-0019 generation");
+    sqlx::query(
+        "INSERT INTO generation_fts_text (generation_id, slug, fts_text) \
+         VALUES ($1, 'old-event', 'registro de vehiculos')",
+    )
+    .bind(generation_id)
+    .execute(&pool)
+    .await
+    .expect("seed immutable FTS projection before 0019");
+
+    embedded.run(&pool).await.expect("apply 0019");
+    let (vector_is_empty, has_old_lexeme): (bool, bool) = sqlx::query_as(
+        "SELECT fts_tsvector = ''::tsvector, \
+                fts_tsvector @@ plainto_tsquery('simple', 'vehiculos') \
+         FROM generation_fts_text WHERE generation_id = $1 AND slug = 'old-event'",
+    )
+    .bind(generation_id)
+    .fetch_one(&pool)
+    .await
+    .expect("read migrated vector");
+    assert!(
+        !vector_is_empty,
+        "0019 must backfill existing generations from their own fts_text"
+    );
+    assert!(
+        has_old_lexeme,
+        "the old generation must remain FTS-searchable"
+    );
+
+    common::drop_test_db(&name).await;
+}
+
+// WU-5a (F15/T12): the generation FTS projection carries its own weighted
+// tsvector so the provider can rank the requested generation without reading
+// the mutable `life_events.generated_tsvector`, plus the GIN index the
+// `fts_tsvector @@ tsquery` predicate needs.
+#[tokio::test]
+async fn generation_fts_text_has_a_weighted_tsvector_column_and_gin_index() {
+    let (pool, name) = common::fresh_migrated_db().await;
+
+    let column_type: String = sqlx::query_scalar(
+        "SELECT data_type FROM information_schema.columns \
+         WHERE table_schema = 'public' AND table_name = 'generation_fts_text' \
+         AND column_name = 'fts_tsvector'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("fts_tsvector column exists");
+    assert_eq!(
+        column_type, "tsvector",
+        "generation_fts_text.fts_tsvector must be a tsvector"
+    );
+
+    let index_definition: String = sqlx::query_scalar(
+        "SELECT pg_get_indexdef(index_definition.indexrelid) \
+         FROM pg_index index_definition \
+         WHERE index_definition.indrelid = 'generation_fts_text'::regclass \
+           AND index_definition.indisvalid \
+           AND pg_get_indexdef(index_definition.indexrelid) \
+               LIKE '% USING gin (fts_tsvector)'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("the fts_tsvector GIN index exists");
+    assert!(
+        index_definition.contains("fts_tsvector"),
+        "the GIN index must target generation_fts_text.fts_tsvector, got: {index_definition}"
+    );
+
+    // Idempotent re-run: the migration is recorded once and never reapplied.
+    common::apply_migrations(&pool).await;
+    let applied: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations WHERE version = 19")
+            .fetch_one(&pool)
+            .await
+            .expect("count migration records");
+    assert_eq!(applied, 1, "re-running migrations must not reapply 0019");
+
+    common::drop_test_db(&name).await;
+}

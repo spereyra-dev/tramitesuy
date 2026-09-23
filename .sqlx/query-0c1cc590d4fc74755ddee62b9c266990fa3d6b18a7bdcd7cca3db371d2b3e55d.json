@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO generation_fts_text (generation_id, slug, fts_text, fts_tsvector)\n           SELECT $1, e.slug,\n                  public.unaccent_immutable(e.name || ' ' || COALESCE(e.description, '')),\n                  setweight(to_tsvector('simple', public.unaccent_immutable(coalesce(e.name, ''))), 'A') ||\n                  setweight(to_tsvector('simple', public.unaccent_immutable(coalesce(e.description, ''))), 'B')\n           FROM life_events e\n           ON CONFLICT (generation_id, slug) DO UPDATE\n               SET fts_text = EXCLUDED.fts_text,\n                   fts_tsvector = EXCLUDED.fts_tsvector",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0c1cc590d4fc74755ddee62b9c266990fa3d6b18a7bdcd7cca3db371d2b3e55d"
+}

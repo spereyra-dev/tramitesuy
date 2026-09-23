@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH q AS (SELECT plainto_tsquery('simple', $2) AS tsq)\n                       SELECT g.slug AS \"slug!\", ts_rank(g.fts_tsvector, q.tsq) AS \"rank!\"\n                       FROM generation_fts_text g\n                       JOIN generation_life_events e\n                         ON e.generation_id = g.generation_id AND e.slug = g.slug\n                       CROSS JOIN q\n                       WHERE g.generation_id = $1\n                         AND e.status = 'active'\n                         AND g.fts_tsvector @@ q.tsq",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slug!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "generation_fts_text",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "rank!",
+        "type_info": "Float4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "e5bba0663ca411981662234ff404b6751f131d4a83797f36722055a8ec5f8411"
+}

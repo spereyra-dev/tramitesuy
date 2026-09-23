@@ -24,9 +24,8 @@ use search::normalizer::normalize;
 use search::types::NormalizedQuery;
 use uuid::Uuid;
 
-/// The generation placeholder the provider tests hand through the async
-/// seam (S4b task 10): legacy tables are not generation-scoped yet.
-const GENERATION: Uuid = Uuid::nil();
+/// Cold-start sentinel: no durable generation has been adopted yet.
+const GENERATION: Uuid = db::providers::LEGACY_GENERATION_ID;
 
 /// Seeds two events: `alta-vehiculo` (name/description lexemes that match the
 /// `alta vehiculo` tsquery, one positive keyword, one negative keyword) and
@@ -161,7 +160,7 @@ async fn pre_async_trigram_candidates(
     let rows: Vec<(String, f32)> = sqlx::query_as(
         "WITH kw AS ( \
              SELECT life_event_id, \
-                    string_agg(term || ' ' || COALESCE(canonical_term, ''), ' ') AS terms \
+                    string_agg(term || ' ' || COALESCE(canonical_term, ''), ' ' ORDER BY term, type) AS terms \
              FROM life_event_keywords \
              WHERE NOT negative \
              GROUP BY life_event_id \
@@ -188,6 +187,55 @@ async fn pre_async_trigram_candidates(
             })
         })
         .collect())
+}
+
+/// The nil sentinel means cold start, not an older durable generation.
+/// Before adoption it searches mutable legacy surfaces; an unknown non-nil
+/// generation must not silently fall back to those same rows.
+#[tokio::test(flavor = "multi_thread")]
+async fn nil_generation_uses_only_the_cold_start_fallback() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_provider_fixture(&pool).await;
+    assert_eq!(GENERATION, Uuid::nil());
+    let fts = db::providers::fts::FtsProvider::new(pool.clone());
+    let trigram = db::providers::trigram::TrigramProvider::new(pool.clone());
+    assert!(
+        fts.candidates(GENERATION, &query_of("alta vehiculo"))
+            .await
+            .expect("cold-start FTS")
+            .iter()
+            .any(|c| c.event_slug == "alta-vehiculo")
+    );
+    assert!(
+        trigram
+            .candidates(GENERATION, &query_of("registro vehiculo"))
+            .await
+            .expect("cold-start trigram")
+            .iter()
+            .any(|c| c.event_slug == "alta-vehiculo")
+    );
+    let unknown = Uuid::now_v7();
+    assert!(
+        fts.candidates(unknown, &query_of("alta vehiculo"))
+            .await
+            .expect("unknown generation FTS")
+            .is_empty()
+    );
+    assert!(
+        trigram
+            .candidates(unknown, &query_of("registro vehiculo"))
+            .await
+            .expect("unknown generation trigram")
+            .is_empty()
+    );
+    let built = db::generations::build::build_generation(&pool, "taxonomy-cold-start")
+        .await
+        .expect("mint durable generation");
+    assert_ne!(
+        built.generation_id, GENERATION,
+        "durable builds never mint the nil sentinel"
+    );
+    drop_db(&db_name).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -522,8 +570,8 @@ async fn no_embedding_implementation_exists_in_the_db_crate() {
 // ---------------------------------------------------------------------------
 // Task 16 (S6, design §2.2): the generation-scoped trigram provider reads the
 // precomputed `generation_trigram_surface` written at build time. It must
-// replicate the legacy per-request `string_agg` composition exactly — the
-// same canonical terms, the same negative-keyword exclusion, the same
+// replicate the legacy per-request content, with ordered keyword bytes for
+// new builds — the same canonical terms, negative-keyword exclusion, and
 // `round(similarity * 10)` scale and the same strict `>` threshold — with the
 // threshold applied through `SET LOCAL pg_trgm.similarity_threshold` inside
 // the provider transaction instead of the pool session state.
@@ -541,7 +589,7 @@ async fn generation_trigram_provider_implements_the_candidate_provider_trait() {
 
 /// Equivalence RED: for the same generation, the precomputed surface must
 /// yield identical candidates (same similarity values after the round scale,
-/// same threshold, same exclusions) as the legacy per-request `string_agg`
+/// same threshold, same exclusions) as the ordered legacy `string_agg`
 /// query over task 3's representative catalog fixture.
 #[tokio::test(flavor = "multi_thread")]
 async fn generation_trigram_provider_matches_the_legacy_computation_on_the_task3_catalog_fixture() {
@@ -679,6 +727,191 @@ async fn generation_trigram_threshold_does_not_depend_on_pool_session_state() {
             .any(|c| c.event_slug == "alta-vehiculo"),
         "the expected candidate survives the tainted session state: {tainted_pool_candidates:?}"
     );
+
+    drop_db(&db_name).await;
+}
+
+// ---------------------------------------------------------------------------
+// WU-5a (F15 / T12): generation isolation for the candidate providers. Both
+// providers receive the serving generation id; each must rank the REQUESTED
+// generation's immutable projection, never the mutable legacy tables, whose
+// content can be NEWER than the captured generation after a rollback.
+// ---------------------------------------------------------------------------
+
+/// Mutates the mutable taxonomy AFTER the first generation was built:
+/// renames the matching event, drops its positive keyword, and gives it a
+/// different one. A generation-blind provider would then rank this NEW
+/// content even when asked for the OLD generation.
+async fn mutate_provider_fixture(pool: &sqlx::PgPool) {
+    sqlx::query(
+        "UPDATE life_events SET name = 'Cambio de titularidad', \
+         description = 'Transferencia de un automotor.' \
+         WHERE slug = 'alta-vehiculo'",
+    )
+    .execute(pool)
+    .await
+    .expect("rename the fixture event");
+    sqlx::query(
+        "DELETE FROM life_event_keywords \
+         WHERE life_event_id = (SELECT id FROM life_events WHERE slug = 'alta-vehiculo')",
+    )
+    .execute(pool)
+    .await
+    .expect("drop the old positive keyword");
+    sqlx::query(
+        "INSERT INTO life_event_keywords (life_event_id, term, type, weight, negative) \
+         SELECT id, 'transferencia', 'ACTION', 5, false FROM life_events \
+         WHERE slug = 'alta-vehiculo'",
+    )
+    .execute(pool)
+    .await
+    .expect("add the new positive keyword");
+}
+
+/// RED (WU-5a): the FTS provider must rank the requested generation's own
+/// captured vector. The mutable table now carries the NEW content, so a
+/// generation-blind query returns the newest taxonomy for the OLD id.
+#[tokio::test(flavor = "multi_thread")]
+async fn fts_provider_ranks_the_requested_generation_not_the_newest() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_provider_fixture(&pool).await;
+    let old = db::generations::build::build_generation(&pool, "taxonomy-g1")
+        .await
+        .expect("old generation builds");
+    mutate_provider_fixture(&pool).await;
+    let new = db::generations::build::build_generation(&pool, "taxonomy-g2")
+        .await
+        .expect("new generation builds");
+    assert_ne!(
+        old.generation_id, new.generation_id,
+        "changed content must mint a new generation"
+    );
+
+    let fts = db::providers::fts::FtsProvider::new(pool.clone());
+    let old_match = fts
+        .candidates(old.generation_id, &query_of("alta vehiculo"))
+        .await
+        .expect("fts query for the old generation");
+    assert!(
+        old_match.iter().any(|c| c.event_slug == "alta-vehiculo"),
+        "the requested OLD generation must rank its own captured name, got: {old_match:?}"
+    );
+    let old_blind = fts
+        .candidates(old.generation_id, &query_of("titularidad"))
+        .await
+        .expect("fts query for the old generation");
+    assert!(
+        !old_blind.iter().any(|c| c.event_slug == "alta-vehiculo"),
+        "the OLD generation must not see the NEW content, got: {old_blind:?}"
+    );
+
+    let new_match = fts
+        .candidates(new.generation_id, &query_of("titularidad"))
+        .await
+        .expect("fts query for the new generation");
+    assert!(
+        new_match.iter().any(|c| c.event_slug == "alta-vehiculo"),
+        "the requested NEW generation must rank its own captured name, got: {new_match:?}"
+    );
+
+    drop_db(&db_name).await;
+}
+
+/// RED (WU-5a): the trigram provider must score the requested generation's
+/// own precomputed surface, never the mutable name/keywords.
+#[tokio::test(flavor = "multi_thread")]
+async fn trigram_provider_ranks_the_requested_generation_not_the_newest() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_provider_fixture(&pool).await;
+    let old = db::generations::build::build_generation(&pool, "taxonomy-g1")
+        .await
+        .expect("old generation builds");
+    mutate_provider_fixture(&pool).await;
+    let new = db::generations::build::build_generation(&pool, "taxonomy-g2")
+        .await
+        .expect("new generation builds");
+    assert_ne!(
+        old.generation_id, new.generation_id,
+        "changed content must mint a new generation"
+    );
+
+    let trigram = db::providers::trigram::TrigramProvider::new(pool.clone());
+    let old_match = trigram
+        .candidates(old.generation_id, &query_of("registro vehiculo"))
+        .await
+        .expect("trigram query for the old generation");
+    assert!(
+        old_match.iter().any(|c| c.event_slug == "alta-vehiculo"),
+        "the requested OLD generation must rank its own captured surface, got: {old_match:?}"
+    );
+    let old_blind = trigram
+        .candidates(old.generation_id, &query_of("transferencia titularidad"))
+        .await
+        .expect("trigram query for the old generation");
+    assert!(
+        !old_blind.iter().any(|c| c.event_slug == "alta-vehiculo"),
+        "the OLD generation must not see the NEW surface, got: {old_blind:?}"
+    );
+
+    let new_match = trigram
+        .candidates(new.generation_id, &query_of("transferencia titularidad"))
+        .await
+        .expect("trigram query for the new generation");
+    assert!(
+        new_match.iter().any(|c| c.event_slug == "alta-vehiculo"),
+        "the requested NEW generation must rank its own captured surface, got: {new_match:?}"
+    );
+
+    drop_db(&db_name).await;
+}
+
+/// TRIANGULATE (WU-5a): the generation FTS projection carries the EXACT
+/// legacy weighting. Before any mutation, `generation_fts_text.fts_tsvector`
+/// must equal `life_events.generated_tsvector` for the same content, and the
+/// generation-scoped provider's ranked value must equal the legacy reference
+/// for known queries — proving the scoping change did not alter ranking.
+#[tokio::test(flavor = "multi_thread")]
+async fn generation_fts_projection_preserves_the_legacy_weighting() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_provider_fixture(&pool).await;
+    let report = db::generations::build::build_generation(&pool, "taxonomy-weighting")
+        .await
+        .expect("generation builds");
+
+    // Exact vector equality: the projection reproduces the legacy expression
+    // (name='A' + description='B', `simple` config, unaccent_immutable).
+    let mismatches: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM generation_fts_text g \
+         JOIN life_events e ON e.slug = g.slug \
+         WHERE g.generation_id = $1 \
+           AND g.fts_tsvector IS DISTINCT FROM e.generated_tsvector",
+    )
+    .bind(report.generation_id)
+    .fetch_one(&pool)
+    .await
+    .expect("compare the projected and legacy vectors");
+    assert_eq!(
+        mismatches, 0,
+        "the projection must store the exact legacy weighted vector"
+    );
+
+    // Ranked-value equality against the pre-async legacy reference.
+    let fts = db::providers::fts::FtsProvider::new(pool.clone());
+    for probe in ["alta vehiculo", "registro vehiculo", "vehiculo"] {
+        let normalized = query_of(probe);
+        let generation = fts
+            .candidates(report.generation_id, &normalized)
+            .await
+            .expect("generation-scoped provider succeeds");
+        let reference = pre_async_fts_candidates(&pool, &normalized)
+            .await
+            .expect("legacy reference query succeeds");
+        assert_eq!(
+            canonical_candidates(generation),
+            canonical_candidates(reference),
+            "the generation-scoped FTS ranking must match the legacy weighting for {probe:?}"
+        );
+    }
 
     drop_db(&db_name).await;
 }

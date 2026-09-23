@@ -194,3 +194,45 @@ async fn section_hit_g2(state: &api::state::AppState) {
     let (status, _) = request(&app, "GET", &format!("{SEARCH}?q={G2_QUERY}")).await;
     assert_eq!(status, StatusCode::OK);
 }
+
+/// WU-5a (F15/T12): the serving path ranks the captured generation's
+/// immutable FTS projection, not the mutable `life_events` that a later
+/// taxonomy change rewrites. The generation is loaded first, then the
+/// mutable table is rewritten to content the probe does NOT match; a
+/// generation-blind provider would contribute nothing, but the captured
+/// generation's own surface still ranks the event.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_serving_path_ranks_the_captured_generation_fts_projection() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_search_fixture(&pool).await;
+    publish_sample_generation(&pool).await;
+    let app = spawn_app_with_generation(pool.clone()).await;
+
+    // Rewrite the MUTABLE taxonomy after the generation was captured: the
+    // probe (`adquisicion rodados`) no longer matches `life_events`.
+    sqlx::query(
+        "UPDATE life_events SET name = 'Comprar un vehiculo usado', \
+         description = 'Todo sobre comprar un vehiculo.' \
+         WHERE slug = 'comprar-vehiculo'",
+    )
+    .execute(&pool)
+    .await
+    .expect("mutate the mutable taxonomy after the capture");
+
+    let (status, body) = request(&app, "GET", "/api/v1/search/debug?q=adquisicion%20rodados").await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let results = body["results"].as_array().expect("results array");
+    let result = results
+        .iter()
+        .find(|r| r["slug"] == "comprar-vehiculo")
+        .expect("the captured generation still ranks the event: {body}");
+    let entries = result["explanation"].as_array().expect("explanation array");
+    assert!(
+        entries
+            .iter()
+            .any(|e| e["rule"] == "FTS_TEXT" && e["value"].as_i64().unwrap_or(0) > 0),
+        "the FTS contribution must come from the captured generation, got: {entries:?}"
+    );
+
+    common_drop(&db_name).await;
+}

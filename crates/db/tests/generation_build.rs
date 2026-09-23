@@ -301,6 +301,52 @@ async fn interrupted_build_leaves_building_status_and_incomplete_projections() {
     drop_db(&db_name).await;
 }
 
+/// Keyword insertion order cannot decide the bytes of a generation's
+/// captured trigram surface: the positive terms are sorted by term and type.
+#[tokio::test(flavor = "multi_thread")]
+async fn trigram_surface_orders_positive_keywords_independent_of_insert_order() {
+    let (pool, db_name) = fresh_migrated_db().await;
+    seed_small_catalog(&pool).await;
+    sqlx::query(
+        "INSERT INTO life_event_keywords (life_event_id, term, type, weight) \
+         SELECT id, 'abrir', 'ACTION', 1 FROM life_events WHERE slug = 'alta-vehiculo'",
+    )
+    .execute(&pool)
+    .await
+    .expect("insert a lexically earlier keyword last");
+    let report = db::generations::build::build_generation(&pool, "taxonomy-order")
+        .await
+        .expect("build generation");
+    let actual: String = sqlx::query_scalar(
+        "SELECT surface_text FROM generation_trigram_surface \
+         WHERE generation_id = $1 AND slug = 'alta-vehiculo'",
+    )
+    .bind(report.generation_id)
+    .fetch_one(&pool)
+    .await
+    .expect("read deterministic trigram surface");
+    assert_eq!(
+        actual, "Alta de vehículos abrir  registro  vehiculo auto",
+        "positive keywords must be aggregated by term and type, not insertion order"
+    );
+    let legacy_surface: String = sqlx::query_scalar(
+        "SELECT e.name || ' ' || COALESCE(\
+             (SELECT string_agg(k.term || ' ' || COALESCE(k.canonical_term, ''), ' ' \
+                     ORDER BY k.term, k.type) \
+              FROM life_event_keywords k \
+              WHERE k.life_event_id = e.id AND NOT k.negative), '') \
+         FROM life_events e WHERE e.slug = 'alta-vehiculo'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("read ordered legacy surface");
+    assert_eq!(
+        actual, legacy_surface,
+        "byte parity requires both aggregates to pin the same ordering"
+    );
+    drop_db(&db_name).await;
+}
+
 /// The projection content itself follows today's canonical rules: the
 /// trigram surface is the name plus the positive keywords with their
 /// canonical terms (negatives excluded), matching the legacy provider's
@@ -322,34 +368,11 @@ async fn trigram_surface_replicates_the_legacy_canonical_rules() {
     .fetch_one(&pool)
     .await
     .expect("trigram surface row exists");
-    // Canonical rules: name + positive keywords with their canonical terms;
-    // negatives excluded. The legacy `string_agg` carries no ORDER BY (its
-    // row order is an aggregate artifact), so the precomputed surface only
-    // promises the same token multiset — the provider equivalence tests
-    // compare the resulting similarity values, not aggregate order.
+    // New builds pin the aggregate by (term, type); content excludes negative
+    // keywords, and a NULL canonical term retains its internal space.
     assert_eq!(
-        {
-            let mut tokens: Vec<String> = surface.split_whitespace().map(str::to_string).collect();
-            tokens.sort();
-            tokens
-        },
-        {
-            let mut expected: Vec<String> = vec![
-                "Alta".to_string(),
-                "auto".to_string(),
-                "de".to_string(),
-                "registro".to_string(),
-                "vehículos".to_string(),
-                "vehiculo".to_string(),
-            ];
-            expected.sort();
-            expected
-        },
-        "surface = name + positive keywords with their canonical terms (negatives excluded)"
-    );
-    assert!(
-        surface.ends_with(' '),
-        "a keyword without a canonical term keeps the legacy `term || ' '` trailing space"
+        surface, "Alta de vehículos registro  vehiculo auto",
+        "surface = name + ordered positive keywords and canonical terms"
     );
 
     let no_keywords_surface: String = sqlx::query_scalar(
@@ -377,6 +400,23 @@ async fn trigram_surface_replicates_the_legacy_canonical_rules() {
     assert!(
         fts_text.contains("Alta de vehiculos"),
         "the FTS surface is de-accented through the unaccent wrapper, got: {fts_text:?}"
+    );
+
+    // WU-5a: the projection also stores the weighted tsvector the provider
+    // ranks, byte-equal to the legacy `life_events.generated_tsvector` for
+    // the same content (name='A' + description='B', unaccented).
+    let fts_vector_matches_legacy: bool = sqlx::query_scalar(
+        "SELECT g.fts_tsvector = e.generated_tsvector \
+         FROM generation_fts_text g JOIN life_events e ON e.slug = g.slug \
+         WHERE g.generation_id = $1 AND g.slug = 'alta-vehiculo'",
+    )
+    .bind(report.generation_id)
+    .fetch_one(&pool)
+    .await
+    .expect("fts_tsvector row exists");
+    assert!(
+        fts_vector_matches_legacy,
+        "the projected fts_tsvector must reproduce the legacy weighted vector"
     );
 
     let cards: serde_json::Value = sqlx::query_scalar(
