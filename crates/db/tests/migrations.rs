@@ -667,3 +667,111 @@ async fn migrations_create_no_extensions() {
     );
     common::drop_test_db(&name).await;
 }
+
+// WU-4b: the retired-event reconciliation deletes obsolete `life_events`
+// rows. Telemetry rows that referenced a retired event must survive with a
+// NULL event reference, so a seed cannot wedge on SQLSTATE 23503.
+#[tokio::test]
+async fn retired_event_telemetry_survives_the_event_delete() {
+    let (pool, name) = common::fresh_migrated_db().await;
+
+    // (a) The three telemetry references to life_events are ON DELETE SET
+    // NULL (confdeltype 'n'), not the default NO ACTION ('a').
+    let delete_actions: Vec<(String, String)> = sqlx::query_as(
+        "SELECT conname, confdeltype::text FROM pg_constraint \
+         WHERE contype = 'f' AND conname IN ( \
+             'search_logs_selected_event_id_fkey', \
+             'search_logs_top_event_id_fkey', \
+             'search_feedback_event_id_fkey' \
+         ) ORDER BY conname",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("read telemetry FK delete actions");
+    assert_eq!(
+        delete_actions,
+        vec![
+            ("search_feedback_event_id_fkey".to_string(), "n".to_string()),
+            (
+                "search_logs_selected_event_id_fkey".to_string(),
+                "n".to_string()
+            ),
+            ("search_logs_top_event_id_fkey".to_string(), "n".to_string()),
+        ],
+        "telemetry event references must be ON DELETE SET NULL"
+    );
+
+    // (b) `search_feedback.event_id` is nullable after the migration.
+    let feedback_event_nullable: String = sqlx::query_scalar(
+        "SELECT is_nullable FROM information_schema.columns \
+         WHERE table_schema = 'public' AND table_name = 'search_feedback' \
+         AND column_name = 'event_id'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("read search_feedback.event_id nullability");
+    assert_eq!(
+        feedback_event_nullable, "YES",
+        "search_feedback.event_id must be nullable for a retired event"
+    );
+
+    // (c) Deleting a life_events row referenced by telemetry succeeds and
+    // leaves the telemetry rows present with NULL event references.
+    let category_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO categories (slug, name, order_index) \
+         VALUES ('retired-telemetry', 'Retired telemetry', 1) RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("seed category");
+    let event_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO life_events (slug, name, category_id) \
+         VALUES ('retired-event', 'Retired event', $1) RETURNING id",
+    )
+    .bind(category_id)
+    .fetch_one(&pool)
+    .await
+    .expect("seed event");
+    let log_id: sqlx::types::Uuid = sqlx::query_scalar(
+        "INSERT INTO search_logs (query, normalized_query, selected_event_id, top_event_id) \
+         VALUES ('consulta', 'consulta', $1, $1) RETURNING id",
+    )
+    .bind(event_id)
+    .fetch_one(&pool)
+    .await
+    .expect("seed search log referencing the event");
+    sqlx::query(
+        "INSERT INTO search_feedback (search_log_id, event_id, correct) \
+         VALUES ($1, $2, TRUE)",
+    )
+    .bind(log_id)
+    .bind(event_id)
+    .execute(&pool)
+    .await
+    .expect("seed feedback referencing the event");
+
+    sqlx::query("DELETE FROM life_events WHERE id = $1")
+        .bind(event_id)
+        .execute(&pool)
+        .await
+        .expect("a retired event referenced by telemetry must still be deletable");
+
+    let (selected, top): (Option<sqlx::types::Uuid>, Option<sqlx::types::Uuid>) =
+        sqlx::query_as("SELECT selected_event_id, top_event_id FROM search_logs WHERE id = $1")
+            .bind(log_id)
+            .fetch_one(&pool)
+            .await
+            .expect("the search log survives with a NULL event reference");
+    assert_eq!(selected, None, "selected_event_id must be nulled");
+    assert_eq!(top, None, "top_event_id must be nulled");
+
+    let feedback_event: Option<sqlx::types::Uuid> =
+        sqlx::query_scalar("SELECT event_id FROM search_feedback WHERE search_log_id = $1")
+            .bind(log_id)
+            .fetch_one(&pool)
+            .await
+            .expect("the feedback row survives with a NULL event reference");
+    assert_eq!(feedback_event, None, "feedback event_id must be nulled");
+
+    common::drop_test_db(&name).await;
+}
