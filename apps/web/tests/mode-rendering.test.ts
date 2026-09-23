@@ -64,6 +64,19 @@ async function renderSearchMode(body: SearchResponse): Promise<string> {
 }
 
 describe('home search result rendering', () => {
+  it('explains that the match percentage measures the search, not eligibility', async () => {
+    const html = await renderSearchMode(open);
+    expect(html).toMatch(new RegExp(`Coincidencia con tu búsqueda: (?:<!-- -->)?${Math.round(open.confidence * 100)}(?:<!-- -->)?%`));
+    expect(html).toContain('Indica cuánto coincide tu búsqueda, no garantiza que el trámite te corresponda.');
+  });
+
+  it('warns against personal data next to the search field in every results mode', async () => {
+    for (const response of [open, disambiguation, categories]) {
+      const html = await renderSearchMode(response);
+      expect(html).toMatch(/<\/form>\s*<p class="search-privacy">No ingreses datos personales \(cédulas, teléfonos ni correos electrónicos\)\.<\/p>/);
+    }
+  });
+
   it('compacts only the searched hero and identifies results as an announced region', async () => {
     const searched = await renderSearchMode(open);
     expect(searched).toContain('class="home-hero home-hero--searched"');

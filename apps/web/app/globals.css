@@ -147,6 +147,12 @@ a:hover {
   color: var(--blue-dark);
 }
 
+/* Outrank the generic hover for both the title and navigation links. */
+.site-header a:hover,
+.site-header a:focus-visible {
+  color: #ffffff;
+}
+
 @media (min-width: 48rem) {
   .site-header__content {
     display: grid;
@@ -274,6 +280,14 @@ a:hover {
 
 .search-limit {
   margin: 0.3rem 0 0;
+  color: #e3e8f6;
+  font-size: 0.85rem;
+  text-align: left;
+}
+
+.search-privacy {
+  max-width: 60rem;
+  margin: 0.4rem auto 0;
   color: #e3e8f6;
   font-size: 0.85rem;
   text-align: left;

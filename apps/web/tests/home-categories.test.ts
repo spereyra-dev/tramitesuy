@@ -96,5 +96,7 @@ describe('home category tiles (no query)', () => {
     expect(html).toContain('href="/categories"');
     // The search-first hero stays intact regardless of API health.
     expect(html).toContain('¿Qué trámite necesitás hacer?');
+    expect(html).toContain('No ingreses datos personales (cédulas, teléfonos ni correos electrónicos).');
+    expect(html.match(/class="browse-prompt"/g)).toHaveLength(1);
   });
 });

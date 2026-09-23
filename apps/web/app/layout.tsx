@@ -23,7 +23,7 @@ const openSans = Open_Sans({
 export const metadata: Metadata = {
   title: 'TrámitesUY',
   description:
-    'Descubrí qué trámites oficiales aplican a tu situación, con resultados audibles y atribuidos al Catálogo de trámites y servicios del Estado — AGESIC.',
+    'Descubrí qué trámites oficiales aplican a tu situación, con resultados auditables y atribuidos al Catálogo de trámites y servicios del Estado — AGESIC.',
 };
 
 /**
@@ -57,6 +57,9 @@ export default function RootLayout({
         </main>
         <footer className="site-footer">
           <div className="site-footer__content">
+            <p>
+              TrámitesUY es un proyecto ciudadano independiente y no oficial; los datos de los trámites provienen del catálogo oficial de AGESIC.
+            </p>
             <p>
               Fuente oficial:{' '}
               <a href="https://catalogodatos.gub.uy/dataset/agesic-guia-de-tramites">

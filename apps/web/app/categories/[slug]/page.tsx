@@ -57,7 +57,7 @@ export default async function CategoryEventsPage({
     <section className="discovery-page" aria-labelledby="category-events-heading">
       <header className="discovery-page__header">
         <p className="section-kicker">Categoría</p>
-        <h1 id="category-events-heading">Eventos: {categoryName}</h1>
+        <h1 id="category-events-heading">Situaciones: {categoryName}</h1>
         <p>Elegí una situación para ver los trámites oficiales relacionados.</p>
         <Link className="text-link" href="/categories">
           Volver a categorías

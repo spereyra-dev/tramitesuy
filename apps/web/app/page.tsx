@@ -31,6 +31,9 @@ export default async function HomePage({
           aplicar.
         </p>
         <SearchForm initialQuery={query ?? ''} />
+        <p className="search-privacy">
+          No ingreses datos personales (cédulas, teléfonos ni correos electrónicos).
+        </p>
         <p className="home-reassurance">
           Buscá con tus palabras. Siempre vas a ver la fuente oficial de cada
           trámite.
@@ -155,7 +158,9 @@ function OpenResult({
           <Link href={view.eventHref}>{view.eventName}</Link>
         </p>
         <p className="confidence">
-          Coincidencia: {Math.round(view.confidence * 100)}%
+          Coincidencia con tu búsqueda: {Math.round(view.confidence * 100)}%
+          <br />
+          Indica cuánto coincide tu búsqueda, no garantiza que el trámite te corresponda.
         </p>
       </div>
       <div className="procedure-results" aria-label="Trámites oficiales sugeridos">
